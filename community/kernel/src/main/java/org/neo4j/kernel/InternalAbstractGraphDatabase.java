@@ -1459,7 +1459,7 @@ public abstract class InternalAbstractGraphDatabase
                 throws Throwable
         {
             config.removeConfigurationChangeListener( listener );
-        }
+        },
     }
 
     @Override
@@ -1475,6 +1475,69 @@ public abstract class InternalAbstractGraphDatabase
             }
         };
     }
+
+    public ResourceIterable<Node> findNodesByLabelAndProperty( final Label myLabel, final Map<String, Obect> props){
+
+
+
+    }
+
+
+    public ResourceIterable<Node> findNodesByLabelAndProperty( final Map<Label, Map<String, Object> > ){
+
+
+
+
+    }
+
+    public ResourceIterable<Node> getNodesByLabel(final Label myLabel) {
+
+        StatementContext ctx = statementContextProvider.getCtxForReading();
+
+        long labelId;
+        try
+        {
+            labelId = ctx.getLabelId(myLabel.name();
+        }
+        catch ( KernelException e)
+        {
+            ctx.close();
+            return IteratorUtil.emptyIterator();
+        }
+
+        Iterator<Long> nodesWithLabel = ctx.getNodesWithLabel( labelId );
+
+        return map2nodes(nodesWithLabel, ctx);
+
+
+    }
+
+
+    private ResourceIterator<Node> nodesByLabelAndProperty( Label... myLabel, Map<String, Obect> props )
+    {
+
+        StatementContext ctx = statementContextProvider.getCtxForReading();
+
+        long propertyId;
+        List<Long> labelIds = new LinkedList<Long>();
+        try
+        {
+
+            for (Label l : myLabel){
+                labelIds.append(ctx.getLabelId(l.name()));
+            }
+
+        }
+        catch ( KernelException e )
+        {
+
+            ctx.close();
+            return IteratorUtil.emptyIterator();
+        }
+
+
+    }
+
 
     private ResourceIterator<Node> nodesByLabelAndProperty( Label myLabel, String key, Object value )
     {
