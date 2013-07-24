@@ -160,7 +160,7 @@ class LuceneIndexAccessor implements IndexAccessor
     }
 
     @Override
-    public IndexReader newReader()
+    public IndexReader newReader() throws IOException
     {
         return new LuceneIndexAccessorReader( searcherManager, documentLogic );
     }

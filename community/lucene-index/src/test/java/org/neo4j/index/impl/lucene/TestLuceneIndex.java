@@ -44,14 +44,14 @@ import java.util.Map;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.index.Term;
-import org.apache.lucene.queryParser.QueryParser.Operator;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
-import org.apache.lucene.search.DefaultSimilarity;
 import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TermQuery;
+import org.apache.lucene.search.similarities.DefaultSimilarity;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.neo4j.graphdb.Direction;
@@ -1686,7 +1686,7 @@ public class TestLuceneIndex extends AbstractLuceneIndexTest
     @Test
     public void useStandardAnalyzer() throws Exception
     {
-        Index<Node> index = nodeIndex( stringMap( "analyzer", MyStandardAnalyzer.class.getName() ) );
+        Index<Node> index = nodeIndex( stringMap( "analyzer", StandardAnalyzer.class.getName() ) );
         Node node = graphDb.createNode();
         index.add( node, "name", "Mattias" );
     }

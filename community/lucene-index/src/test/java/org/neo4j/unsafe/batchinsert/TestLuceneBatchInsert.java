@@ -414,7 +414,7 @@ public class TestLuceneBatchInsert
         BatchInserter inserter = inserter( PATH );
         BatchInserterIndexProvider provider = new LuceneBatchInserterIndexProviderNewImpl(
                 inserter );
-        BatchInserterIndex index = provider.nodeIndex( "myindex", stringMap( "analyzer", MyStandardAnalyzer.class.getName() ) );
+        BatchInserterIndex index = provider.nodeIndex( "myindex", stringMap( "analyzer", StandardAnalyzer.class.getName() ) );
         index.add( 0, map( "name", "Mattias" ) );
         provider.shutdown();
         inserter.shutdown();

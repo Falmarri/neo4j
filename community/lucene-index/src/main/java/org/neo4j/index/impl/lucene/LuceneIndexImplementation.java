@@ -22,6 +22,7 @@ package org.neo4j.index.impl.lucene;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.index.Index;

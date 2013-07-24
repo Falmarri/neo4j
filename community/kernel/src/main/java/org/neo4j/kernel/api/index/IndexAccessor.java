@@ -68,8 +68,9 @@ public interface IndexAccessor
     /**
      * @return a new {@link IndexReader} responsible for looking up results in the index. The returned
      * reader must honor repeatable reads.
+     * @throws IOException 
      */
-    IndexReader newReader();
+    IndexReader newReader() throws IOException;
 
     class Adapter implements IndexAccessor
     {

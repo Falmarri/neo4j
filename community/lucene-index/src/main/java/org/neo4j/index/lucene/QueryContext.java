@@ -19,7 +19,6 @@
  */
 package org.neo4j.index.lucene;
 
-import org.apache.lucene.queryParser.QueryParser.Operator;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.Sort;

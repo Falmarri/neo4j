@@ -21,11 +21,11 @@ package org.neo4j.index.impl.lucene;
 
 import java.io.Reader;
 import java.util.Arrays;
-import java.util.HashSet;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.analysis.util.CharArraySet;
 import org.apache.lucene.util.Version;
 
 public final class MyStandardAnalyzer extends Analyzer
@@ -34,12 +34,9 @@ public final class MyStandardAnalyzer extends Analyzer
     
     public MyStandardAnalyzer()
     {
-        actual = new StandardAnalyzer( Version.LUCENE_31, new HashSet<String>( Arrays.asList( "just", "some", "words" ) ) );
+        actual = new StandardAnalyzer( Version.LUCENE_44, new CharArraySet(Version.LUCENE_44, Arrays.asList( "just", "some", "words" ), true ) );
     }
 
-    @Override
-    public TokenStream tokenStream( String fieldName, Reader reader )
-    {
-        return actual.tokenStream( fieldName, reader );
-    }
+    
+    
 }

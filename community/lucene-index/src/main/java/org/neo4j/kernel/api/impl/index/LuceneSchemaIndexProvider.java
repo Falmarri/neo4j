@@ -125,16 +125,18 @@ public class LuceneSchemaIndexProvider extends SchemaIndexProvider
 
         public Query newQuery( Object value )
         {
-            if ( value instanceof String )
-            {
-                return new TermQuery( new Term( SINGLE_PROPERTY_KEY, (String) value ) );
-            }
-            else if ( value instanceof Number )
-            {
-                Number number = (Number) value;
-                return LuceneUtil.rangeQuery( SINGLE_PROPERTY_KEY, number, number, true, true );
-            }
-            throw new UnsupportedOperationException( value.toString() + ", " + value.getClass() );
+        	
+        	return new QueryParser
+//            if ( value instanceof String )
+//            {
+//                return new TermQuery( new Term( SINGLE_PROPERTY_KEY, (String) value ) );
+//            }
+//            else if ( value instanceof Number )
+//            {
+//                Number number = (Number) value;
+//                return LuceneUtil.rangeQuery( SINGLE_PROPERTY_KEY, number, number, true, true );
+//            }
+//            throw new UnsupportedOperationException( value.toString() + ", " + value.getClass() );
         }
         
         public Term newQueryForChangeOrRemove( long nodeId )

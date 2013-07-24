@@ -39,7 +39,7 @@ class LuceneIndexAccessorReader implements IndexReader
     private final DocumentLogic documentLogic;
     private final SearcherManager searcherManager;
 
-    LuceneIndexAccessorReader( SearcherManager searcherManager, DocumentLogic documentLogic )
+    LuceneIndexAccessorReader( SearcherManager searcherManager, DocumentLogic documentLogic ) throws IOException
     {
         this.searcherManager = searcherManager;
         this.searcher = searcherManager.acquire();

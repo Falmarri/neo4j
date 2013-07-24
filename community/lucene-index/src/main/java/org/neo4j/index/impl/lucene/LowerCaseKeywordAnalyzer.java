@@ -19,24 +19,30 @@
  */
 package org.neo4j.index.impl.lucene;
 
+import static org.neo4j.index.impl.lucene.LuceneDataSource.LUCENE_VERSION;
+
 import java.io.Reader;
 
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.KeywordTokenizer;
-import org.apache.lucene.analysis.LowerCaseFilter;
 import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.Tokenizer;
+import org.apache.lucene.analysis.core.KeywordTokenizer;
+import org.apache.lucene.analysis.core.LowerCaseFilter;
 
 public final class LowerCaseKeywordAnalyzer extends Analyzer
 {
-    @Override
-    public TokenStream tokenStream( String fieldName, Reader reader )
-    {
-        return new LowerCaseFilter( LuceneDataSource.LUCENE_VERSION, new KeywordTokenizer( reader ) );
-    }
+
 
     @Override
     public String toString()
     {
         return getClass().getSimpleName();
     }
+
+	@Override
+	protected TokenStreamComponents createComponents(String fieldName,
+			Reader reader) {
+		Tokenizer source = new KeywordTokenizer( reader);
+		return new TokenStreamComponents(source, new LowerCaseFilter(LUCENE_VERSION, source));
+	}
 }

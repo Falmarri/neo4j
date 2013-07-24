@@ -38,14 +38,14 @@ import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.KeywordAnalyzer;
-import org.apache.lucene.analysis.LowerCaseFilter;
-import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.WhitespaceTokenizer;
+import org.apache.lucene.analysis.Tokenizer;
+import org.apache.lucene.analysis.core.KeywordAnalyzer;
+import org.apache.lucene.analysis.core.LowerCaseFilter;
+import org.apache.lucene.analysis.core.WhitespaceTokenizer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Field.Store;
-import org.apache.lucene.document.Fieldable;
+import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
@@ -53,10 +53,10 @@ import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
-import org.apache.lucene.search.Similarity;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopFieldCollector;
+import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.RAMDirectory;
@@ -132,32 +132,36 @@ public class LuceneDataSource extends LogBackedXaDataSource
      */
     public static final Analyzer LOWER_CASE_WHITESPACE_ANALYZER = new Analyzer()
     {
-        @Override
-        public TokenStream tokenStream( String fieldName, Reader reader )
-        {
-            return new LowerCaseFilter( LUCENE_VERSION, new WhitespaceTokenizer( LUCENE_VERSION, reader ) );
-        }
 
         @Override
         public String toString()
         {
             return "LOWER_CASE_WHITESPACE_ANALYZER";
         }
+
+		@Override
+		protected TokenStreamComponents createComponents(String fieldName,
+				Reader reader) {
+			Tokenizer source = new WhitespaceTokenizer( LUCENE_VERSION, reader );
+			return new TokenStreamComponents(source, new LowerCaseFilter(LUCENE_VERSION, source));
+		}
     };
 
     public static final Analyzer WHITESPACE_ANALYZER = new Analyzer()
     {
-        @Override
-        public TokenStream tokenStream( String fieldName, Reader reader )
-        {
-            return new WhitespaceTokenizer( LUCENE_VERSION, reader );
-        }
 
         @Override
         public String toString()
         {
             return "WHITESPACE_ANALYZER";
         }
+
+		@Override
+		protected TokenStreamComponents createComponents(String fieldName,
+				Reader reader) {
+			// TODO Auto-generated method stub
+			return new TokenStreamComponents(new WhitespaceTokenizer( LUCENE_VERSION, reader ));
+		}
     };
 
     public static final Analyzer KEYWORD_ANALYZER = new KeywordAnalyzer();
@@ -494,7 +498,7 @@ public class LuceneDataSource extends LogBackedXaDataSource
         {
             IndexReader reader = searcher.getSearcher().getIndexReader();
             IndexWriter writer = searcher.getWriter();
-            IndexReader reopened = IndexReader.openIfChanged( reader, writer, true );
+            IndexReader reopened = DirectoryReader.openIfChanged( (DirectoryReader) reader, writer, true );
             if ( reopened != null )
             {
                 IndexSearcher newSearcher = newIndexSearcher( searcher.getIdentifier(), reopened );
@@ -613,6 +617,7 @@ public class LuceneDataSource extends LogBackedXaDataSource
     {
         IndexSearcher searcher = new IndexSearcher( reader );
         IndexType type = getType( identifier, false );
+        
         if ( type.getSimilarity() != null )
             searcher.setSimilarity( type.getSimilarity() );
         return searcher;
