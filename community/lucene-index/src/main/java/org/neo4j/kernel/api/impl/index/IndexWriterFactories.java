@@ -37,7 +37,7 @@ public class IndexWriterFactories
             @Override
             public IndexWriter create( Directory directory ) throws IOException
             {
-                IndexWriterConfig writerConfig = new IndexWriterConfig( Version.LUCENE_36, LuceneDataSource.KEYWORD_ANALYZER );
+                IndexWriterConfig writerConfig = new IndexWriterConfig( Version.LUCENE_36, LuceneDataSource.LOWER_CASE_KEYWORD_ANALYZER );
                 writerConfig.setMaxBufferedDocs( 100000 ); // TODO figure out depending on environment?
                 return new IndexWriter( directory, writerConfig );
             }

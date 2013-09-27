@@ -41,6 +41,7 @@ import javax.transaction.TransactionManager;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.KeywordAnalyzer;
+import org.apache.lucene.analysis.KeywordTokenizer;
 import org.apache.lucene.analysis.LowerCaseFilter;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.WhitespaceTokenizer;
@@ -144,6 +145,22 @@ public class LuceneDataSource extends LogBackedXaDataSource
         public String toString()
         {
             return "LOWER_CASE_WHITESPACE_ANALYZER";
+        }
+    };
+    
+    
+    public static final Analyzer LOWER_CASE_KEYWORD_ANALYZER = new Analyzer()
+    {
+        @Override
+        public TokenStream tokenStream( String fieldName, Reader reader )
+        {
+            return new LowerCaseFilter( LUCENE_VERSION, new KeywordTokenizer(reader) );
+        }
+
+        @Override
+        public String toString()
+        {
+            return "LOWER_CASE_KEYWORD_ANALYZER";
         }
     };
 

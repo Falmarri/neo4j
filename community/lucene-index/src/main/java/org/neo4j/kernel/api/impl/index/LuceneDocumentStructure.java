@@ -19,19 +19,24 @@
  */
 package org.neo4j.kernel.api.impl.index;
 
+import static org.apache.lucene.document.Field.Index.NOT_ANALYZED;
+import static org.apache.lucene.document.Field.Index.ANALYZED;
+import static org.apache.lucene.document.Field.Store.NO;
+import static org.apache.lucene.document.Field.Store.YES;
+import static org.neo4j.kernel.api.index.ArrayEncoder.encode;
+
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.NumericField;
 import org.apache.lucene.index.FieldInfo.IndexOptions;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.queryParser.ParseException;
+import org.apache.lucene.queryParser.QueryParser;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
+import org.apache.lucene.util.Version;
+import org.neo4j.index.impl.lucene.LuceneDataSource;
 import org.neo4j.index.impl.lucene.LuceneUtil;
-
-import static org.apache.lucene.document.Field.Index.NOT_ANALYZED;
-import static org.apache.lucene.document.Field.Store.NO;
-import static org.apache.lucene.document.Field.Store.YES;
-import static org.neo4j.kernel.api.index.ArrayEncoder.encode;
 
 class LuceneDocumentStructure
 {
@@ -40,6 +45,7 @@ class LuceneDocumentStructure
     private static final String ARRAY_PROPERTY_FIELD_IDENTIFIER = "array";
     private static final String BOOL_PROPERTY_FIELD_IDENTIFIER = "bool";
     private static final String NUMBER_PROPERTY_FIELD_IDENTIFIER = "number";
+    
 
     Document newDocument( long nodeId, Object value )
     {
@@ -75,7 +81,7 @@ class LuceneDocumentStructure
     
     private Field field( String fieldIdentifier, String value, Field.Store store )
     {
-        Field result = new Field( fieldIdentifier, value, store, NOT_ANALYZED );
+        Field result = new Field( fieldIdentifier, value, store, ANALYZED );
         result.setOmitNorms( true );
         result.setIndexOptions( IndexOptions.DOCS_ONLY );
         return result;
@@ -99,7 +105,17 @@ class LuceneDocumentStructure
         }
         else
         {
-            return new TermQuery( new Term( STRING_PROPERTY_FIELD_IDENTIFIER, value.toString() ) );
+        	String val = value.toString();
+        	if (val.startsWith(":")){
+        		val = val.substring(1);
+        		try {
+					return new QueryParser(Version.LUCENE_36, STRING_PROPERTY_FIELD_IDENTIFIER, LuceneDataSource.LOWER_CASE_KEYWORD_ANALYZER).parse(val);
+				} catch (ParseException e) {
+					
+				}
+        	}
+    		return new TermQuery( new Term( STRING_PROPERTY_FIELD_IDENTIFIER, val ) );
+        	
         }
     }
 
