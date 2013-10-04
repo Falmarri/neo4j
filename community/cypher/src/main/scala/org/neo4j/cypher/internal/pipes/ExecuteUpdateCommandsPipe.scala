@@ -39,13 +39,16 @@ class ExecuteUpdateCommandsPipe(source: Pipe, db: GraphDatabaseService, val comm
     case ctx => executeMutationCommands(ctx, state, commands.size == 1)
   }
 
+  val allKeys = commands.flatMap( c => c.identifiers.map(_._1) )
+
   private def executeMutationCommands(ctx: ExecutionContext,
                                       state: QueryState,
                                       singleCommand: Boolean): Iterator[ExecutionContext] =
     try {
       commands.foldLeft(Iterator(ctx))((context, cmd) => context.flatMap(c => exec(cmd, c, state, singleCommand)))
     } catch {
-      case e: NotInTransactionException => throw new InternalException("Expected to be in a transaction at this point", e)
+      case e: NotInTransactionException =>
+        throw new InternalException("Expected to be in a transaction at this point", e)
     }
 
   private def exec(cmd: UpdateAction,

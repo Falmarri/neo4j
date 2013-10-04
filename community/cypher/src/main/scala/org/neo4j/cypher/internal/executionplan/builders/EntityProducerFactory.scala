@@ -29,17 +29,19 @@ import org.neo4j.cypher.{IndexHintException, InternalException}
 import org.neo4j.cypher.internal.data.SimpleVal._
 import org.neo4j.cypher.internal.data.SimpleVal
 import org.neo4j.cypher.internal.mutation.GraphElementPropertyFunctions
+import org.neo4j.cypher.EntityNotFoundException
+import org.neo4j.cypher.internal.helpers.Materialized
 
 class EntityProducerFactory extends GraphElementPropertyFunctions {
 
     private def asProducer[T <: PropertyContainer](startItem: StartItem)
-                                                (f: (ExecutionContext, QueryState) => Iterator[T]) =
+                                                  (f: (ExecutionContext, QueryState) => Iterator[T]) =
     new EntityProducer[T] {
       def apply(m: ExecutionContext, q: QueryState) = f(m, q)
 
       def name = startItem.name
 
-      def description = startItem.args.mapValues(fromStr).toSeq
+      def description = Materialized.mapValues(startItem.args, fromStr).toSeq
     }
 
   def nodeStartItems: PartialFunction[(PlanContext, StartItem), EntityProducer[Node]] =
@@ -74,14 +76,25 @@ class EntityProducerFactory extends GraphElementPropertyFunctions {
   val nodeById: PartialFunction[(PlanContext, StartItem), EntityProducer[Node]] = {
     case (planContext, startItem @ NodeById(varName, ids)) =>
       asProducer[Node](startItem) { (m: ExecutionContext, state: QueryState) =>
-        GetGraphElements.getElements[Node](ids(m)(state), varName, state.query.nodeOps.getById)
+        GetGraphElements.getElements[Node](ids(m)(state), varName, (id) =>
+          state.query.nodeOps.getById(id))
+      }
+    case (planContext, startItem@NodeByIdOrEmpty(varName, id)) =>
+      asProducer[Node](startItem) {
+        (m: ExecutionContext, state: QueryState) =>
+          try {
+            val node = state.query.nodeOps.getById(id)
+            Iterator(node)
+          } catch {
+            case _: EntityNotFoundException => Iterator.empty
+          }
       }
   }
 
   val nodeByLabel: PartialFunction[(PlanContext, StartItem), EntityProducer[Node]] = {
     // The label exists at compile time - no need to look up the label id for every run
     case (planContext, startItem@NodeByLabel(identifier, label)) if planContext.getOptLabelId(label).nonEmpty =>
-      val labelId: Long = planContext.getOptLabelId(label).get
+      val labelId: Int = planContext.getOptLabelId(label).get
       asProducer[Node](startItem) {
         (m: ExecutionContext, state: QueryState) => state.query.getNodesByLabel(labelId)
       }
@@ -109,7 +122,8 @@ class EntityProducerFactory extends GraphElementPropertyFunctions {
 
 
   val nodeByIndexHint: PartialFunction[(PlanContext, StartItem), EntityProducer[Node]] = {
-    case (planContext, startItem @ SchemaIndex(identifier, labelName, propertyName, valueExp)) =>
+    case (planContext, startItem @ SchemaIndex(identifier, labelName, propertyName, AnyIndex, valueExp)) =>
+
       val indexGetter = planContext.getIndexRule(labelName, propertyName)
 
       val index = indexGetter getOrElse
@@ -122,6 +136,22 @@ class EntityProducerFactory extends GraphElementPropertyFunctions {
         val value = expression(m)(state)
         val neoValue = makeValueNeoSafe(value)
         state.query.exactIndexSearch(index, neoValue)
+      }
+
+    case (planContext, startItem @ SchemaIndex(identifier, labelName, propertyName, UniqueIndex, valueExp)) =>
+
+      val indexGetter = planContext.getUniqueIndexRule(labelName, propertyName)
+
+      val index = indexGetter getOrElse
+        (throw new IndexHintException(identifier, labelName, propertyName, "No such index found."))
+
+      val expression = valueExp getOrElse
+        (throw new InternalException("Something went wrong trying to build your query."))
+
+      asProducer[Node](startItem) { (m: ExecutionContext, state: QueryState) =>
+        val value = expression(m)(state)
+        val neoValue = makeValueNeoSafe(value)
+        state.query.exactUniqueIndexSearch(index, neoValue).toIterator
       }
   }
 
@@ -148,7 +178,8 @@ class EntityProducerFactory extends GraphElementPropertyFunctions {
   val relationshipById: PartialFunction[(PlanContext, StartItem), EntityProducer[Relationship]] = {
     case (planContext, startItem @ RelationshipById(varName, ids)) =>
       asProducer[Relationship](startItem) { (m: ExecutionContext, state: QueryState) =>
-        GetGraphElements.getElements[Relationship](ids(m)(state), varName, state.query.relationshipOps.getById)
+        GetGraphElements.getElements[Relationship](ids(m)(state), varName, (id) =>
+          state.query.relationshipOps.getById(id))
       }
   }
 

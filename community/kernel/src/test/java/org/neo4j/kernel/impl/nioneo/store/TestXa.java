@@ -29,6 +29,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -50,14 +51,20 @@ import org.neo4j.kernel.DefaultIdGeneratorFactory;
 import org.neo4j.kernel.InternalAbstractGraphDatabase;
 import org.neo4j.kernel.TransactionInterceptorProviders;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
+import org.neo4j.kernel.api.operations.TokenNameLookup;
+import org.neo4j.kernel.api.properties.DefinedProperty;
 import org.neo4j.kernel.configuration.Config;
 import org.neo4j.kernel.impl.api.KernelSchemaStateStore;
+import org.neo4j.kernel.impl.api.scan.InMemoryLabelScanStore;
+import org.neo4j.kernel.impl.api.scan.LabelScanStoreProvider;
 import org.neo4j.kernel.impl.cache.Cache;
-import org.neo4j.kernel.impl.cache.LockStripedCache;
+import org.neo4j.kernel.impl.cache.AutoLoadingCache;
 import org.neo4j.kernel.impl.core.NodeManager;
 import org.neo4j.kernel.impl.core.Token;
 import org.neo4j.kernel.impl.nioneo.xa.NeoStoreXaConnection;
 import org.neo4j.kernel.impl.nioneo.xa.NeoStoreXaDataSource;
+import org.neo4j.kernel.impl.nioneo.xa.WriteTransaction;
+import org.neo4j.kernel.impl.persistence.NeoStoreTransaction.PropertyReceiver;
 import org.neo4j.kernel.impl.transaction.PlaceboTm;
 import org.neo4j.kernel.impl.transaction.TransactionStateFactory;
 import org.neo4j.kernel.impl.transaction.XidImpl;
@@ -73,10 +80,8 @@ import org.neo4j.kernel.logging.DevNullLoggingService;
 import org.neo4j.kernel.logging.SingleLoggingService;
 import org.neo4j.test.impl.EphemeralFileSystemAbstraction;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
 import static org.neo4j.kernel.impl.nioneo.xa.NeoStoreXaDataSource.LOGICAL_LOG_DEFAULT_NAME;
 import static org.neo4j.kernel.impl.util.StringLogger.DEV_NULL;
 
@@ -114,7 +119,7 @@ public class TestXa
         log = Logger
                 .getLogger( "org.neo4j.kernel.impl.nioneo.xa.NeoStoreXaDataSource" );
         log.setLevel( Level.OFF );
-        propertyKeyTokens = new HashMap<String, Token>();
+        propertyKeyTokens = new HashMap<>();
 
         StoreFactory sf = new StoreFactory( new Config( Collections.<String, String>emptyMap(),
                 GraphDatabaseSettings.class ), new DefaultIdGeneratorFactory(),
@@ -157,7 +162,7 @@ public class TestXa
             fileSystem.deleteFile( file( file ) );
             fileSystem.deleteFile( file( file + ".id" ) );
         }
-        
+
         File file = new File( "." );
         for ( File nioFile : fileSystem.listFiles( file ) )
         {
@@ -182,11 +187,15 @@ public class TestXa
         }
         file = new File( logBaseFileName.getPath() + ".active" );
         assertTrue( fileSystem.deleteFile( file ) );
-        
+
         // Delete the last .v file
         for ( int i = 5; i >= 0; i-- )
+        {
             if ( fileSystem.deleteFile( new File( logBaseFileName.getPath() + ".v" + i ) ) )
+            {
                 break;
+            }
+        }
     }
 
     public static void renameCopiedLogicalLog( FileSystemAbstraction fileSystem,
@@ -194,7 +203,7 @@ public class TestXa
     {
         fileSystem.deleteFile( files.first().first() );
         fileSystem.renameFile( files.first().other(), files.first().first() );
-        
+
         fileSystem.deleteFile( files.other().first() );
         fileSystem.renameFile( files.other().other(), files.other().first() );
     }
@@ -284,22 +293,22 @@ public class TestXa
         xaCon.getWriteTransaction().nodeCreate( node1 );
         long node2 = ds.nextId( Node.class );
         xaCon.getWriteTransaction().nodeCreate( node2 );
-        PropertyData n1prop1 = xaCon.getWriteTransaction().nodeAddProperty(
+        DefinedProperty n1prop1 = xaCon.getWriteTransaction().nodeAddProperty(
                 node1, index( "prop1" ), "string1" );
-        xaCon.getWriteTransaction().nodeLoadProperties( node1, false );
+        xaCon.getWriteTransaction().nodeLoadProperties( node1, false, VOID );
         int relType1 = (int) ds.nextId( RelationshipType.class );
         xaCon.getWriteTransaction().createRelationshipTypeToken( relType1,
                 "relationshiptype1" );
         long rel1 = ds.nextId( Relationship.class );
         xaCon.getWriteTransaction().relationshipCreate( rel1, relType1, node1, node2 );
-        PropertyData r1prop1 = xaCon.getWriteTransaction().relAddProperty(
+        DefinedProperty r1prop1 = xaCon.getWriteTransaction().relAddProperty(
                 rel1, index( "prop1" ), "string1" );
         n1prop1 = xaCon.getWriteTransaction().nodeChangeProperty( node1,
-                n1prop1.getIndex(), "string2" );
-        r1prop1 = xaCon.getWriteTransaction().relChangeProperty( rel1, r1prop1.getIndex(),
+                n1prop1.propertyKeyId(), "string2" );
+        r1prop1 = xaCon.getWriteTransaction().relChangeProperty( rel1, r1prop1.propertyKeyId(),
                 "string2" );
-        xaCon.getWriteTransaction().nodeRemoveProperty( node1, n1prop1.getIndex() );
-        xaCon.getWriteTransaction().relRemoveProperty( rel1, r1prop1.getIndex() );
+        xaCon.getWriteTransaction().nodeRemoveProperty( node1, n1prop1.propertyKeyId() );
+        xaCon.getWriteTransaction().relRemoveProperty( rel1, r1prop1.propertyKeyId() );
         xaCon.getWriteTransaction().relDelete( rel1 );
         xaCon.getWriteTransaction().nodeDelete( node1 );
         xaCon.getWriteTransaction().nodeDelete( node2 );
@@ -317,8 +326,15 @@ public class TestXa
         xaCon.clearAllTransactions();
     }
 
-    private NeoStoreXaDataSource newNeoStore() throws InstantiationException,
-            IOException
+    private static final PropertyReceiver VOID = new PropertyReceiver()
+    {
+        @Override
+        public void receive( DefinedProperty property, long propertyRecordId )
+        {   // Hand it over to the void
+        }
+    };
+
+    private NeoStoreXaDataSource newNeoStore() throws IOException
     {
         final Config config = new Config( MapUtil.stringMap(
                         InternalAbstractGraphDatabase.Configuration.store_dir.name(), path().getPath(),
@@ -345,10 +361,10 @@ public class TestXa
         NodeManager nodeManager = mock(NodeManager.class);
         @SuppressWarnings( "rawtypes" )
         List caches = Arrays.asList(
-                (Cache) mock( LockStripedCache.class ),
-                (Cache) mock( LockStripedCache.class ) );
+                (Cache) mock( AutoLoadingCache.class ),
+                (Cache) mock( AutoLoadingCache.class ) );
         when( nodeManager.caches() ).thenReturn( caches );
-        
+
         NeoStoreXaDataSource neoStoreXaDataSource = new NeoStoreXaDataSource( config, sf,
                                                                               StringLogger.DEV_NULL,
                 new XaFactory( config, TxIdGenerator.DEFAULT, txManager,
@@ -357,8 +373,9 @@ public class TestXa
                         new TransactionInterceptorProviders(
                                 Collections.<TransactionInterceptorProvider>emptyList(), dependencyResolverForConfig( config ) ), null,
                                 new SingleLoggingService( DEV_NULL ),
-                                new KernelSchemaStateStore(), nodeManager,
-                                dependencyResolverForNoIndexProvider( nodeManager ) );
+                                new KernelSchemaStateStore(),
+                mock(TokenNameLookup.class),
+                dependencyResolverForNoIndexProvider( nodeManager ) );
         neoStoreXaDataSource.init();
         neoStoreXaDataSource.start();
         return neoStoreXaDataSource;
@@ -368,13 +385,24 @@ public class TestXa
     {
         return new DependencyResolver.Adapter()
         {
+            private final LabelScanStoreProvider labelScanStoreProvider =
+                    new LabelScanStoreProvider( new InMemoryLabelScanStore(), 10 );
+
             @Override
             public <T> T resolveDependency( Class<T> type, SelectionStrategy<T> selector ) throws IllegalArgumentException
             {
                 if ( SchemaIndexProvider.class.isAssignableFrom( type ) )
-                    return (T) SchemaIndexProvider.NO_INDEX_PROVIDER;
+                {
+                    return type.cast( SchemaIndexProvider.NO_INDEX_PROVIDER );
+                }
                 else if ( NodeManager.class.isAssignableFrom( type ) )
-                    return (T) nodeManager;
+                {
+                    return type.cast( nodeManager );
+                }
+                else if ( LabelScanStoreProvider.class.isAssignableFrom( type ) )
+                {
+                    return type.cast( labelScanStoreProvider );
+                }
                 throw new IllegalArgumentException( type.toString() );
             }
         };
@@ -387,7 +415,7 @@ public class TestXa
             @Override
             public <T> T resolveDependency( Class<T> type, SelectionStrategy<T> selector )
             {
-                return (T) config;
+                return type.cast( config );
             }
         };
     }
@@ -402,17 +430,17 @@ public class TestXa
         xaCon.getWriteTransaction().nodeCreate( node1 );
         long node2 = ds.nextId( Node.class );
         xaCon.getWriteTransaction().nodeCreate( node2 );
-        PropertyData n1prop1 = xaCon.getWriteTransaction().nodeAddProperty(
+        DefinedProperty n1prop1 = xaCon.getWriteTransaction().nodeAddProperty(
                 node1, index( "prop1" ), "string1" );
         int relType1 = (int) ds.nextId( RelationshipType.class );
         xaCon.getWriteTransaction().createRelationshipTypeToken( relType1,
                 "relationshiptype1" );
         long rel1 = ds.nextId( Relationship.class );
         xaCon.getWriteTransaction().relationshipCreate( rel1, relType1, node1, node2 );
-        PropertyData r1prop1 = xaCon.getWriteTransaction().relAddProperty(
+        DefinedProperty r1prop1 = xaCon.getWriteTransaction().relAddProperty(
                 rel1, index( "prop1" ), "string1" );
-        xaCon.getWriteTransaction().nodeChangeProperty( node1, n1prop1.getIndex(), "string2" );
-        xaCon.getWriteTransaction().relChangeProperty( rel1, r1prop1.getIndex(),
+        xaCon.getWriteTransaction().nodeChangeProperty( node1, n1prop1.propertyKeyId(), "string2" );
+        xaCon.getWriteTransaction().relChangeProperty( rel1, r1prop1.propertyKeyId(),
                 "string2" );
         xaRes.end( xid, XAResource.TMSUCCESS );
         xaRes.prepare( xid );
@@ -438,7 +466,7 @@ public class TestXa
         xaRes.start( xid, XAResource.TMNOFLAGS );
         long node1 = ds.nextId( Node.class );
         xaCon.getWriteTransaction().nodeCreate( node1 );
-        PropertyData n1prop1 = xaCon.getWriteTransaction().nodeAddProperty(
+        DefinedProperty n1prop1 = xaCon.getWriteTransaction().nodeAddProperty(
                 node1, index( "prop1" ),
                 new long[]{1 << 23, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1} );
@@ -462,7 +490,7 @@ public class TestXa
         xid = new XidImpl( new byte[2], new byte[2] );
         xaRes = xaCon.getXaResource();
         xaRes.start( xid, XAResource.TMNOFLAGS );
-        xaCon.getWriteTransaction().nodeRemoveProperty( node1, n1prop1.getIndex() );
+        xaCon.getWriteTransaction().nodeRemoveProperty( node1, n1prop1.propertyKeyId() );
         xaCon.getWriteTransaction().nodeAddProperty(
                 node1, index( "prop3" ), new long[]{1 << 23, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1} );
@@ -482,12 +510,14 @@ public class TestXa
     {
         copyClearRename( true );
     }
-    
+
     private void copyClearRename( boolean clearTransactions ) throws IOException
     {
         Pair<Pair<File, File>, Pair<File, File>> copies = copyLogicalLog( fileSystem, logBaseFileName );
         if ( clearTransactions )
+        {
             xaCon.clearAllTransactions();
+        }
         ds.stop();
         deleteLogicalLogIfExist();
         renameCopiedLogicalLog( fileSystem, copies );
@@ -505,10 +535,10 @@ public class TestXa
                 new long[]{1l << 63, 1, 1} );
         xaCon.getWriteTransaction().nodeAddProperty( node1, index( "prop2" ),
                 new long[]{1l << 63, 1, 1} );
-        PropertyData toRead = xaCon.getWriteTransaction().nodeAddProperty(
+        DefinedProperty toRead = xaCon.getWriteTransaction().nodeAddProperty(
                 node1, index( "prop3" ),
                 new long[]{1l << 63, 1, 1} );
-        PropertyData toDelete = xaCon.getWriteTransaction().nodeAddProperty(
+        DefinedProperty toDelete = xaCon.getWriteTransaction().nodeAddProperty(
                 node1, index( "prop4" ),
                 new long[]{1l << 63, 1, 1} );
         xaRes.end( xid, XAResource.TMSUCCESS );
@@ -525,7 +555,7 @@ public class TestXa
         xaRes = xaCon.getXaResource();
         xaRes.start( xid, XAResource.TMNOFLAGS );
 
-        xaCon.getWriteTransaction().nodeRemoveProperty( node1, toDelete.getIndex() );
+        xaCon.getWriteTransaction().nodeRemoveProperty( node1, toDelete.propertyKeyId() );
 
         xaRes.end( xid, XAResource.TMSUCCESS );
         // xaRes.prepare( xid );
@@ -541,16 +571,34 @@ public class TestXa
         xaRes.start( xid, XAResource.TMNOFLAGS );
 
         assertTrue( Arrays.equals(
-                (long[]) toRead.getValue(),
-                (long[]) xaCon.getWriteTransaction().nodeLoadProperties( node1,
-                        false ).get( toRead.getIndex() ).getValue() ) );
+                (long[]) toRead.value(),
+                (long[]) loadNodeProperty( xaCon.getWriteTransaction(), node1, toRead.propertyKeyId() ) ) );
 
         xaRes.end( xid, XAResource.TMSUCCESS );
         xaRes.prepare( xid );
         xaCon.clearAllTransactions();
         ds.stop();
         deleteLogicalLogIfExist();
-//        renameCopiedLogicalLog( path() );
+    }
+
+    private Object loadNodeProperty( WriteTransaction writeTransaction, long node, final long propertyKeyId )
+    {
+        final AtomicReference<DefinedProperty> foundProperty = new AtomicReference<>();
+        PropertyReceiver receiver = new PropertyReceiver()
+        {
+            @Override
+            public void receive( DefinedProperty property, long propertyRecordId )
+            {
+                if ( propertyKeyId == property.propertyKeyId() )
+                {
+                    DefinedProperty previous = foundProperty.getAndSet( property );
+                    assertNull( previous );
+                }
+            }
+        };
+        writeTransaction.nodeLoadProperties( node, false, receiver );
+        assertNotNull( foundProperty.get() );
+        return foundProperty.get().value();
     }
 
     @Test
@@ -561,9 +609,9 @@ public class TestXa
         xaRes.start( xid, XAResource.TMNOFLAGS );
         long node1 = ds.nextId( Node.class );
         xaCon.getWriteTransaction().nodeCreate( node1 );
-        PropertyData toChange = xaCon.getWriteTransaction().nodeAddProperty(
+        DefinedProperty toChange = xaCon.getWriteTransaction().nodeAddProperty(
                 node1, index( "prop1" ), "hi" );
-        PropertyData toRead = xaCon.getWriteTransaction().nodeAddProperty(
+        DefinedProperty toRead = xaCon.getWriteTransaction().nodeAddProperty(
                 node1,
                 index( "prop2" ),
                 new long[]{1 << 23, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -582,7 +630,7 @@ public class TestXa
         xid = new XidImpl( new byte[2], new byte[2] );
         xaRes = xaCon.getXaResource();
         xaRes.start( xid, XAResource.TMNOFLAGS );
-        xaCon.getWriteTransaction().nodeChangeProperty( node1, toChange.getIndex(), "hI" );
+        xaCon.getWriteTransaction().nodeChangeProperty( node1, toChange.propertyKeyId(), "hI" );
         xaRes.end( xid, XAResource.TMSUCCESS );
         xaRes.prepare( xid );
         ds.rotateLogicalLog();
@@ -598,7 +646,7 @@ public class TestXa
         assertTrue(
                 Arrays.equals( new long[]{1 << 23, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-                        (long[]) xaCon.getWriteTransaction().nodeLoadPropertyValue( node1, toRead.getIndex() ) ) );
+                        (long[]) loadNodeProperty( xaCon.getWriteTransaction(), node1, toRead.propertyKeyId() ) ) );
 
     }
 
@@ -612,17 +660,17 @@ public class TestXa
         xaCon.getWriteTransaction().nodeCreate( node1 );
         long node2 = ds.nextId( Node.class );
         xaCon.getWriteTransaction().nodeCreate( node2 );
-        PropertyData n1prop1 = xaCon.getWriteTransaction().nodeAddProperty(
+        DefinedProperty n1prop1 = xaCon.getWriteTransaction().nodeAddProperty(
                 node1, index( "prop1" ), "string1" );
         int relType1 = (int) ds.nextId( RelationshipType.class );
         xaCon.getWriteTransaction().createRelationshipTypeToken( relType1,
                 "relationshiptype1" );
         long rel1 = ds.nextId( Relationship.class );
         xaCon.getWriteTransaction().relationshipCreate( rel1, relType1, node1, node2 );
-        PropertyData r1prop1 = xaCon.getWriteTransaction().relAddProperty(
+        DefinedProperty r1prop1 = xaCon.getWriteTransaction().relAddProperty(
                 rel1, index( "prop1" ), "string1" );
-        xaCon.getWriteTransaction().nodeChangeProperty( node1, n1prop1.getIndex(), "string2" );
-        xaCon.getWriteTransaction().relChangeProperty( rel1, r1prop1.getIndex(),
+        xaCon.getWriteTransaction().nodeChangeProperty( node1, n1prop1.propertyKeyId(), "string2" );
+        xaCon.getWriteTransaction().relChangeProperty( rel1, r1prop1.propertyKeyId(),
                 "string2" );
         xaRes.end( xid, XAResource.TMSUCCESS );
         copyClearRename();
@@ -644,7 +692,7 @@ public class TestXa
         xaRes.prepare( xid );
         xaCon.clearAllTransactions();
         copyClearRename();
-        truncateLogicalLog( 94 );
+        truncateLogicalLog( 102 );
         ds = newNeoStore();
         xaCon = ds.getXaConnection();
         xaRes = xaCon.getXaResource();
@@ -663,7 +711,7 @@ public class TestXa
         xaRes.end( xid, XAResource.TMSUCCESS );
         xaRes.prepare( xid );
         copyClearRename();
-        truncateLogicalLog( 94 );
+        truncateLogicalLog( 102 );
         ds = newNeoStore();
         xaCon = ds.getXaConnection();
         xaRes = xaCon.getXaResource();
@@ -744,21 +792,21 @@ public class TestXa
         xaCon.getWriteTransaction().nodeCreate( node1 );
         long node2 = ds.nextId( Node.class );
         xaCon.getWriteTransaction().nodeCreate( node2 );
-        PropertyData n1prop1 = xaCon.getWriteTransaction().nodeAddProperty(
+        DefinedProperty n1prop1 = xaCon.getWriteTransaction().nodeAddProperty(
                 node1, index( "prop1" ), "string1" );
-        xaCon.getWriteTransaction().nodeLoadProperties( node1, false );
+        xaCon.getWriteTransaction().nodeLoadProperties( node1, false, VOID );
         int relType1 = (int) ds.nextId( RelationshipType.class );
         xaCon.getWriteTransaction().createRelationshipTypeToken( relType1, "relationshiptype1" );
         long rel1 = ds.nextId( Relationship.class );
         xaCon.getWriteTransaction().relationshipCreate( rel1, relType1, node1, node2 );
-        PropertyData r1prop1 = xaCon.getWriteTransaction().relAddProperty(
+        DefinedProperty r1prop1 = xaCon.getWriteTransaction().relAddProperty(
                 rel1, index( "prop1" ), "string1" );
         n1prop1 = xaCon.getWriteTransaction().nodeChangeProperty( node1,
-                n1prop1.getIndex(), "string2" );
-        r1prop1 = xaCon.getWriteTransaction().relChangeProperty( rel1, r1prop1.getIndex(),
+                n1prop1.propertyKeyId(), "string2" );
+        r1prop1 = xaCon.getWriteTransaction().relChangeProperty( rel1, r1prop1.propertyKeyId(),
                 "string2" );
-        xaCon.getWriteTransaction().nodeRemoveProperty( node1, n1prop1.getIndex() );
-        xaCon.getWriteTransaction().relRemoveProperty( rel1, r1prop1.getIndex() );
+        xaCon.getWriteTransaction().nodeRemoveProperty( node1, n1prop1.propertyKeyId() );
+        xaCon.getWriteTransaction().relRemoveProperty( rel1, r1prop1.propertyKeyId() );
         xaCon.getWriteTransaction().relDelete( rel1 );
         xaCon.getWriteTransaction().nodeDelete( node1 );
         xaCon.getWriteTransaction().nodeDelete( node2 );

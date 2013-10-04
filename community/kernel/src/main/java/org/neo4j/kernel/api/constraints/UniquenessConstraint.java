@@ -19,16 +19,16 @@
  */
 package org.neo4j.kernel.api.constraints;
 
-import org.neo4j.kernel.api.operations.KeyNameLookup;
+import org.neo4j.kernel.api.operations.TokenNameLookup;
 
 // TODO: When we add other types of constraints, we will either want to create a hierarchy, or...
 // TODO: ...rename this to "Constraint" and add a "type" enum (or something like that).
 public class UniquenessConstraint
 {
-    private final long labelId;
-    private final long propertyKeyId;
+    private final int labelId;
+    private final int propertyKeyId;
 
-    public UniquenessConstraint( long labelId, long propertyKeyId )
+    public UniquenessConstraint( int labelId, int propertyKeyId )
     {
         this.labelId = labelId;
         this.propertyKeyId = propertyKeyId;
@@ -52,22 +52,22 @@ public class UniquenessConstraint
     @Override
     public int hashCode()
     {
-        int result = (int) (labelId ^ (labelId >>> 32));
-        result = 31 * result + (int) (propertyKeyId ^ (propertyKeyId >>> 32));
+        int result = labelId;
+        result = 31 * result + propertyKeyId;
         return result;
     }
 
-    public long label()
+    public int label()
     {
         return labelId;
     }
 
-    public long property()
+    public int propertyKeyId()
     {
         return propertyKeyId;
     }
 
-    public boolean equals( long labelId, long propertyKeyId )
+    public boolean equals( int labelId, int propertyKeyId )
     {
         return this.labelId == labelId && this.propertyKeyId == propertyKeyId;
     }
@@ -78,11 +78,11 @@ public class UniquenessConstraint
         return String.format( "CONSTRAINT ON ( n:label[%s] ) ASSERT n.property[%s] IS UNIQUE", labelId, propertyKeyId );
     }
 
-    public String userDescription( KeyNameLookup keyNameLookup )
+    public String userDescription( TokenNameLookup tokenNameLookup )
     {
-        String labelName = keyNameLookup.getLabelName( labelId );
+        String labelName = tokenNameLookup.labelGetName( labelId );
         String boundIdentifier = labelName.toLowerCase();
         return String.format( "CONSTRAINT ON ( %s:%s ) ASSERT %s.%s IS UNIQUE", boundIdentifier, labelName,
-                boundIdentifier, keyNameLookup.getPropertyKeyName( propertyKeyId ) );
+                boundIdentifier, tokenNameLookup.propertyKeyGetName( propertyKeyId ) );
     }
 }

@@ -29,6 +29,7 @@ import org.apache.commons.configuration.Configuration;
 
 import org.neo4j.cypher.javacompat.ExecutionEngine;
 import org.neo4j.graphdb.DependencyResolver;
+import org.neo4j.helpers.Clock;
 import org.neo4j.kernel.impl.transaction.xaframework.ForceMode;
 import org.neo4j.kernel.impl.util.JobScheduler;
 import org.neo4j.kernel.impl.util.StringLogger;
@@ -67,13 +68,12 @@ import org.neo4j.server.statistic.StatisticCollector;
 import org.neo4j.server.web.SimpleUriBuilder;
 import org.neo4j.server.web.WebServer;
 import org.neo4j.server.web.WebServerProvider;
-import org.neo4j.tooling.Clock;
-import org.neo4j.tooling.RealClock;
 
 import static java.lang.Math.round;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
+import static org.neo4j.helpers.Clock.SYSTEM_CLOCK;
 import static org.neo4j.helpers.collection.Iterables.option;
 import static org.neo4j.server.configuration.Configurator.DEFAULT_SCRIPT_SANDBOXING_ENABLED;
 import static org.neo4j.server.configuration.Configurator.DEFAULT_TRANSACTION_TIMEOUT;
@@ -93,13 +93,15 @@ public abstract class AbstractNeoServer implements NeoServer
     protected final StatisticCollector statisticsCollector = new StatisticCollector();
 
     private PreFlightTasks preflight;
-    private final List<ServerModule> serverModules = new ArrayList<ServerModule>();
+    private final List<ServerModule> serverModules = new ArrayList<>();
     private final SimpleUriBuilder uriBuilder = new SimpleUriBuilder();
     private InterruptThreadTimer interruptStartupTimer;
     private DatabaseActions databaseActions;
     private TransactionFacade transactionFacade;
     private TransactionHandleRegistry transactionRegistry;
     private Logging logging;
+    private static final boolean SUCCESS = true;
+    private static final boolean FAILURE = ! SUCCESS;
 
     protected abstract PreFlightTasks createPreflightTasks();
 
@@ -134,40 +136,41 @@ public abstract class AbstractNeoServer implements NeoServer
 
             interruptStartupTimer.startCountdown();
 
-            database.start();
+            try
+            {
+                database.start();
 
-            DiagnosticsManager diagnosticsManager = resolveDependency(DiagnosticsManager.class);
-            logging = resolveDependency( Logging.class );
+                DiagnosticsManager diagnosticsManager = resolveDependency(DiagnosticsManager.class);
+                logging = resolveDependency( Logging.class );
+    
+                StringLogger diagnosticsLog = diagnosticsManager.getTargetLog();
+                diagnosticsLog.info( "--- SERVER STARTED START ---" );
+    
+                databaseActions = createDatabaseActions();
+    
+                transactionFacade = createTransactionalActions();
+    
+                cypherExecutor = new CypherExecutor( database, logging.getMessagesLog( CypherExecutor.class ) );
+    
+                configureWebServer();
 
-            StringLogger diagnosticsLog = diagnosticsManager.getTargetLog();
-            diagnosticsLog.info( "--- SERVER STARTED START ---" );
+                cypherExecutor.start();
 
-            databaseActions = createDatabaseActions();
+                diagnosticsManager.register( Configurator.DIAGNOSTICS, configurator );
+    
+                startModules( diagnosticsLog );
 
-            transactionFacade = createTransactionalActions();
+                startWebServer( diagnosticsLog );
 
-            cypherExecutor = new CypherExecutor( database, logging.getMessagesLog( CypherExecutor.class ) );
-
-            configureWebServer();
-
-            cypherExecutor.start();
-
-            diagnosticsManager.register( Configurator.DIAGNOSTICS, configurator );
-
-            startModules( diagnosticsLog );
-
-            startWebServer( diagnosticsLog );
-
-            diagnosticsLog.info( "--- SERVER STARTED END ---" );
-
-            interruptStartupTimer.stopCountdown();
-
+                diagnosticsLog.info( "--- SERVER STARTED END ---" );
+            }
+            finally
+            {
+                interruptStartupTimer.stopCountdown();
+            }
         }
         catch ( Throwable t )
         {
-            // Make sure this does not trigger interrupts outside of this method.
-            interruptStartupTimer.stopCountdown();
-
             // Guard against poor operating systems that don't clear interrupt flags
             // after having handled interrupts (looking at you, Bill).
             Thread.interrupted();
@@ -187,14 +190,7 @@ public abstract class AbstractNeoServer implements NeoServer
                         1 );
             }
 
-            if ( t instanceof RuntimeException )
-            {
-                throw (RuntimeException) t;
-            }
-            else
-            {
-                throw new ServerStartupException( "Starting neo server failed, see nested exception.", t );
-            }
+            throw new ServerStartupException( String.format( "Starting Neo4j Server failed: %s", t.getMessage() ), t );
         }
     }
 
@@ -206,7 +202,7 @@ public abstract class AbstractNeoServer implements NeoServer
     protected DatabaseActions createDatabaseActions()
     {
         return new DatabaseActions(
-                new LeaseManager( new RealClock() ),
+                new LeaseManager( SYSTEM_CLOCK ),
                 ForceMode.forced,
                 configurator.configuration().getBoolean(
                         SCRIPT_SANDBOXING_ENABLED_KEY,
@@ -216,7 +212,7 @@ public abstract class AbstractNeoServer implements NeoServer
     private TransactionFacade createTransactionalActions()
     {
         final long timeoutMillis = getTransactionTimeoutMillis();
-        final Clock clock = new RealClock();
+        final Clock clock = SYSTEM_CLOCK;
 
         transactionRegistry =
             new TransactionHandleRegistry( clock, timeoutMillis, logging.getMessagesLog(TransactionRegistry.class) );
@@ -238,7 +234,8 @@ public abstract class AbstractNeoServer implements NeoServer
                 new TransitionalPeriodTransactionMessContainer( database.getGraph() ),
                 new ExecutionEngine( database.getGraph(), logging.getMessagesLog( ExecutionEngine.class ) ),
                 transactionRegistry,
-                logging.getMessagesLog( TransactionFacade.class ));
+                baseUri(), logging.getMessagesLog( TransactionFacade.class )
+        );
     }
 
     private long getTransactionTimeoutMillis()
@@ -333,7 +330,7 @@ public abstract class AbstractNeoServer implements NeoServer
         int sslPort = getHttpsPort();
         boolean sslEnabled = getHttpsEnabled();
 
-        log.info( "Starting Neo Server on port [%s] with [%d] threads available", webServerPort, maxThreads );
+        log.info( "Starting HTTP on port :%s with %d threads available", webServerPort, maxThreads );
         webServer.setPort( webServerPort );
         webServer.setAddress( webServerAddr );
         webServer.setMaxThreads( maxThreads );
@@ -347,7 +344,7 @@ public abstract class AbstractNeoServer implements NeoServer
 
         if ( sslEnabled )
         {
-            log.info( "Enabling HTTPS on port [%s]", sslPort );
+            log.info( "Enabling HTTPS on port :%s", sslPort );
             webServer.setHttpsCertificateInformation( initHttpsKeyStore() );
         }
     }
@@ -389,12 +386,12 @@ public abstract class AbstractNeoServer implements NeoServer
             {
                 logger.logMessage( "Server started on: " + baseUri() );
             }
-            log.info( "Server started on [%s]", baseUri() );
+            log.info( "Remote interface ready and available at [%s]", baseUri() );
         }
-        catch ( Exception e )
+        catch ( RuntimeException e )
         {
-            e.printStackTrace();
             log.error( "Failed to start Neo Server on port [%d], reason [%s]", getWebServerPort(), e.getMessage() );
+            throw e;
         }
     }
 
@@ -441,7 +438,7 @@ public abstract class AbstractNeoServer implements NeoServer
                         Configurator.DEFAULT_WEBSERVER_ADDRESS );
     }
 
-    // TODO: This is jetty-specific, move to Jetty6WebServer
+    // TODO: This is jetty-specific, move to Jetty9WebServer
 
     /**
      * Jetty wants certificates stored in a key store, which is nice, but

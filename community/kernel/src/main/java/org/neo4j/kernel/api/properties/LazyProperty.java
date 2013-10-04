@@ -21,18 +21,22 @@ package org.neo4j.kernel.api.properties;
 
 import java.util.concurrent.Callable;
 
-abstract class LazyProperty<T> extends FullSizeProperty
+import static org.neo4j.kernel.impl.cache.SizeOfs.sizeOfObject;
+import static org.neo4j.kernel.impl.cache.SizeOfs.withObjectOverhead;
+import static org.neo4j.kernel.impl.cache.SizeOfs.withReference;
+
+abstract class LazyProperty<T> extends DefinedProperty
 {
     private volatile Object value;
 
-    LazyProperty( long propertyKeyId, Callable<T> producer )
+    LazyProperty( int propertyKeyId, Callable<? extends T> producer )
     {
         super( propertyKeyId );
         this.value = producer;
     }
 
     @Override
-    final boolean hasEqualValue( FullSizeProperty that )
+    final boolean hasEqualValue( DefinedProperty that )
     {
         return valueEquals( ((LazyProperty<?>)that).value() );
     }
@@ -51,23 +55,45 @@ abstract class LazyProperty<T> extends FullSizeProperty
                 value = this.value;
                 if ( value instanceof Callable<?> )
                 {
-                    try
-                    {
-                        this.value = value = ((Callable<?>) value).call();
-                    }
-                    catch ( Exception e )
-                    {
-                        throw new RuntimeException( e );
-                    }
+                    this.value = value = produceValue();
                 }
             }
         }
-        return cast( value );
+        return castAndPrepareForReturn( value );
     }
 
+    protected Object produceValue()
+    {
+        try
+        {
+            return ((Callable<?>) value).call();
+        }
+        catch ( Exception e )
+        {
+            throw new RuntimeException( e );
+        }
+    }
+
+    /**
+     * Casts the internal value to the correct type and makes it ready for returning out,
+     * potentially all the way out to the user.
+     *
+     * @param value the value to cast and prepare.
+     * @return the cast and prepared value.
+     */
     @SuppressWarnings("unchecked")
-    private T cast( Object value )
+    protected T castAndPrepareForReturn( Object value )
     {
         return (T) value;
+    }
+
+    @Override
+    public int sizeOfObjectInBytesIncludingOverhead()
+    {
+        int internalSize = withReference(
+                value instanceof Callable<?> ?
+                        withObjectOverhead( 0 ) :
+                        sizeOfObject( value ) );
+        return withObjectOverhead( internalSize );
     }
 }

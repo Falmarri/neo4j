@@ -19,37 +19,61 @@
  */
 package org.neo4j.desktop;
 
-import java.util.List;
+import java.net.URISyntaxException;
 
+import org.neo4j.desktop.config.DefaultDirectories;
 import org.neo4j.desktop.config.Environment;
-import org.neo4j.desktop.config.OsSpecificEnvironment;
-import org.neo4j.desktop.config.OsSpecificExtensionPackagesConfig;
-import org.neo4j.desktop.config.OsSpecificHeapSizeConfig;
-import org.neo4j.desktop.config.Value;
 import org.neo4j.desktop.runtime.DatabaseActions;
+import org.neo4j.desktop.ui.DesktopModel;
 import org.neo4j.desktop.ui.MainWindow;
+import org.neo4j.desktop.ui.PlatformUI;
+
+import static org.neo4j.desktop.ui.Components.alert;
 
 /**
  * The main class for starting the Neo4j desktop app window. The different components and wired up and started.
  */
-public class Neo4jDesktop
+public final class Neo4jDesktop
 {
-    private void start()
-    {
-        Environment environment = new OsSpecificEnvironment().get();
-        
-        Value<List<String>> extensionPackagesConfig =
-                new OsSpecificExtensionPackagesConfig( environment ).get();
-        DatabaseActions databaseActions = new DatabaseActions( extensionPackagesConfig );
-        Value<Integer> heapSizeConfig = new OsSpecificHeapSizeConfig( environment ).get();
-        MainWindow window = new MainWindow( databaseActions, environment, heapSizeConfig,
-                extensionPackagesConfig );
-
-        window.display();
-    }
-
     public static void main( String[] args )
     {
         new Neo4jDesktop().start();
+    }
+
+    private void start()
+    {
+        PlatformUI.selectPlatformUI();
+
+        Environment environment;
+        try
+        {
+            environment = new Environment();
+        }
+        catch ( URISyntaxException e )
+        {
+            alert( e.getMessage() );
+            e.printStackTrace( System.out );
+            return;
+        }
+
+        DesktopModel model = new DesktopModel( environment, DefaultDirectories.defaultDatabaseDirectory() );
+        DatabaseActions databaseActions = new DatabaseActions( model );
+        addShutdownHook( databaseActions );
+
+        MainWindow window = new MainWindow( databaseActions, environment, model );
+        window.display();
+    }
+
+    protected void addShutdownHook( final DatabaseActions databaseActions )
+    {
+        Runtime.getRuntime()
+                .addShutdownHook( new Thread()
+                {
+                    @Override
+                    public void run()
+                    {
+                        databaseActions.stop();
+                    }
+                } );
     }
 }

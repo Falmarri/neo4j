@@ -22,9 +22,9 @@ package org.neo4j.kernel;
 import org.neo4j.graphdb.DatabaseShutdownException;
 import org.neo4j.graphdb.NotInTransactionException;
 import org.neo4j.kernel.api.KernelAPI;
-import org.neo4j.kernel.api.StatementOperationParts;
+import org.neo4j.kernel.api.KernelTransaction;
+import org.neo4j.kernel.api.Statement;
 import org.neo4j.kernel.api.StatementOperations;
-import org.neo4j.kernel.api.operations.StatementState;
 import org.neo4j.kernel.impl.transaction.AbstractTransactionManager;
 import org.neo4j.kernel.lifecycle.LifecycleAdapter;
 
@@ -43,36 +43,21 @@ public class ThreadToStatementContextBridge extends LifecycleAdapter
         this.kernelAPI = kernelAPI;
         this.txManager = txManager;
     }
-    
-    public StatementOperationParts getCtxForReading()
+
+    public Statement statement()
     {
-        return kernelAPI.readOnlyStatementOperations();
+        return transaction().acquireStatement();
     }
 
-    public StatementOperationParts getCtxForWriting()
-    {
-        return kernelAPI.statementOperations();
-    }
-
-    public StatementState statementForReading()
-    {
-        return statementForReadingAndWriting();
-    }
-
-    public StatementState statementForWriting()
-    {
-        return statementForReadingAndWriting();
-    }
-
-    private StatementState statementForReadingAndWriting()
+    private KernelTransaction transaction()
     {
         checkIfShutdown();
-        StatementState statement = txManager.newStatement();
-        if ( statement != null )
+        KernelTransaction transaction = txManager.getKernelTransaction();
+        if ( transaction == null )
         {
-            return statement;
+            throw new NotInTransactionException();
         }
-        throw new NotInTransactionException();
+        return transaction;
     }
 
     @Override
@@ -92,25 +77,5 @@ public class ThreadToStatementContextBridge extends LifecycleAdapter
     public void assertInTransaction()
     {
         txManager.assertInTransaction();
-    }
-
-    public static class ReadOnly extends ThreadToStatementContextBridge
-    {
-        public ReadOnly( KernelAPI kernelAPI, AbstractTransactionManager txManager )
-        {
-            super( kernelAPI, txManager );
-        }
-        
-        @Override
-        public StatementOperationParts getCtxForWriting()
-        {
-            return kernelAPI.readOnlyStatementOperations();
-        }
-
-        @Override
-        public StatementOperationParts getCtxForReading()
-        {
-            return kernelAPI.readOnlyStatementOperations();
-        }
     }
 }

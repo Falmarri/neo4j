@@ -19,10 +19,9 @@
  */
 package org.neo4j.cypher.internal.pipes.matching
 
-import org.neo4j.graphdb.Node
-import org.neo4j.cypher.internal.commands.{True, Predicate}
+import org.neo4j.graphdb.{Relationship, Node}
+import org.neo4j.cypher.internal.commands.Predicate
 import collection.Map
-import org.neo4j.cypher.EntityNotFoundException
 import org.neo4j.cypher.internal.ExecutionContext
 import org.neo4j.cypher.internal.pipes.QueryState
 
@@ -30,15 +29,26 @@ class PatternMatcher(bindings: Map[String, MatchingPair],
                      predicates: Seq[Predicate],
                      includeOptionals: Boolean,
                      source:ExecutionContext,
-                     state:QueryState)
+                     state:QueryState,
+                     identifiersInClause: Set[String])
   extends Traversable[ExecutionContext] {
-  val boundNodes = bindings.filter(_._2.patternElement.isInstanceOf[PatternNode])
-  val boundRels = bindings.filter(_._2.patternElement.isInstanceOf[PatternRelationship])
+  val boundNodes: Map[String, MatchingPair] = bindings.filter(_._2.patternElement.isInstanceOf[PatternNode])
+  val boundRels: Map[String, MatchingPair] = bindings.filter(_._2.patternElement.isInstanceOf[PatternRelationship])
 
-  def foreach[U](f: (ExecutionContext) => U) {
+  def foreach[U](f: ExecutionContext => U) {
     debug("startPatternMatching")
 
-    traverseNode(boundNodes.values.toSet, new InitialHistory(source), f)
+    traverseNode(boundNodes.values.toSet, createInitialHistory, f)
+  }
+
+
+  def createInitialHistory: InitialHistory = {
+
+    val relationshipsInContextButNotInPattern = source.collect {
+      case (key, r: Relationship) if !boundRels.contains(key) && identifiersInClause.contains(key) => r
+    }.toSeq
+
+    new InitialHistory(source, relationshipsInContextButNotInPattern)
   }
 
   protected def traverseNextSpecificNode[U](remaining: Set[MatchingPair],
@@ -62,9 +72,9 @@ class PatternMatcher(bindings: Map[String, MatchingPair],
     val notYetVisited: List[PatternRelationship] = getPatternRelationshipsNotYetVisited(current.patternNode, history)
 
     notYetVisited match {
-      case List() => traverseNextNodeOrYield(remaining - current, newHistory, yielder)
+      case List()       => traverseNextNodeOrYield(remaining - current, newHistory, yielder)
       case List(single) => traverseRelationship(current, single, newHistory, remaining - current, yielder)
-      case _ => traverseRelationship(current, notYetVisited.head, newHistory, remaining, yielder)
+      case _            => traverseRelationship(current, notYetVisited.head, newHistory, remaining, yielder)
     }
   }
 
@@ -72,9 +82,17 @@ class PatternMatcher(bindings: Map[String, MatchingPair],
                               history: History,
                               yielder: ExecutionContext => U): Boolean = {
 
-    val current = remaining.head
+    val current: MatchingPair = remaining.head
 
-    traverseNextSpecificNode(remaining, history, yielder, current, alreadyInExtraWork = false)
+    val currentNodeId = current.entity.asInstanceOf[Node].getId
+    val expectedLabels: Seq[Option[Int]] = current.patternNode.labels.map(_.getOptId(state.query))
+
+    val nodeHasLabels = expectedLabels.forall {
+      case None          => false
+      case Some(labelId) => state.query.isLabelSetOnNode(labelId, currentNodeId)
+    }
+
+    nodeHasLabels && traverseNextSpecificNode(remaining, history, yielder, current, alreadyInExtraWork = false)
   }
 
   private def traverseNextNodeFromRelationship[U](rel: GraphRelationship,
@@ -137,7 +155,9 @@ class PatternMatcher(bindings: Map[String, MatchingPair],
     val (pNode, gNode) = currentNode.getPatternAndGraphPoint
 
     val relationships = currentNode.getGraphRelationships(currentRel, state.query)
-    val step1 = history.filter(relationships)
+
+    val step1 = history.removeSeen(relationships)
+
     val notVisitedRelationships: Seq[GraphRelationship] = step1.
       filter(x => alreadyPinned(currentRel, x))
 
@@ -187,7 +207,7 @@ class PatternMatcher(bindings: Map[String, MatchingPair],
   }
 
   private def getPatternRelationshipsNotYetVisited[U](patternNode: PatternNode, history: History): List[PatternRelationship] =
-    history.filter(patternNode.relationships,includeOptionals).toList
+    history.removeSeen(patternNode.relationships, includeOptionals).toList
 
   protected val isDebugging = false
 

@@ -22,7 +22,6 @@ package org.neo4j.desktop.ui;
 import java.awt.CardLayout;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
-
 import javax.swing.JFrame;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -31,17 +30,20 @@ import javax.swing.JTextArea;
 import static javax.swing.WindowConstants.HIDE_ON_CLOSE;
 
 /**
- * Useful for debugging purposes where when created will steal the System.out/err streams and
- * make the data that gets written to them available when {@link #show() showing} the window.
- * It's an easy way to get access to that data in an environment where java is run without a console
- * to back it up.
- * 
- * Should not be used in a final released product.
+ * Useful for debugging purposes: an easy way to get access to that data in an environment where java is run without
+ * a console.
+ *
+ * When created will tee the System.out/err streams and pipe them into an <b>unbounded</b> byte array.
  */
 public class SystemOutDebugWindow
 {
-    private final ByteArrayOutputStream sysout = new ByteArrayOutputStream();
-    private PrintStream sysoutPrinter;
+    private static final int START_X = 100;
+    private static final int START_Y = 100;
+    private static final int START_WIDTH = 600;
+    private static final int START_HEIGHT = 800;
+
+    private final ByteArrayOutputStream sysStreamCapture = new ByteArrayOutputStream();
+    private PrintStream sysStreamPrinter;
     private JFrame frame;
     private JTextArea text;
 
@@ -53,8 +55,9 @@ public class SystemOutDebugWindow
 
     private void stealSystemOut()
     {
-        System.setOut( sysoutPrinter = new PrintStream( sysout ) );
-        System.setErr( sysoutPrinter );
+        sysStreamPrinter = new PrintStream( new TeeOutputStream( System.out, sysStreamCapture ) );
+        System.setOut( sysStreamPrinter );
+        System.setErr( sysStreamPrinter );
     }
     
     private void init()
@@ -62,21 +65,22 @@ public class SystemOutDebugWindow
         frame = new JFrame( "Debug" );
         JPanel panel = new JPanel();
         panel.setLayout( new CardLayout() );
-        
-        sysoutPrinter.flush();
-        panel.add( text = new JTextArea() );
+
+        sysStreamPrinter.flush();
+        text = new JTextArea();
+        panel.add( "status", text );
         frame.add( new JScrollPane( panel ) );
         
         frame.pack();
-        frame.setBounds( 100, 100, 600, 800 );
+        frame.setBounds( START_X, START_Y, START_WIDTH, START_HEIGHT );
         frame.setVisible( false );
         frame.setDefaultCloseOperation( HIDE_ON_CLOSE );
     }
 
     public void show()
     {
-        sysoutPrinter.flush();
-        text.setText( sysout.toString() );
+        sysStreamPrinter.flush();
+        text.setText( sysStreamCapture.toString() );
         frame.setVisible( true );
     }
 

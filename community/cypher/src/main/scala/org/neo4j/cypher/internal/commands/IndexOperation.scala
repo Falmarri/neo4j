@@ -21,8 +21,6 @@ package org.neo4j.cypher.internal.commands
 
 import org.neo4j.cypher.InvalidSemanticsException
 
-trait SchemaQueries
-
 sealed abstract class IndexOperation extends AbstractQuery {
   val label: String
 }

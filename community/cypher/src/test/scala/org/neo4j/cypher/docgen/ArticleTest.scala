@@ -32,6 +32,9 @@ import org.neo4j.test.{ImpermanentGraphDatabase, TestGraphDatabaseFactory, Graph
 import org.scalatest.Assertions
 import org.neo4j.test.AsciiDocGenerator
 import org.neo4j.kernel.GraphDatabaseAPI
+import org.neo4j.cypher.internal.CypherParser
+import org.neo4j.cypher.internal.prettifier.Prettifier
+import org.neo4j.tooling.GlobalGraphOperations
 
 /*
 Use this base class for tests that are more flowing text with queries intersected in the middle of the text.
@@ -39,7 +42,7 @@ Use this base class for tests that are more flowing text with queries intersecte
 abstract class ArticleTest extends Assertions with DocumentationHelper {
 
   var db: GraphDatabaseAPI = null
-  val parser: CypherParser = new CypherParser
+  val parser: CypherParser = CypherParser()
   implicit var engine: ExecutionEngine = null
   var nodes: Map[String, Long] = null
   var nodeIndex: Index[Node] = null
@@ -56,7 +59,6 @@ abstract class ArticleTest extends Assertions with DocumentationHelper {
   
   def executeQuery(queryText: String)(implicit engine: ExecutionEngine): ExecutionResult = try {
     val result = engine.execute(replaceNodeIds(queryText))
-    result.toList //Let's materialize the result
     result.dumpToString()
     result
   } catch {
@@ -123,28 +125,40 @@ abstract class ArticleTest extends Assertions with DocumentationHelper {
 
 
   def runQuery(emptyGraph: Boolean, query: String, possibleAssertion: Seq[String]): String = {
-    val result = if (emptyGraph) {
-      val db = new ImpermanentGraphDatabase()
-      val engine = new ExecutionEngine(db)
-      val result = executeQuery(query)(engine)
-      db.shutdown()
-      result
+
+    def testAssertions(result:ExecutionResult) {
+      possibleAssertion.foreach(name => assert(name, result) )
     }
-    else
-      executeQuery(query)
 
-    possibleAssertion.foreach(name => {
+    if (emptyGraph) {
+      val db = new ImpermanentGraphDatabase()
       try {
-        assert(name, result)
-      } catch {
-        case e:Exception => throw new RuntimeException("Test: %s\n%s".format(name, e.getMessage), e)
-      }
-    })
+        val engine = new ExecutionEngine(db)
 
-    result.dumpToString()
+        val tx: Transaction = db.beginTx()
+        val result = executeQuery(query)(engine)
+        testAssertions(result)
+        tx.failure()
+        tx.finish()
+
+        executeQuery(query)(engine).dumpToString()
+      } finally {
+        db.shutdown()
+      }
+    }
+    else {
+      val tx: Transaction = db.beginTx()
+      val result = executeQuery(query)
+      testAssertions(result)
+      tx.failure()
+      tx.finish()
+
+      executeQuery(query).dumpToString()
+    }
   }
 
   private def consoleSnippet(query: String, empty: Boolean): String = {
+    val prettifiedQuery = Prettifier(query)
     if (generateConsole) {
       val create = if (!empty) {
         db.inTx {
@@ -159,7 +173,7 @@ abstract class ArticleTest extends Assertions with DocumentationHelper {
 
 %s
 ----
-""".format(create, query)
+""".format(create, prettifiedQuery)
     } else ""
   }
 
@@ -236,7 +250,7 @@ abstract class ArticleTest extends Assertions with DocumentationHelper {
         case (name, node) => name -> node.getId
       }.toMap
 
-      db.getAllNodes.asScala.foreach((n) => {
+      GlobalGraphOperations.at(db).getAllNodes.asScala.foreach((n) => {
         indexProperties(n, nodeIndex)
         n.getRelationships(Direction.OUTGOING).asScala.foreach(indexProperties(_, relIndex))
       })

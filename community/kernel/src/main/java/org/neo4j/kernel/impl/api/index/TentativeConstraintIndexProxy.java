@@ -28,7 +28,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.neo4j.kernel.api.constraints.UniquenessConstraint;
 import org.neo4j.kernel.api.exceptions.index.IndexNotFoundKernelException;
-import org.neo4j.kernel.api.exceptions.index.IndexPopulationFailedKernelException;
 import org.neo4j.kernel.api.index.IndexEntryConflictException;
 import org.neo4j.kernel.api.index.IndexReader;
 import org.neo4j.kernel.api.index.InternalIndexState;
@@ -39,8 +38,7 @@ public class TentativeConstraintIndexProxy extends AbstractDelegatingIndexProxy
 {
     private final FlippableIndexProxy flipper;
     private final OnlineIndexProxy target;
-    private final Collection<IndexEntryConflictException> failures =
-            new CopyOnWriteArrayList<IndexEntryConflictException>();
+    private final Collection<IndexEntryConflictException> failures = new CopyOnWriteArrayList<IndexEntryConflictException>();
 
     public TentativeConstraintIndexProxy( FlippableIndexProxy flipper, OnlineIndexProxy target )
     {
@@ -86,7 +84,7 @@ public class TentativeConstraintIndexProxy extends AbstractDelegatingIndexProxy
     }
 
     @Override
-    public void validate() throws IndexPopulationFailedKernelException
+    public void validate() throws ConstraintVerificationFailedKernelException
     {
         Iterator<IndexEntryConflictException> iterator = failures.iterator();
         if ( iterator.hasNext() )
@@ -98,8 +96,8 @@ public class TentativeConstraintIndexProxy extends AbstractDelegatingIndexProxy
                 evidence.add( new ConstraintVerificationFailedKernelException.Evidence( iterator.next() ) );
             } while ( iterator.hasNext() );
             IndexDescriptor descriptor = getDescriptor();
-            throw new IndexPopulationFailedKernelException( descriptor, new ConstraintVerificationFailedKernelException(
-                    new UniquenessConstraint( descriptor.getLabelId(), descriptor.getPropertyKeyId() ), evidence ) );
+            throw new ConstraintVerificationFailedKernelException(
+                    new UniquenessConstraint( descriptor.getLabelId(), descriptor.getPropertyKeyId() ), evidence );
         }
     }
 

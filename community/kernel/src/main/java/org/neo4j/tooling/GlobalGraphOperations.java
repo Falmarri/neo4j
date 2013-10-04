@@ -33,9 +33,8 @@ import org.neo4j.helpers.Function;
 import org.neo4j.helpers.FunctionFromPrimitiveLong;
 import org.neo4j.kernel.GraphDatabaseAPI;
 import org.neo4j.kernel.ThreadToStatementContextBridge;
-import org.neo4j.kernel.api.StatementOperationParts;
-import org.neo4j.kernel.api.exceptions.LabelNotFoundKernelException;
-import org.neo4j.kernel.api.operations.StatementState;
+import org.neo4j.kernel.api.Statement;
+import org.neo4j.kernel.api.operations.KeyReadOperations;
 import org.neo4j.kernel.impl.api.PrimitiveLongIterator;
 import org.neo4j.kernel.impl.cleanup.CleanupService;
 import org.neo4j.kernel.impl.core.NodeManager;
@@ -65,7 +64,7 @@ public class GlobalGraphOperations
 
     /**
      * Get a {@link GlobalGraphOperations} for the given {@code db}.
-     * 
+     *
      * @param db the {@link GraphDatabaseService} to get global operations for.
      * @return {@link GlobalGraphOperations} for the given {@code db}.
      */
@@ -76,7 +75,7 @@ public class GlobalGraphOperations
 
     /**
      * Returns all nodes in the graph.
-     * 
+     *
      * @return all nodes in the graph.
      */
     public Iterable<Node> getAllNodes()
@@ -94,7 +93,7 @@ public class GlobalGraphOperations
 
     /**
      * Returns all relationships in the graph.
-     * 
+     *
      * @return all relationships in the graph.
      */
     public Iterable<Relationship> getAllRelationships()
@@ -117,7 +116,7 @@ public class GlobalGraphOperations
      * guaranteed to return all known relationship types, but it does not guarantee that it won't
      * return <i>more</i> than that (e.g. it can return "historic" relationship types that no longer
      * have any relationships in the graph).
-     * 
+     *
      * @return all relationship types in the underlying store
      */
     public Iterable<RelationshipType> getAllRelationshipTypes()
@@ -145,20 +144,51 @@ public class GlobalGraphOperations
             @Override
             public ResourceIterator<Label> iterator()
             {
-                StatementOperationParts ctx = statementCtxProvider.getCtxForReading();
-                StatementState state = statementCtxProvider.statementForReading();
-                return cleanupService.resourceIterator( map( new Function<Token, Label>() {
+                Statement statement = statementCtxProvider.statement();
+                return cleanupService.resourceIterator( map( new Function<Token, Label>()
+                {
 
                     @Override
                     public Label apply( Token labelToken )
                     {
                         return label( labelToken.name() );
                     }
-                }, ctx.keyReadOperations().labelsGetAllTokens( state ) ), state );
+                }, statement.readOperations().labelsGetAllTokens() ), statement );
             }
         };
     }
-    
+
+    /**
+     * Returns all property keys currently in the underlying store. This method guarantees that it will return all
+     * property keys currently in use. However, it may also return <i>more</i> than that (e.g. it can return "historic"
+     * labels that are no longer used).
+     *
+     * Please take care that the returned {@link ResourceIterable} is closed correctly and as soon as possible
+     * inside your transaction to avoid potential blocking of write operations.
+     *
+     * @return all labels in the underlying store.
+     */
+    public ResourceIterable<String> getAllPropertyKeys()
+    {
+        assertInTransaction();
+        return new ResourceIterable<String>()
+        {
+            @Override
+            public ResourceIterator<String> iterator()
+            {
+                Statement statement = statementCtxProvider.statement();
+                return cleanupService.resourceIterator( map( new Function<Token, String>() {
+
+                    @Override
+                    public String apply( Token propertyToken )
+                    {
+                        return propertyToken.name();
+                    }
+                }, statement.readOperations().propertyKeyGetAllTokens() ), statement );
+            }
+        };
+    }
+
     /**
      * Returns all {@link Node nodes} with a specific {@link Label label}.
      *
@@ -183,27 +213,24 @@ public class GlobalGraphOperations
 
     private ResourceIterator<Node> allNodesWithLabel( String label )
     {
-        StatementOperationParts context = statementCtxProvider.getCtxForReading();
-        StatementState state = statementCtxProvider.statementForReading();
-        try
+        Statement statement = statementCtxProvider.statement();
+
+        int labelId = statement.readOperations().labelGetForName( label );
+        if ( labelId == KeyReadOperations.NO_SUCH_LABEL )
         {
-            long labelId = context.keyReadOperations().labelGetForName( state, label );
-            final PrimitiveLongIterator nodeIds = context.entityReadOperations().nodesGetForLabel( state, labelId );
-            return cleanupService.resourceIterator( map( new FunctionFromPrimitiveLong<Node>()
-            {
-                @Override
-                public Node apply( long nodeId )
-                {
-                    return nodeManager.getNodeById( nodeId );
-                }
-            }, nodeIds ), state );
-        }
-        catch ( LabelNotFoundKernelException e )
-        {
-            // That label hasn't been created yet, there cannot possibly be any nodes labeled with it
-            state.close();
+            statement.close();
             return emptyIterator();
         }
+
+        final PrimitiveLongIterator nodeIds = statement.readOperations().nodesGetForLabel( labelId );
+        return cleanupService.resourceIterator( map( new FunctionFromPrimitiveLong<Node>()
+        {
+            @Override
+            public Node apply( long nodeId )
+            {
+                return nodeManager.getNodeById( nodeId );
+            }
+        }, nodeIds ), statement );
     }
 
     private void assertInTransaction()

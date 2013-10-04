@@ -22,6 +22,7 @@ package org.neo4j.kernel.impl.api.index;
 import java.io.IOException;
 import java.util.concurrent.Future;
 
+import org.neo4j.kernel.api.exceptions.index.IndexActivationFailedKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexNotFoundKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexPopulationFailedKernelException;
 import org.neo4j.kernel.api.index.IndexPopulator;
@@ -33,6 +34,7 @@ import org.neo4j.kernel.impl.api.UpdateableSchemaState;
 import org.neo4j.kernel.impl.util.JobScheduler;
 import org.neo4j.kernel.logging.Logging;
 
+
 public class PopulatingIndexProxy implements IndexProxy
 {
     private final JobScheduler scheduler;
@@ -41,17 +43,20 @@ public class PopulatingIndexProxy implements IndexProxy
     private final IndexPopulationJob job;
 
     public PopulatingIndexProxy( JobScheduler scheduler,
-                                 IndexDescriptor descriptor, SchemaIndexProvider.Descriptor providerDescriptor,
-                                 IndexPopulator writer,
-                                 FlippableIndexProxy flipper, IndexStoreView storeView,
+                                 final IndexDescriptor descriptor,
+                                 final SchemaIndexProvider.Descriptor providerDescriptor,
+                                 final FailedIndexProxyFactory failureDelegateFactory,
+                                 final IndexPopulator writer,
+                                 FlippableIndexProxy flipper,
+                                 IndexStoreView storeView, final String indexUserDescription,
                                  UpdateableSchemaState updateableSchemaState, Logging logging )
     {
         this.scheduler  = scheduler;
         this.descriptor = descriptor;
         this.providerDescriptor = providerDescriptor;
-
         this.job  = new IndexPopulationJob( descriptor, providerDescriptor,
-                                            writer, flipper, storeView, updateableSchemaState, logging );
+                indexUserDescription, failureDelegateFactory, writer, flipper, storeView,
+                updateableSchemaState, logging );
     }
 
     @Override
@@ -122,9 +127,9 @@ public class PopulatingIndexProxy implements IndexProxy
     }
 
     @Override
-    public void activate()
+    public void activate() throws IndexActivationFailedKernelException
     {
-        throw new UnsupportedOperationException( "Cannot activate a populating index." );
+        throw new IllegalStateException( "Cannot activate index while it is still populating." );
     }
 
     @Override

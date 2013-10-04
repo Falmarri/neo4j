@@ -24,14 +24,13 @@ import org.neo4j.cypher.internal.commands.expressions.Expression
 import org.neo4j.cypher.internal.ExecutionContext
 import org.neo4j.cypher.internal.pipes.QueryState
 
-
 class CollectFunction(value:Expression) extends AggregationFunction {
   val collection = new ListBuffer[Any]()
 
   def apply(data: ExecutionContext)(implicit state:QueryState) {
-    val v = value(data)
-    if (v != null) {
-      collection += v
+    value(data) match {
+      case null =>
+      case v    => collection += v
     }
   }
 

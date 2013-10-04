@@ -19,12 +19,6 @@
  */
 package org.neo4j.com;
 
-import static org.neo4j.com.DechunkingChannelBuffer.assertSameProtocolVersion;
-import static org.neo4j.com.Protocol.addLengthFieldPipes;
-import static org.neo4j.com.Protocol.assertChunkSizeIsWithinFrameSize;
-import static org.neo4j.com.Protocol.readString;
-import static org.neo4j.com.Protocol.writeString;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
@@ -57,7 +51,9 @@ import org.jboss.netty.channel.WriteCompletionEvent;
 import org.jboss.netty.channel.group.ChannelGroup;
 import org.jboss.netty.channel.group.DefaultChannelGroup;
 import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
+
 import org.neo4j.com.RequestContext.Tx;
+import org.neo4j.helpers.Clock;
 import org.neo4j.helpers.Exceptions;
 import org.neo4j.helpers.HostnamePort;
 import org.neo4j.helpers.NamedThreadFactory;
@@ -69,7 +65,12 @@ import org.neo4j.kernel.impl.nioneo.xa.NeoStoreXaDataSource;
 import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.kernel.lifecycle.Lifecycle;
 import org.neo4j.kernel.logging.Logging;
-import org.neo4j.tooling.Clock;
+
+import static org.neo4j.com.DechunkingChannelBuffer.assertSameProtocolVersion;
+import static org.neo4j.com.Protocol.addLengthFieldPipes;
+import static org.neo4j.com.Protocol.assertChunkSizeIsWithinFrameSize;
+import static org.neo4j.com.Protocol.readString;
+import static org.neo4j.com.Protocol.writeString;
 
 /**
  * Receives requests from {@link Client clients}. Delegates actual work to an instance
@@ -104,7 +105,6 @@ public abstract class Server<T, R> implements ChannelPipelineFactory, Lifecycle
     }
 
     static final byte INTERNAL_PROTOCOL_VERSION = 2;
-    public static final int DEFAULT_BACKUP_PORT = 6362;
 
     // It's ok if there are more transactions, since these worker threads doesn't
     // do any actual work themselves, but spawn off other worker threads doing the
@@ -383,11 +383,8 @@ public abstract class Server<T, R> implements ChannelPipelineFactory, Lifecycle
 
     protected void tryToFinishOffChannel( Channel channel )
     {
-        Pair<RequestContext, AtomicLong> slave;
-        synchronized ( connectedSlaveChannels )
-        {
-            slave = connectedSlaveChannels.remove( channel );
-        }
+        Pair<RequestContext, AtomicLong> slave = null;
+        slave = unmapSlave( channel );
         if ( slave == null )
         {
             return;
@@ -567,6 +564,7 @@ public abstract class Server<T, R> implements ChannelPipelineFactory, Lifecycle
                 Response<R> response = null;
                 try
                 {
+                    unmapSlave( channel );
                     response = type.getTargetCaller().call( requestTarget, context, bufferToReadFrom, targetBuffer );
                     type.getObjectSerializer().write( response.response(), targetBuffer );
                     writeStoreId( response.getStoreId(), targetBuffer );
@@ -587,7 +585,6 @@ public abstract class Server<T, R> implements ChannelPipelineFactory, Lifecycle
                     {
                         response.close();
                     }
-                    unmapSlave( channel );
                 }
             }
         };
@@ -705,11 +702,11 @@ public abstract class Server<T, R> implements ChannelPipelineFactory, Lifecycle
         return ChannelBuffers.dynamicBuffer();
     }
 
-    protected void unmapSlave( Channel channel )
+    protected Pair<RequestContext, AtomicLong> unmapSlave( Channel channel )
     {
         synchronized ( connectedSlaveChannels )
         {
-            connectedSlaveChannels.remove( channel );
+            return connectedSlaveChannels.remove( channel );
         }
     }
 

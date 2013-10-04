@@ -26,33 +26,40 @@ import org.neo4j.kernel.api.index.InternalIndexState
 import org.neo4j.kernel.impl.api.index.IndexDescriptor
 import org.neo4j.kernel.api.constraints.UniquenessConstraint
 import org.neo4j.kernel.api.exceptions.KernelException
-import org.neo4j.kernel.api.operations.StatementState
-import org.neo4j.kernel.api.StatementOperations
-import org.neo4j.kernel.api.StatementOperationParts
-import org.neo4j.kernel.api.operations.KeyReadOperations
-import org.neo4j.kernel.api.operations.SchemaReadOperations
+import org.neo4j.kernel.api.Statement
+import org.neo4j.kernel.api.exceptions.schema.SchemaRuleNotFoundException
 
-class TransactionBoundPlanContext(keyReadOps: KeyReadOperations, schemaReadOps: SchemaReadOperations, state: StatementState, gdb:GraphDatabaseService)
-  extends TransactionBoundTokenContext(keyReadOps, state) with PlanContext {
+class TransactionBoundPlanContext(statement:Statement, gdb:GraphDatabaseService)
+  extends TransactionBoundTokenContext(statement) with PlanContext {
 
-  def getIndexRule(labelName: String, propertyKey: String): Option[IndexDescriptor] = try {
-    val labelId = keyReadOps.labelGetForName(state, labelName)
-    val propertyKeyId = keyReadOps.propertyKeyGetForName(state, propertyKey)
+  def getIndexRule(labelName: String, propertyKey: String): Option[IndexDescriptor] = evalOrNone {
+    val labelId = statement.readOperations().labelGetForName(labelName)
+    val propertyKeyId = statement.readOperations().propertyKeyGetForName(propertyKey)
 
-    val rule = schemaReadOps.indexesGetForLabelAndPropertyKey(state, labelId, propertyKeyId)
-    schemaReadOps.indexGetState(state, rule) match {
-      case InternalIndexState.ONLINE => Some(rule)
-      case _                         => None
-    }
-  } catch {
-    case _: KernelException => None
+    getOnlineIndex(statement.readOperations().indexesGetForLabelAndPropertyKey(labelId, propertyKeyId))
   }
 
-  def getUniquenessConstraint(labelName: String, propertyKey: String): Option[UniquenessConstraint] = try {
-    val labelId = keyReadOps.labelGetForName(state, labelName)
-    val propertyKeyId = keyReadOps.propertyKeyGetForName(state, propertyKey)
+  def getUniqueIndexRule(labelName: String, propertyKey: String): Option[IndexDescriptor] = evalOrNone {
+    val labelId = statement.readOperations().labelGetForName(labelName)
+    val propertyKeyId = statement.readOperations().propertyKeyGetForName(propertyKey)
 
-    val matchingConstraints = schemaReadOps.constraintsGetForLabelAndPropertyKey(state, labelId, propertyKeyId)
+    getOnlineIndex(statement.readOperations().uniqueIndexGetForLabelAndPropertyKey(labelId, propertyKeyId))
+  }
+
+  private def evalOrNone[T](f: => Option[T]): Option[T] =
+    try { f } catch { case _: SchemaRuleNotFoundException => None }
+
+  private def getOnlineIndex(descriptor: IndexDescriptor): Option[IndexDescriptor] =
+    statement.readOperations().indexGetState(descriptor) match {
+      case InternalIndexState.ONLINE => Some(descriptor)
+      case _                         => None
+    }
+
+  def getUniquenessConstraint(labelName: String, propertyKey: String): Option[UniquenessConstraint] = try {
+    val labelId = statement.readOperations().labelGetForName(labelName)
+    val propertyKeyId = statement.readOperations().propertyKeyGetForName(propertyKey)
+
+    val matchingConstraints = statement.readOperations().constraintsGetForLabelAndPropertyKey(labelId, propertyKeyId)
     if ( matchingConstraints.hasNext ) Some(matchingConstraints.next()) else None
   } catch {
     case _: KernelException => None

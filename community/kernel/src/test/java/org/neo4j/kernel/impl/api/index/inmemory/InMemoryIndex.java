@@ -24,46 +24,110 @@ import java.io.IOException;
 import org.neo4j.kernel.api.index.IndexAccessor;
 import org.neo4j.kernel.api.index.IndexEntryConflictException;
 import org.neo4j.kernel.api.index.IndexPopulator;
+import org.neo4j.kernel.api.index.IndexReader;
 import org.neo4j.kernel.api.index.InternalIndexState;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
+import org.neo4j.kernel.impl.api.PrimitiveLongIterator;
 
-abstract class InMemoryIndex
+import static java.lang.Boolean.getBoolean;
+
+class InMemoryIndex
 {
+    private final InMemoryIndexImplementation indexData =
+            getBoolean( "neo4j.index.in_memory.USE_HASH" ) ? new HashBasedIndex() : new ListBasedIndex();
     private InternalIndexState state = InternalIndexState.POPULATING;
     String failure;
 
-    abstract IndexPopulator getPopulator();
+    @Override
+    public String toString()
+    {
+        if ( failure != null )
+        {
+            return String.format( "%s[failure=\"%s\"]%s", getClass().getSimpleName(), failure, indexData );
+        }
+        else
+        {
+            return String.format( "%s%s", getClass().getSimpleName(), indexData );
+        }
+    }
 
-    abstract IndexAccessor getOnlineAccessor();
+    final IndexPopulator getPopulator()
+    {
+        return new Populator();
+    }
 
-    abstract void add( long nodeId, Object propertyValue ) throws IndexEntryConflictException, IOException;
+    final IndexAccessor getOnlineAccessor()
+    {
+        return new OnlineAccessor();
+    }
 
-    abstract void remove( long nodeId, Object propertyValue );
+    protected final PrimitiveLongIterator lookup( Object propertyValue )
+    {
+        return indexData.lookup( propertyValue );
+    }
 
-    protected abstract class Populator implements IndexPopulator
+    protected void add( long nodeId, Object propertyValue, boolean applyIdempotently ) throws IndexEntryConflictException, IOException
+    {
+        indexData.add( nodeId, propertyValue, applyIdempotently );
+    }
+
+    protected void remove( long nodeId, Object propertyValue )
+    {
+        indexData.remove( nodeId, propertyValue );
+    }
+
+    protected void update( Iterable<NodePropertyUpdate> updates, boolean applyIdempotently )
+            throws IndexEntryConflictException, IOException
+    {
+        for ( NodePropertyUpdate update : updates )
+        {
+            switch ( update.getUpdateMode() )
+            {
+            case ADDED:
+                add( update.getNodeId(), update.getValueAfter(), applyIdempotently );
+                break;
+            case CHANGED:
+                remove( update.getNodeId(), update.getValueBefore() );
+                add( update.getNodeId(), update.getValueAfter(), applyIdempotently );
+                break;
+            case REMOVED:
+                remove( update.getNodeId(), update.getValueBefore() );
+                break;
+            default:
+                throw new UnsupportedOperationException();
+            }
+        }
+    }
+
+    InternalIndexState getState()
+    {
+        return state;
+    }
+
+    private class Populator implements IndexPopulator
     {
         @Override
         public void create()
         {
-            clear();
+            indexData.clear();
         }
 
         @Override
         public void add( long nodeId, Object propertyValue ) throws IndexEntryConflictException, IOException
         {
-            InMemoryIndex.this.add( nodeId, propertyValue );
+            InMemoryIndex.this.add( nodeId, propertyValue, false );
         }
 
         @Override
         public void update( Iterable<NodePropertyUpdate> updates ) throws IndexEntryConflictException, IOException
         {
-            InMemoryIndex.this.update( updates );
+            InMemoryIndex.this.update( updates, true );
         }
 
         @Override
         public void drop() throws IOException
         {
-            InMemoryIndex.this.drop();
+            indexData.clear();
         }
 
         @Override
@@ -74,7 +138,7 @@ abstract class InMemoryIndex
                 state = InternalIndexState.ONLINE;
             }
         }
-        
+
         @Override
         public void markAsFailed( String failureString )
         {
@@ -83,19 +147,26 @@ abstract class InMemoryIndex
         }
     }
 
-    protected abstract class OnlineAccessor implements IndexAccessor
+    private class OnlineAccessor implements IndexAccessor
     {
         @Override
         public void recover( Iterable<NodePropertyUpdate> updates ) throws IOException
         {
-            InMemoryIndex.this.recover( updates );
+            try
+            {
+                update( updates, true );
+            }
+            catch ( IndexEntryConflictException e )
+            {
+                throw new IllegalStateException( "Should not report index entry conflicts during recovery!", e );
+            }
         }
 
         @Override
         public void updateAndCommit( Iterable<NodePropertyUpdate> updates )
                 throws IOException, IndexEntryConflictException
         {
-            InMemoryIndex.this.update( updates );
+            InMemoryIndex.this.update( updates, false );
         }
 
         @Override
@@ -106,59 +177,18 @@ abstract class InMemoryIndex
         @Override
         public void drop() throws IOException
         {
-            InMemoryIndex.this.drop();
+            indexData.clear();
         }
 
         @Override
         public void close() throws IOException
         {
         }
-    }
 
-    protected void update( Iterable<NodePropertyUpdate> updates ) throws IndexEntryConflictException, IOException
-    {
-        for ( NodePropertyUpdate update : updates )
+        @Override
+        public IndexReader newReader()
         {
-            switch ( update.getUpdateMode() )
-            {
-                case ADDED:
-                    add( update.getNodeId(), update.getValueAfter() );
-                    break;
-                case CHANGED:
-                    remove( update.getNodeId(), update.getValueBefore() );
-                    add( update.getNodeId(), update.getValueAfter() );
-                    break;
-                case REMOVED:
-                    remove( update.getNodeId(), update.getValueBefore() );
-                    break;
-                default:
-                    throw new UnsupportedOperationException();
-            }
+            return indexData;
         }
-    }
-
-
-    protected void drop()
-    {
-        clear();
-    }
-
-    protected void recover( Iterable<NodePropertyUpdate> updates ) throws IOException
-    {
-        try
-        {
-            update( updates );
-        }
-        catch ( IndexEntryConflictException e )
-        {
-            throw new IllegalStateException( "Should not report index entry conflicts during recovery!", e );
-        }
-    }
-
-    abstract void clear();
-
-    InternalIndexState getState()
-    {
-        return state;
     }
 }

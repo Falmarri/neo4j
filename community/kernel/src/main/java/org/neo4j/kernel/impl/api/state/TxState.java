@@ -19,20 +19,17 @@
  */
 package org.neo4j.kernel.impl.api.state;
 
+import java.util.Map;
 import java.util.Set;
 
 import org.neo4j.kernel.api.constraints.UniquenessConstraint;
-import org.neo4j.kernel.api.exceptions.EntityNotFoundException;
-import org.neo4j.kernel.api.exceptions.PropertyNotFoundException;
+import org.neo4j.kernel.api.properties.DefinedProperty;
 import org.neo4j.kernel.api.properties.Property;
 import org.neo4j.kernel.impl.api.DiffSets;
 import org.neo4j.kernel.impl.api.index.IndexDescriptor;
 
 /**
  * Kernel transaction state
- *
- * This is instantiated lazily from {@link org.neo4j.kernel.impl.api.StateHandlingKernelTransaction} which
- * implements {@link TxState.Holder}
  *
  * The naming of methods in this class roughly follows the naming of {@link org.neo4j.kernel.api.StatementOperations}
  * with one exception: All transaction state mutators must include the particle "Do" in their name, e.g.
@@ -111,13 +108,13 @@ public interface TxState
 
     public interface Visitor
     {
-        void visitNodeLabelChanges( long id, Set<Long> added, Set<Long> removed );
+        void visitNodeLabelChanges( long id, Set<Integer> added, Set<Integer> removed );
 
         void visitAddedIndex( IndexDescriptor element, boolean isConstraintIndex );
 
         void visitRemovedIndex( IndexDescriptor element, boolean isConstraintIndex );
 
-        void visitAddedConstraint( UniquenessConstraint element, long indexId );
+        void visitAddedConstraint( UniquenessConstraint element );
 
         void visitRemovedConstraint( UniquenessConstraint element );
     }
@@ -131,25 +128,25 @@ public interface TxState
 
     public abstract Iterable<NodeState> nodeStates();
 
-    public abstract DiffSets<Long> labelStateNodeDiffSets( long labelId );
+    public abstract DiffSets<Long> labelStateNodeDiffSets( int labelId );
 
-    public abstract DiffSets<Long> nodeStateLabelDiffSets( long nodeId );
+    public abstract DiffSets<Integer> nodeStateLabelDiffSets( long nodeId );
 
-    public abstract DiffSets<Property> nodePropertyDiffSets( long nodeId );
+    public abstract DiffSets<DefinedProperty> nodePropertyDiffSets( long nodeId );
 
-    public abstract DiffSets<Property> relationshipPropertyDiffSets( long relationshipId );
+    public abstract DiffSets<DefinedProperty> relationshipPropertyDiffSets( long relationshipId );
 
-    public abstract DiffSets<Property> graphPropertyDiffSets();
+    public abstract DiffSets<DefinedProperty> graphPropertyDiffSets();
 
     /**
      * Returns all nodes that, in this tx, have had labelId added.
      */
-    public abstract Set<Long> nodesWithLabelAdded( long labelId );
+    public abstract Set<Long> nodesWithLabelAdded( int labelId );
 
     /**
      * Returns all nodes that, in this tx, have had labelId removed.
      */
-    public abstract DiffSets<Long> nodesWithLabelChanged( long labelId );
+    public abstract DiffSets<Long> nodesWithLabelChanged( int labelId );
 
     // Temporary: Should become DiffSets<Long> of all node changes, not just deletions
     public abstract DiffSets<Long> nodesDeletedInTx();
@@ -158,47 +155,44 @@ public interface TxState
 
     public abstract boolean nodeIsDeletedInThisTx( long nodeId );
 
-    public abstract DiffSets<Long> nodesWithChangedProperty( long propertyKeyId, Object value );
+    public abstract DiffSets<Long> nodesWithChangedProperty( int propertyKeyId, Object value );
+
+    public abstract Map<Long, Object> nodesWithChangedProperty( int propertyKeyId );
 
     public abstract boolean relationshipIsAddedInThisTx( long relationshipId );
 
     public abstract boolean relationshipIsDeletedInThisTx( long relationshipId );
 
-    public abstract UpdateTriState labelState( long nodeId, long labelId );
+    public abstract UpdateTriState labelState( long nodeId, int labelId );
 
     public abstract void relationshipDoDelete( long relationshipId );
 
     public abstract void nodeDoDelete( long nodeId );
 
-    public abstract void nodeDoReplaceProperty( long nodeId, Property replacedProperty, Property newProperty )
-            throws PropertyNotFoundException, EntityNotFoundException;
+    public abstract void nodeDoReplaceProperty( long nodeId, Property replacedProperty, DefinedProperty newProperty );
 
     public abstract void relationshipDoReplaceProperty( long relationshipId,
-                                                        Property replacedProperty, Property newProperty )
-            throws PropertyNotFoundException, EntityNotFoundException;
+                                                        Property replacedProperty, DefinedProperty newProperty );
 
-    public abstract void graphDoReplaceProperty( Property replacedProperty, Property newProperty )
-            throws PropertyNotFoundException;
+    public abstract void graphDoReplaceProperty( Property replacedProperty, DefinedProperty newProperty );
 
-    public abstract void nodeDoRemoveProperty( long nodeId, Property removedProperty ) throws PropertyNotFoundException,
-            EntityNotFoundException;
+    public abstract void nodeDoRemoveProperty( long nodeId, Property removedProperty );
 
-    public abstract void relationshipDoRemoveProperty( long relationshipId, Property removedProperty )
-            throws PropertyNotFoundException, EntityNotFoundException;
+    public abstract void relationshipDoRemoveProperty( long relationshipId, Property removedProperty );
 
-    public abstract void graphDoRemoveProperty( Property removedProperty ) throws PropertyNotFoundException;
+    public abstract void graphDoRemoveProperty( Property removedProperty );
 
-    public abstract void nodeDoAddLabel( long labelId, long nodeId );
+    public abstract void nodeDoAddLabel( int labelId, long nodeId );
 
-    public abstract void nodeDoRemoveLabel( long labelId, long nodeId );
+    public abstract void nodeDoRemoveLabel( int labelId, long nodeId );
 
 
 
     // SCHEMA RELATED
 
-    public abstract DiffSets<IndexDescriptor> indexDiffSetsByLabel( long labelId );
+    public abstract DiffSets<IndexDescriptor> indexDiffSetsByLabel( int labelId );
 
-    public abstract DiffSets<IndexDescriptor> constraintIndexDiffSetsByLabel( long labelId );
+    public abstract DiffSets<IndexDescriptor> constraintIndexDiffSetsByLabel( int labelId );
 
     public abstract DiffSets<IndexDescriptor> indexChanges();
 
@@ -208,10 +202,10 @@ public interface TxState
 
     public abstract DiffSets<UniquenessConstraint> constraintsChanges();
 
-    public abstract DiffSets<UniquenessConstraint> constraintsChangesForLabel( long labelId );
+    public abstract DiffSets<UniquenessConstraint> constraintsChangesForLabel( int labelId );
 
-    public abstract DiffSets<UniquenessConstraint> constraintsChangesForLabelAndProperty( long labelId,
-                                                                                          long propertyKey );
+    public abstract DiffSets<UniquenessConstraint> constraintsChangesForLabelAndProperty( int labelId,
+                                                                                          int propertyKey );
 
     public abstract void indexRuleDoAdd( IndexDescriptor descriptor );
 

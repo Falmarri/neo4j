@@ -21,6 +21,7 @@ package org.neo4j.kernel.impl.nioneo.xa;
 
 import java.util.List;
 
+import org.neo4j.kernel.api.scan.LabelScanStore;
 import org.neo4j.kernel.impl.api.index.IndexingService;
 import org.neo4j.kernel.impl.core.CacheAccessBackDoor;
 import org.neo4j.kernel.impl.core.TransactionState;
@@ -32,11 +33,13 @@ public class InterceptingWriteTransaction extends WriteTransaction
 {
     private final TransactionInterceptor interceptor;
 
-    InterceptingWriteTransaction( int identifier, XaLogicalLog log,
+    InterceptingWriteTransaction( int identifier, long lastCommittedTxWhenTransactionStarted, XaLogicalLog log,
                                   NeoStore neoStore, TransactionState state, CacheAccessBackDoor cacheAccess,
-                                  IndexingService indexingService, TransactionInterceptor interceptor )
+                                  IndexingService indexingService, LabelScanStore labelScanStore,
+                                  TransactionInterceptor interceptor, IntegrityValidator validator )
     {
-        super( identifier, log, state, neoStore, cacheAccess, indexingService );
+        super( identifier, lastCommittedTxWhenTransactionStarted, log, state, neoStore, cacheAccess, indexingService,
+                labelScanStore, validator );
         this.interceptor = interceptor;
     }
 

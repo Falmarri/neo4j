@@ -51,14 +51,14 @@ public class StoreFactory
         public static final Setting<Integer> array_block_size = GraphDatabaseSettings.array_block_size;
         public static final Setting<Integer> label_block_size = GraphDatabaseSettings.label_block_size;
     }
-    
+
     private final Config config;
     private final IdGeneratorFactory idGeneratorFactory;
     private final WindowPoolFactory windowPoolFactory;
     private final FileSystemAbstraction fileSystemAbstraction;
     private final StringLogger stringLogger;
     private final TxHook txHook;
-    
+
     public static final String LABELS_PART = ".labels";
     public static final String NAMES_PART = ".names";
     public static final String INDEX_PART = ".index";
@@ -79,7 +79,7 @@ public class StoreFactory
     public static final String LABEL_TOKEN_STORE_NAME = ".labeltokenstore.db";
     public static final String LABEL_TOKEN_NAMES_STORE_NAME = LABEL_TOKEN_STORE_NAME + NAMES_PART;
     public static final String SCHEMA_STORE_NAME = ".schemastore.db";
-    
+
     public StoreFactory( Config config, IdGeneratorFactory idGeneratorFactory, WindowPoolFactory windowPoolFactory,
                          FileSystemAbstraction fileSystemAbstraction, StringLogger stringLogger, TxHook txHook )
     {
@@ -99,7 +99,7 @@ public class StoreFactory
         boolean created = false;
         if ( !readOnly && !fileSystemAbstraction.fileExists( store ))
         {
-            stringLogger.logMessage( "Creating new db @ " + store, true );
+            stringLogger.info( "Creating new db @ " + store );
             fileSystemAbstraction.mkdirs( store.getParentFile() );
             createNeoStore( store ).close();
             created = true;
@@ -152,7 +152,7 @@ public class StoreFactory
         return new SchemaStore( file, config, IdType.SCHEMA, idGeneratorFactory, windowPoolFactory,
                 fileSystemAbstraction, stringLogger );
     }
-    
+
     private DynamicStringStore newDynamicStringStore(File fileName, IdType nameIdType)
     {
         return new DynamicStringStore( fileName, config, nameIdType, idGeneratorFactory, windowPoolFactory,
@@ -228,12 +228,15 @@ public class StoreFactory
         createRelationshipTypeStore(new File( fileName.getPath() + RELATIONSHIP_TYPE_TOKEN_STORE_NAME ));
         createLabelTokenStore( new File( fileName.getPath() + LABEL_TOKEN_STORE_NAME ) );
         createSchemaStore(new File( fileName.getPath() + SCHEMA_STORE_NAME));
-        
+
         NeoStore neoStore = newNeoStore( fileName );
         /*
         *  created time | random long | backup version | tx id | store version | next prop
         */
-        for ( int i = 0; i < 6; i++ ) neoStore.nextId();
+        for ( int i = 0; i < 6; i++ )
+        {
+            neoStore.nextId();
+        }
         neoStore.setCreationTime( storeId.getCreationTime() );
         neoStore.setRandomNumber( storeId.getRandomId() );
         neoStore.setVersion( 0 );
@@ -254,7 +257,7 @@ public class StoreFactory
     public void createNodeStore( File fileName )
     {
         createNodeLabelsStore( new File( fileName.getPath() + LABELS_PART ) );
-        
+
         createEmptyStore( fileName, buildTypeDescriptorAndVersion( NodeStore.TYPE_DESCRIPTOR ) );
         NodeStore store = newNodeStore( fileName );
         NodeRecord nodeRecord = new NodeRecord( store.nextId(), Record.NO_NEXT_RELATIONSHIP.intValue(), Record.NO_NEXT_PROPERTY.intValue() );
@@ -334,14 +337,14 @@ public class StoreFactory
     private void createPropertyKeyTokenStore( File fileName )
     {
         createEmptyStore( fileName, buildTypeDescriptorAndVersion( PropertyKeyTokenStore.TYPE_DESCRIPTOR ));
-        createDynamicStringStore(new File( fileName.getPath() + KEYS_PART), PropertyKeyTokenStore.NAME_STORE_BLOCK_SIZE, IdType.PROPERTY_KEY_TOKEN_NAME );
+        createDynamicStringStore(new File( fileName.getPath() + KEYS_PART), TokenStore.NAME_STORE_BLOCK_SIZE, IdType.PROPERTY_KEY_TOKEN_NAME );
     }
 
     public void createDynamicArrayStore( File fileName, int blockSize)
     {
         createEmptyDynamicStore(fileName, blockSize, DynamicArrayStore.VERSION, IdType.ARRAY_BLOCK);
     }
-    
+
     public void createSchemaStore( File fileName )
     {
         createEmptyDynamicStore( fileName, SchemaStore.BLOCK_SIZE, SchemaStore.VERSION, IdType.SCHEMA );

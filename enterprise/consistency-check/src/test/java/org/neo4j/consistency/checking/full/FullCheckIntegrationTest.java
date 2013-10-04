@@ -67,7 +67,7 @@ import static org.junit.Assert.assertTrue;
 import static org.neo4j.consistency.checking.RecordCheckTestBase.inUse;
 import static org.neo4j.consistency.checking.RecordCheckTestBase.notInUse;
 import static org.neo4j.consistency.checking.full.ExecutionOrderIntegrationTest.config;
-import static org.neo4j.helpers.collection.IteratorUtil.asIterator;
+import static org.neo4j.helpers.collection.IteratorUtil.iterator;
 import static org.neo4j.kernel.impl.nioneo.store.AbstractDynamicStore.readFullByteArrayFromHeavyRecords;
 import static org.neo4j.kernel.impl.nioneo.store.DynamicArrayStore.allocateFromNumbers;
 import static org.neo4j.kernel.impl.nioneo.store.DynamicArrayStore.getRightArray;
@@ -214,7 +214,7 @@ public class FullCheckIntegrationTest
                 NodeRecord nodeRecord = new NodeRecord( next.node(), -1, -1 );
                 DynamicRecord record = inUse( new DynamicRecord( next.nodeLabel() ) );
                 Collection<DynamicRecord> newRecords = allocateFromNumbers( new long[] { nodeRecord.getLongId(), 42l },
-                        asIterator( record ), new PreAllocatedRecords( 60 ) );
+                        iterator( record ), new PreAllocatedRecords( 60 ) );
                 nodeRecord.setLabelField( dynamicPointer( newRecords ), newRecords );
 
                 tx.create( nodeRecord );
@@ -257,7 +257,7 @@ public class FullCheckIntegrationTest
                 DynamicRecord record2 = notInUse( new DynamicRecord( chain.get( 1 ).getId() ) );
                 long[] data = (long[]) getRightArray( readFullByteArrayFromHeavyRecords( chain, ARRAY ) );
                 PreAllocatedRecords allocator = new PreAllocatedRecords( 60 );
-                allocateFromNumbers( Arrays.copyOf( data, 11 ), asIterator( record1 ), allocator );
+                allocateFromNumbers( Arrays.copyOf( data, 11 ), iterator( record1 ), allocator );
 
                 NodeRecord before = inUse( new NodeRecord( data[0], -1, -1 ) );
                 NodeRecord after = inUse( new NodeRecord( data[0], -1, -1 ) );
@@ -338,7 +338,7 @@ public class FullCheckIntegrationTest
                 labels[0] = nodeRecord.getLongId(); // the first id should not be a label id, but the id of the node
                 PreAllocatedRecords allocator = new PreAllocatedRecords( 60 );
                 chain.addAll( allocateFromNumbers(
-                        labels, asIterator( record1, record2, record3 ), allocator ) );
+                        labels, iterator( record1, record2, record3 ), allocator ) );
 
                 nodeRecord.setLabelField( dynamicPointer( chain ), chain );
 
@@ -363,7 +363,7 @@ public class FullCheckIntegrationTest
                 NodeRecord nodeRecord = new NodeRecord( next.node(), -1, -1 );
                 DynamicRecord record = inUse( new DynamicRecord( next.nodeLabel() ) );
                 Collection<DynamicRecord> newRecords = allocateFromNumbers( new long[] { nodeRecord.getLongId(), 42l, 42l },
-                        asIterator( record ), new PreAllocatedRecords( 60 ) );
+                        iterator( record ), new PreAllocatedRecords( 60 ) );
                 nodeRecord.setLabelField( dynamicPointer( newRecords ), newRecords );
 
                 tx.create( nodeRecord );
@@ -392,7 +392,7 @@ public class FullCheckIntegrationTest
                 NodeRecord nodeRecord = new NodeRecord( next.node(), -1, -1 );
                 DynamicRecord record = inUse( new DynamicRecord( next.nodeLabel() ) );
                 Collection<DynamicRecord> newRecords = allocateFromNumbers( new long[] { next.node(), 42l },
-                        asIterator( record ), new PreAllocatedRecords( 60 ) );
+                        iterator( record ), new PreAllocatedRecords( 60 ) );
                 nodeRecord.setLabelField( dynamicPointer( newRecords ), newRecords );
 
                 tx.create( nodeRecord );
@@ -499,12 +499,14 @@ public class FullCheckIntegrationTest
                                             GraphStoreFixture.IdGenerator next )
             {
                 DynamicRecord schema = new DynamicRecord( next.schema() );
+                DynamicRecord schemaBefore = schema.clone();
+
                 schema.setNextBlock( next.schema() ); // Point to a record that isn't in use.
                 IndexRule rule = IndexRule.indexRule( 1, 1, 1,
                         new SchemaIndexProvider.Descriptor( "in-memory", "1.0" ) );
                 schema.setData( new RecordSerializer().append( rule ).serialize() );
 
-                tx.createSchema( asList( schema ) );
+                tx.createSchema( asList(schemaBefore), asList( schema ) );
             }
         } );
 
@@ -532,6 +534,8 @@ public class FullCheckIntegrationTest
 
                 DynamicRecord record1 = new DynamicRecord( ruleId1 );
                 DynamicRecord record2 = new DynamicRecord( ruleId2 );
+                DynamicRecord record1Before = record1.clone();
+                DynamicRecord record2Before = record2.clone();
 
                 SchemaIndexProvider.Descriptor providerDescriptor = new SchemaIndexProvider.Descriptor( "in-memory", "1.0" );
 
@@ -548,8 +552,8 @@ public class FullCheckIntegrationTest
                 tx.nodeLabel( labelId, "label" );
                 tx.propertyKey( propertyKeyId, "property" );
 
-                tx.createSchema( records1 );
-                tx.createSchema( records2 );
+                tx.createSchema( asList(record1Before), records1 );
+                tx.createSchema( asList(record2Before), records2 );
             }
         } );
 
@@ -577,6 +581,8 @@ public class FullCheckIntegrationTest
 
                 DynamicRecord record1 = new DynamicRecord( ruleId1 );
                 DynamicRecord record2 = new DynamicRecord( ruleId2 );
+                DynamicRecord record1Before = record1.clone();
+                DynamicRecord record2Before = record2.clone();
 
                 SchemaIndexProvider.Descriptor providerDescriptor = new SchemaIndexProvider.Descriptor( "in-memory", "1.0" );
 
@@ -593,8 +599,8 @@ public class FullCheckIntegrationTest
                 tx.nodeLabel( labelId, "label" );
                 tx.propertyKey( propertyKeyId, "property" );
 
-                tx.createSchema( records1 );
-                tx.createSchema( records2 );
+                tx.createSchema( asList(record1Before), records1 );
+                tx.createSchema( asList(record2Before), records2 );
             }
         } );
 

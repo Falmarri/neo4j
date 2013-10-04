@@ -96,7 +96,7 @@ public class FileUtils
             return true;
         }
         int count = 0;
-        boolean deleted = false;
+        boolean deleted;
         do
         {
             deleted = file.delete();
@@ -359,5 +359,19 @@ public class FileUtils
     public static PrintWriter newFilePrintWriter( File file, Charset charset ) throws FileNotFoundException
     {
         return new PrintWriter( new OutputStreamWriter( new FileOutputStream( file, true ), charset) );
+    }
+
+    public static File path( String root, String... path )
+    {
+        return path( new File( root ), path );
+    }
+
+    public static File path( File root, String... path )
+    {
+        for ( String part : path )
+        {
+            root = new File( root, part );
+        }
+        return root;
     }
 }

@@ -26,6 +26,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ReadableByteChannel;
 import java.util.HashMap;
 import java.util.Map;
+
 import javax.transaction.Transaction;
 import javax.transaction.TransactionManager;
 import javax.transaction.xa.XAException;
@@ -73,6 +74,8 @@ import org.neo4j.kernel.logging.DevNullLoggingService;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+
+import static org.neo4j.kernel.impl.transaction.xaframework.InjectedTransactionValidator.ALLOW_ALL;
 
 public class TestXaFramework extends AbstractNeo4jTestCase
 {
@@ -204,7 +207,7 @@ public class TestXaFramework extends AbstractNeo4jTestCase
     private static class DummyTransactionFactory extends XaTransactionFactory
     {
         @Override
-        public XaTransaction create( int identifier, TransactionState state )
+        public XaTransaction create( int identifier, long lastCommittedTxWhenTransactionStarted, TransactionState state )
         {
             return new DummyTransaction( identifier, getLogicalLog(), state );
         }
@@ -264,10 +267,11 @@ public class TestXaFramework extends AbstractNeo4jTestCase
                         };
                     }
                 };
-                
+
                 map.put( "store_dir", path().getPath() );
                 xaContainer = xaFactory.newXaContainer( this, resourceFile(),
                         new DummyCommandFactory(),
+                        ALLOW_ALL,
                         new DummyTransactionFactory(), stateFactory, new TransactionInterceptorProviders(
                         Iterables.<TransactionInterceptorProvider>empty(),
                         new DependencyResolver.Adapter()
@@ -507,7 +511,10 @@ public class TestXaFramework extends AbstractNeo4jTestCase
         boolean allDeleted = true;
         for ( File file : files )
         {
-            if ( !file.delete() ) allDeleted = false;
+            if ( !file.delete() )
+            {
+                allDeleted = false;
+            }
         }
         assertTrue( "delete all files starting with " + prefix, allDeleted );
     }

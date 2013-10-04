@@ -58,8 +58,11 @@ import org.neo4j.kernel.ha.com.master.Slave;
 import org.neo4j.kernel.ha.com.slave.SlaveImpl;
 import org.neo4j.kernel.ha.com.slave.SlaveServer;
 import org.neo4j.kernel.ha.id.HaIdGeneratorFactory;
+import org.neo4j.kernel.impl.api.NonTransactionalTokenNameLookup;
 import org.neo4j.kernel.impl.api.UpdateableSchemaState;
+import org.neo4j.kernel.impl.core.LabelTokenHolder;
 import org.neo4j.kernel.impl.core.NodeManager;
+import org.neo4j.kernel.impl.core.PropertyKeyTokenHolder;
 import org.neo4j.kernel.impl.index.IndexStore;
 import org.neo4j.kernel.impl.nioneo.store.FileSystemAbstraction;
 import org.neo4j.kernel.impl.nioneo.store.MismatchingStoreIdException;
@@ -300,10 +303,14 @@ public class
                     NeoStoreXaDataSource nioneoDataSource = ensureDataSourceStarted( xaDataSourceManager, resolver );
                     if ( !checkDataConsistency( xaDataSourceManager,
                             resolver.resolveDependency( RequestContextFactory.class ), nioneoDataSource, masterUri ) )
+                     {
                         continue; // to the outer loop for a retry
+                    }
 
                     if ( !startHaCommunication( xaDataSourceManager, nioneoDataSource, masterUri ) )
+                     {
                         continue; // to the outer loop for a retry
+                    }
 
                     console.log( "ServerId " + config.get( ClusterSettings.server_id ) +
                             ", successfully moved to slave for master " + masterUri );
@@ -403,8 +410,10 @@ public class
              * that may start the moment the database becomes available, where all of them will pull the same txs from
              * the master but eventually only one will get to apply them.
              */
+            console.log( "Catching up with master" );
             RequestContext context = requestContextFactory.newRequestContext( -1 );
             xaDataSourceManager.applyTransactions( checkConsistencyMaster.pullUpdates( context ) );
+            console.log( "Now consistent with master" );
             return true;
         }
         catch ( StoreUnableToParticipateInClusterException upe )
@@ -448,7 +457,6 @@ public class
     }
 
     private NeoStoreXaDataSource ensureDataSourceStarted( XaDataSourceManager xaDataSourceManager, DependencyResolver resolver )
-            throws IOException
     {
         // Must be called under lock on XaDataSourceManager
         NeoStoreXaDataSource nioneoDataSource = (NeoStoreXaDataSource) xaDataSourceManager.getXaDataSource(
@@ -464,7 +472,9 @@ public class
                     resolver.resolveDependency( JobScheduler.class ),
                     logging,
                     updateableSchemaState,
-                    resolver.resolveDependency( NodeManager.class ),
+                    new NonTransactionalTokenNameLookup(
+                            resolver.resolveDependency( LabelTokenHolder.class ),
+                            resolver.resolveDependency( PropertyKeyTokenHolder.class ) ),
                     resolver );
             xaDataSourceManager.registerDataSource( nioneoDataSource );
                 /*
@@ -517,7 +527,9 @@ public class
         @SuppressWarnings( "unchecked" )
         List<Class<Lifecycle>> services = new ArrayList( Arrays.asList( SERVICES_TO_RESTART_FOR_STORE_COPY ) );
         for ( Class<Lifecycle> serviceClass : services )
+        {
             graphDb.getDependencyResolver().resolveDependency( serviceClass ).start();
+        }
     }
 
     @SuppressWarnings( "unchecked" )
@@ -526,7 +538,9 @@ public class
         List<Class> services = new ArrayList<Class>( Arrays.asList( SERVICES_TO_RESTART_FOR_STORE_COPY ) );
         Collections.reverse( services );
         for ( Class<Lifecycle> serviceClass : services )
+        {
             graphDb.getDependencyResolver().resolveDependency( serviceClass ).stop();
+        }
         
         branchPolicy.handle( config.get( InternalAbstractGraphDatabase.Configuration.store_dir ) );
     }

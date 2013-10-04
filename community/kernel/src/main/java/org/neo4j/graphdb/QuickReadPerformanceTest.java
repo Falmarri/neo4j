@@ -26,6 +26,7 @@ import java.util.concurrent.Callable;
 
 import org.neo4j.kernel.EmbeddedGraphDatabase;
 import org.neo4j.kernel.impl.util.FileUtils;
+import org.neo4j.tooling.GlobalGraphOperations;
 
 public class QuickReadPerformanceTest
 {
@@ -34,7 +35,7 @@ public class QuickReadPerformanceTest
     public static void main(String ... args) throws Exception
     {
         File storeDir = new File("/tmp/mydb");
-        if(storeDir.exists())
+        if ( storeDir.exists() )
         {
             FileUtils.deleteRecursively(storeDir);
         }
@@ -58,7 +59,8 @@ public class QuickReadPerformanceTest
             System.out.println("Did " + totalReads + " in " + totalTime + "ms.");
             System.out.println(totalReads / totalTime + "reads/ms");
 
-        } finally
+        }
+        finally
         {
             timer.cancel();
             db.shutdown();
@@ -72,8 +74,7 @@ public class QuickReadPerformanceTest
             @Override
             public void run()
             {
-                Transaction tx = db.beginTx();
-                try
+                try ( Transaction tx = db.beginTx() )
                 {
                     Node node1 = db.createNode();
                     Node node2 = db.createNode();
@@ -86,9 +87,6 @@ public class QuickReadPerformanceTest
                     rel.setProperty( "since", 12 );
 
                     tx.success();
-                } finally
-                {
-                    tx.finish();
                 }
             }
         }, 10, 200 );
@@ -111,10 +109,9 @@ public class QuickReadPerformanceTest
             long time = System.currentTimeMillis();
             for ( int i = 0; i < 10; i++ )
             {
-                Transaction tx = graphDb.beginTx();
-                try
+                try ( Transaction tx = graphDb.beginTx() )
                 {
-                    for ( Node node : graphDb.getAllNodes() )
+                    for ( Node node : GlobalGraphOperations.at( graphDb ).getAllNodes() )
                     {
                         try
                         {
@@ -144,9 +141,6 @@ public class QuickReadPerformanceTest
                             }
                         }
                     }
-                } finally
-                {
-                    tx.finish();
                 }
             }
 

@@ -20,6 +20,7 @@
 package org.neo4j.doc.cypherdoc;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.neo4j.cypher.javacompat.ExecutionEngine;
@@ -45,7 +46,7 @@ import org.neo4j.test.TestGraphDatabaseFactory;
  *     The query result will be searched for each of the strings (one string per line).
  * </pre>
  */
-public class CypherDoc
+public final class CypherDoc
 {
     static final String EOL = System.getProperty( "line.separator" );
 
@@ -65,25 +66,30 @@ public class CypherDoc
 
         StringBuilder output = new StringBuilder( 4096 );
         GraphDatabaseService database = new TestGraphDatabaseFactory().newImpermanentDatabase();
-        Transaction transaction = database.beginTx();
-        try
+        try(Transaction ignored = database.beginTx())
         {
             ExecutionEngine engine = new ExecutionEngine( database );
+            State state = new State( engine, database );
 
             removeReferenceNode( database );
 
+            boolean hasConsole = false;
             for ( Block block : blocks )
             {
-                output.append( block.process( engine, database ) )
+                if ( block.type == BlockType.CONSOLE )
+                {
+                    hasConsole = true;
+                }
+                output.append( block.process( state ) )
                         .append( EOL )
                         .append( EOL );
             }
+            if ( !hasConsole )
+            {
+                output.append( BlockType.CONSOLE.process( null, state ) );
+            }
 
             return output.toString();
-        }
-        finally
-        {
-            transaction.finish();
         }
     }
 
@@ -95,41 +101,42 @@ public class CypherDoc
             throw new IllegalArgumentException( "To little content, only "
                                                 + lines.length + " lines." );
         }
-        List<Block> blocks = new ArrayList<Block>();
-        List<String> currentBlock = new ArrayList<String>();
+        List<Block> blocks = new ArrayList<>();
+        List<String> currentBlock = new ArrayList<>();
         for ( String line : lines )
         {
-            if ( line.trim()
-                    .isEmpty() && currentBlock.size() > 0 )
+            if ( line.trim().isEmpty() )
             {
-                blocks.add( Block.getBlock( currentBlock ) );
-                currentBlock = new ArrayList<String>();
+                if ( !currentBlock.isEmpty() )
+                {
+                    blocks.add( Block.getBlock( currentBlock ) );
+                    currentBlock = new ArrayList<>();
+                }
+            }
+            else if ( line.startsWith( "//" ) && !line.startsWith( "////" ) && currentBlock.isEmpty() )
+            {
+                blocks.add( Block.getBlock( Collections.singletonList( line ) ) );
             }
             else
             {
                 currentBlock.add( line );
             }
         }
-        if ( currentBlock.size() > 0 )
+        if ( !currentBlock.isEmpty() )
         {
             blocks.add( Block.getBlock( currentBlock ) );
         }
         return blocks;
     }
 
-    @SuppressWarnings( "deprecation" )
     static void removeReferenceNode( GraphDatabaseService database )
     {
-        Transaction tx = database.beginTx();
-        try
+        try(Transaction tx = database.beginTx())
         {
+            //noinspection deprecation
             database.getReferenceNode()
                     .delete();
             tx.success();
-        }
-        finally
-        {
-            tx.finish();
         }
     }
 }

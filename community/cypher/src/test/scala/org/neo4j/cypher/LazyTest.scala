@@ -19,17 +19,13 @@
  */
 package org.neo4j.cypher
 
-import internal.commands.expressions.Literal
 import internal.commands.expressions.{Literal, Identifier}
-import internal.commands.GreaterThan
-import internal.commands.True
 import internal.commands.{GreaterThan, True}
 import internal.pipes._
 import internal.pipes.QueryStateHelper.queryStateFrom
 import internal.pipes.matching._
 import internal.symbols.IntegerType
 import matching.EndPoint
-import matching.SingleStep
 import matching.SingleStep
 import matching.SingleStepTrail
 import org.neo4j.graphdb._
@@ -43,10 +39,9 @@ import org.scalatest.mock.MockitoSugar
 import org.mockito.Mockito._
 import org.neo4j.kernel.{ThreadToStatementContextBridge, GraphDatabaseAPI}
 import org.neo4j.kernel.impl.core.NodeManager
-import org.neo4j.kernel.api.StatementOperationParts
-import org.neo4j.kernel.impl.api.{SchemaStateConcern, KernelSchemaStateStore}
-import org.neo4j.kernel.api.operations._
 import scala.Some
+import org.neo4j.tooling.GlobalGraphOperations
+import org.neo4j.kernel.api.{Statement, OperationsFacade, ReadOperations}
 
 class LazyTest extends ExecutionEngineHelper with Assertions with MockitoSugar {
 
@@ -182,23 +177,15 @@ class LazyTest extends ExecutionEngineHelper with Assertions with MockitoSugar {
     val nodeManager = mock[NodeManager]
     val dependencies = mock[DependencyResolver]
     val bridge = mock[ThreadToStatementContextBridge]
-    val schemaState = new KernelSchemaStateStore()
-    val schemaOps = new SchemaStateConcern(schemaState)
-    
-    val fakeCtx = new StatementOperationParts(
-        mock[KeyReadOperations],
-        mock[KeyWriteOperations],
-        mock[EntityReadOperations],
-        mock[EntityWriteOperations],
-        mock[SchemaReadOperations],
-        mock[SchemaWriteOperations],
-        schemaOps)
 
-    val fakeState = mock[StatementState]
+    val fakeDataStatement = mock[OperationsFacade]
+    val fakeReadStatement = mock[ReadOperations]
+    val fakeStatement = mock[Statement]
 
     when(nodeManager.getAllNodes).thenReturn(counter)
-    when(bridge.getCtxForWriting).thenReturn(fakeCtx)
-    when(bridge.statementForWriting()).thenReturn(fakeState)
+    when(bridge.statement()).thenReturn(fakeStatement)
+    when(fakeStatement.readOperations()).thenReturn(fakeReadStatement)
+    when(fakeStatement.dataWriteOperations()).thenReturn(fakeDataStatement)
     when(fakeGraph.getDependencyResolver).thenReturn(dependencies)
     when(dependencies.resolveDependency(classOf[ThreadToStatementContextBridge])).thenReturn(bridge)
     when(dependencies.resolveDependency(classOf[NodeManager])).thenReturn(nodeManager)
@@ -208,8 +195,8 @@ class LazyTest extends ExecutionEngineHelper with Assertions with MockitoSugar {
 
     //When:
     graph.inTx {
-      counter.source = graph.getAllNodes.iterator()
-      engine.execute("start n=node(*) return n limit 5").toList
+      counter.source = GlobalGraphOperations.at(graph).getAllNodes.iterator()
+      engine.execute(engine.parser.parse("start n=node(*) return n limit 5"), Map.empty[String,Any]).toList
     }
 
     //Then:

@@ -32,6 +32,7 @@ import org.neo4j.kernel.lifecycle.LifecycleAdapter;
 
 import static org.neo4j.graphdb.factory.GraphDatabaseSettings.store_dir;
 import static org.neo4j.helpers.collection.IteratorUtil.addToCollection;
+import static org.neo4j.kernel.extension.KernelExtensionUtil.servicesClassPathEntryInformation;
 
 /**
  * Contract for implementing an index in Neo4j.
@@ -96,19 +97,19 @@ public abstract class SchemaIndexProvider extends LifecycleAdapter implements Co
     {
         private final IndexAccessor singleWriter = new IndexAccessor.Adapter();
         private final IndexPopulator singlePopulator = new IndexPopulator.Adapter();
-        
+
         @Override
         public IndexAccessor getOnlineAccessor( long indexId, IndexConfiguration config )
         {
             return singleWriter;
         }
-        
+
         @Override
         public IndexPopulator getPopulator( long indexId, IndexConfiguration config )
         {
             return singlePopulator;
         }
-        
+
         @Override
         public InternalIndexState getInitialState( long indexId )
         {
@@ -121,7 +122,7 @@ public abstract class SchemaIndexProvider extends LifecycleAdapter implements Co
             throw new IllegalStateException();
         }
     };
-    
+
     public static final SelectionStrategy<SchemaIndexProvider> HIGHEST_PRIORITIZED_OR_NONE =
             new SelectionStrategy<SchemaIndexProvider>()
     {
@@ -131,16 +132,19 @@ public abstract class SchemaIndexProvider extends LifecycleAdapter implements Co
         {
             List<SchemaIndexProvider> all = addToCollection( candidates, new ArrayList<SchemaIndexProvider>() );
             if ( all.isEmpty() )
-                return NO_INDEX_PROVIDER;
+            {
+                throw new IllegalArgumentException( "No schema index provider " +
+                        SchemaIndexProvider.class.getName() + " found. " + servicesClassPathEntryInformation() );
+            }
             Collections.sort( all );
             return all.get( all.size()-1 );
         }
     };
-    
+
     private final int priority;
 
     private final Descriptor providerDescriptor;
-    
+
     protected SchemaIndexProvider( Descriptor descriptor, int priority )
     {
         assert descriptor != null;
@@ -157,7 +161,7 @@ public abstract class SchemaIndexProvider extends LifecycleAdapter implements Co
      * Used for updating an index once initial population has completed.
      */
     public abstract IndexAccessor getOnlineAccessor( long indexId, IndexConfiguration config ) throws IOException;
-    
+
     /**
      * Returns a failure previously gotten from {@link IndexPopulator#markAsFailed(String)}
      *
@@ -218,7 +222,7 @@ public abstract class SchemaIndexProvider extends LifecycleAdapter implements Co
     {
         return new File( new File( new File( config.get( store_dir ), "schema" ), "index" ), key );
     }
-    
+
     public static class Descriptor
     {
         private final String key;
@@ -227,11 +231,17 @@ public abstract class SchemaIndexProvider extends LifecycleAdapter implements Co
         public Descriptor( String key, String version )
         {
             if (key == null)
+            {
                 throw new IllegalArgumentException( "null provider key prohibited" );
+            }
             if (key.length() == 0)
+            {
                 throw new IllegalArgumentException( "empty provider key prohibited" );
+            }
             if (version == null)
+            {
                 throw new IllegalArgumentException( "null provider version prohibited" );
+            }
 
             this.key = key;
             this.version = version;

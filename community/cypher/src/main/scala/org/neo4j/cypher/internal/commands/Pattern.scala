@@ -24,34 +24,60 @@ import expressions.Identifier._
 import org.neo4j.graphdb.Direction
 import collection.Seq
 import org.neo4j.cypher.internal.symbols._
+import org.neo4j.cypher.internal.commands.values.KeyToken
 
 trait Pattern extends TypeSafe with AstNode[Pattern] {
   def optional: Boolean
   def possibleStartPoints: Seq[(String,CypherType)]
   def relTypes:Seq[String]
 
-  protected def node(name: String) = if (notNamed(name)) s"(${name.drop(9)})" else name
   protected def leftArrow(dir: Direction) = if (dir == Direction.INCOMING) "<-" else "-"
   protected def rightArrow(dir: Direction) = if (dir == Direction.OUTGOING) "->" else "-"
 
   def rewrite( f : Expression => Expression) : Pattern
-  protected def filtered(x:Seq[String]): Seq[String] =x.filter(isNamed)
 
-  def nodes:Seq[String]
   def rels:Seq[String]
+
+  def identifiers: Seq[String] = possibleStartPoints.map(_._1)
 }
+
+object Pattern {
+  def identifiers(patterns: Seq[Pattern]): Set[String] = patterns.flatMap(_.identifiers).toSet
+}
+
+object RelationshipPattern {
+  def unapply(x: Any): Option[(RelationshipPattern, SingleNode, SingleNode)] = x match {
+    case pattern@RelatedTo(left, right, _, _, _, _)                   => Some((pattern, left, right))
+    case pattern@VarLengthRelatedTo(_, left, right, _, _, _, _, _, _) => Some((pattern, left, right))
+    case pattern@ShortestPath(_, left, right, _, _, _, _, _, _)       => Some((pattern, left, right))
+    case _                                                    => None
+  }
+}
+
+trait RelationshipPattern {
+  def left:SingleNode
+  def right:SingleNode
+  def changeEnds(left: SingleNode = this.left, right: SingleNode = this.right): Pattern
+}
+
 
 object RelatedTo {
   def apply(left: String, right: String, relName: String, relType: String, direction: Direction, optional: Boolean = false) =
-    new RelatedTo(left, right, relName, Seq(relType), direction, optional)
+    new RelatedTo(SingleNode(left), SingleNode(right), relName, Seq(relType), direction, optional)
+
+  def apply(left: String, right: String, relName: String, types: Seq[String], direction: Direction) =
+    new RelatedTo(SingleNode(left), SingleNode(right), relName, types, direction, false)
+
+  def optional(left: String, right: String, relName: String, types: Seq[String], direction: Direction) =
+    new RelatedTo(SingleNode(left), SingleNode(right), relName, types, direction, true)
 }
 
-case class SingleNode(name:String) extends Pattern {
-  def nodes = Seq.empty
+object SingleOptionalNode {
+  def apply(name:String, labels:Seq[KeyToken]=Seq.empty) = SingleNode(name, labels, optional = true)
+}
 
-  def optional = false
-
-  def possibleStartPoints = Seq(name->NodeType())
+case class SingleNode(name: String, labels: Seq[KeyToken] = Seq.empty, optional: Boolean = false) extends Pattern {
+  def possibleStartPoints = Seq(name -> NodeType())
 
   def predicate = True()
 
@@ -59,22 +85,29 @@ case class SingleNode(name:String) extends Pattern {
 
   def relTypes = Seq.empty
 
-  def rewrite(f: (Expression) => Expression) = this
+  def rewrite(f: (Expression) => Expression) = SingleNode(name, labels.map(_.typedRewrite[KeyToken](f)), optional)
 
   def children = Seq.empty
 
   def symbolTableDependencies = Set.empty
 
   def throwIfSymbolsMissing(symbols: SymbolTable) {}
+
+  override def toString: String = {
+    val namePart = if (notNamed(name)) s"${name.drop(9)}" else name
+    val labelPart = if (labels.isEmpty) "" else labels.mkString(":", ":", "")
+    val optPart = if(optional) "?" else ""
+    "(" + namePart + labelPart + optPart + ")"
+  }
 }
 
-case class RelatedTo(left: String,
-                     right: String,
+case class RelatedTo(left: SingleNode,
+                     right: SingleNode,
                      relName: String,
                      relTypes: Seq[String],
                      direction: Direction,
-                     optional: Boolean) extends Pattern {
-  override def toString = node(left) + leftArrow(direction) + relInfo + rightArrow(direction) + node(right)
+                     optional: Boolean) extends Pattern with RelationshipPattern {
+  override def toString = left + leftArrow(direction) + relInfo + rightArrow(direction) + right
 
   private def relInfo: String = {
     var info = relName
@@ -83,12 +116,10 @@ case class RelatedTo(left: String,
     if (info == "") "" else "[" + info + "]"
   }
 
-  val possibleStartPoints: Seq[(String, MapType)] = Seq(left-> NodeType(), right-> NodeType(), relName->RelationshipType())
+  val possibleStartPoints: Seq[(String, MapType)] = left.possibleStartPoints ++ right.possibleStartPoints :+ relName->RelationshipType()
 
   def rewrite(f: (Expression) => Expression) =
-    new RelatedTo(left, right, relName, relTypes, direction, optional)
-
-  def nodes = Seq(left,right)
+    new RelatedTo(left.rewrite(f), right.rewrite(f), relName, relTypes, direction, optional)
 
   def rels = Seq(relName)
 
@@ -98,14 +129,13 @@ case class RelatedTo(left: String,
   def symbolTableDependencies = Set.empty
 
   def children = Seq.empty
+
+  def changeEnds(left: SingleNode = this.left, right: SingleNode = this.right): RelatedTo =
+    copy(left = left, right = right)
 }
 
-abstract class PathPattern extends Pattern {
+abstract class PathPattern extends Pattern with RelationshipPattern {
   def pathName: String
-
-  def start: String
-
-  def end: String
 
   def cloneWithOtherName(newName: String): PathPattern
 
@@ -113,13 +143,14 @@ abstract class PathPattern extends Pattern {
 }
 
 object VarLengthRelatedTo {
-  def apply(pathName: String, start: String, end: String, minHops: Option[Int], maxHops: Option[Int], relTypes: String, direction: Direction, optional: Boolean = false) =
-    new VarLengthRelatedTo(pathName, start, end, minHops, maxHops, Seq(relTypes), direction, None, optional)
+  def apply(pathName: String, left: String, right: String, minHops: Option[Int], maxHops: Option[Int], relTypes: String,
+            direction: Direction, relIterator:Option[String]=None, optional: Boolean = false) =
+    new VarLengthRelatedTo(pathName, SingleNode(left), SingleNode(right), minHops, maxHops, Seq(relTypes), direction, relIterator, optional)
 }
 
 case class VarLengthRelatedTo(pathName: String,
-                              start: String,
-                              end: String,
+                              left: SingleNode,
+                              right: SingleNode,
                               minHops: Option[Int],
                               maxHops: Option[Int],
                               relTypes: Seq[String],
@@ -127,7 +158,7 @@ case class VarLengthRelatedTo(pathName: String,
                               relIterator: Option[String],
                               optional: Boolean) extends PathPattern {
 
-  override def toString: String = pathName + "=" + node(start) + leftArrow(direction) + relInfo + rightArrow(direction) + node(end)
+  override def toString: String = pathName + "=" + left + leftArrow(direction) + relInfo + rightArrow(direction) + right
 
   def symbolTableDependencies = Set.empty
 
@@ -143,27 +174,34 @@ case class VarLengthRelatedTo(pathName: String,
       case (Some(min), Some(max)) => "*" + min + ".." + max
     }
 
-    info = info + hops
+    val relName = relIterator.getOrElse("")
+    info = relName + info + hops
 
     if (info == "") "" else "[" + info + "]"
   }
 
-  def rewrite(f: (Expression) => Expression) = new VarLengthRelatedTo(pathName,start,end, minHops,maxHops,relTypes,direction,relIterator,optional)
-  lazy val possibleStartPoints: Seq[(String, AnyType)] = Seq(start -> NodeType(), end -> NodeType(), pathName -> PathType())
+  def rewrite(f: (Expression) => Expression) =
+    new VarLengthRelatedTo(pathName, left.rewrite(f), right.rewrite(f),
+      minHops, maxHops, relTypes, direction, relIterator, optional)
 
-  def nodes = Seq(start,end)
+  lazy val possibleStartPoints: Seq[(String, AnyType)] =
+    left.possibleStartPoints ++
+      right.possibleStartPoints :+
+      pathName -> PathType()
 
   def rels = Seq()
 
-  def throwIfSymbolsMissing(symbols: SymbolTable) {
-  }
+  def throwIfSymbolsMissing(symbols: SymbolTable) {}
 
   def children = Seq.empty
+
+  def changeEnds(left: SingleNode = this.left, right: SingleNode = this.right): VarLengthRelatedTo =
+    copy(left = left, right = right)
 }
 
 case class ShortestPath(pathName: String,
-                        start: String,
-                        end: String,
+                        left: SingleNode,
+                        right: SingleNode,
                         relTypes: Seq[String],
                         dir: Direction,
                         maxDepth: Option[Int],
@@ -171,13 +209,14 @@ case class ShortestPath(pathName: String,
                         single: Boolean,
                         relIterator: Option[String])
   extends PathPattern {
-  override def toString: String = pathName + "=" + algo + "(" + start + leftArrow(dir) + relInfo + rightArrow(dir) + end + ")"
+
+  override def toString: String = pathName + "=" + algo + "(" + left + leftArrow(dir) + relInfo + rightArrow(dir) + right + ")"
 
   private def algo = if (single) "singleShortestPath" else "allShortestPath"
 
   def cloneWithOtherName(newName: String) = copy(pathName = newName)
 
-  def symbolTableDependencies = Set(start, end)
+  def symbolTableDependencies = Set(left.name, right.name)
 
   private def relInfo: String = {
     var info = "["
@@ -188,17 +227,19 @@ case class ShortestPath(pathName: String,
     info + "]"
   }
 
-  lazy val possibleStartPoints: Seq[(String, NodeType)] = Seq(start-> NodeType(), end-> NodeType())
+  lazy val possibleStartPoints: Seq[(String, NodeType)] = left.possibleStartPoints ++ right.possibleStartPoints
 
-  def rewrite(f: Expression => Expression) = new ShortestPath(pathName,start,end,relTypes,dir,maxDepth,optional,single,relIterator)
+  def rewrite(f: Expression => Expression) =
+    new ShortestPath(pathName, left.rewrite(f), right.rewrite(f), relTypes, dir, maxDepth, optional, single, relIterator)
 
   def rels = Seq()
-
-  def nodes = Seq(start,end)
 
   def throwIfSymbolsMissing(symbols: SymbolTable) {
     possibleStartPoints.foreach(p => symbols.evaluateType(p._1, p._2))
   }
 
   def children = Seq.empty
+
+  def changeEnds(left: SingleNode = this.left, right: SingleNode = this.right): ShortestPath =
+    copy(left = left, right = right)
 }

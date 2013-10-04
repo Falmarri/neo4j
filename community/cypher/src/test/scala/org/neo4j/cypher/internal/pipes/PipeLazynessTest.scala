@@ -155,12 +155,12 @@ object PipeLazynessTest extends MockitoSugar {
     val patternNodes = Map("x" -> x, "y" -> y)
     val patternRels = Map("r" -> rel)
     val graph = new PatternGraph(patternNodes, patternRels, Seq("x"))
-    val pipe = new MatchPipe(src, Seq(), graph)
+    val pipe = new MatchPipe(src, Seq(), graph, Set("x", "r", "y"))
     Seq(pipe, iter)
   }
 
   private def shortestPathPipe = {
-    val shortestPath = ShortestPath(pathName = "p", start = "start", end = "end", relTypes = Seq.empty,
+    val shortestPath = ShortestPath(pathName = "p", left = SingleNode("start"), right = SingleNode("end"), relTypes = Seq.empty,
       dir = Direction.OUTGOING, maxDepth = None, optional = true, single = true, relIterator = None)
     val iter = new LazyIterator[Map[String, Any]](10, (_) => Map("start" -> null, "end" -> null))
     val src = new FakePipe(iter, "start" -> NodeType(), "end" -> NodeType())

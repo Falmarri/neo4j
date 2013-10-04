@@ -21,14 +21,12 @@ package org.neo4j.server.rest;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.junit.Test;
 
 import org.neo4j.graphdb.Neo4jMatchers;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.schema.IndexDefinition;
-import org.neo4j.helpers.Function;
 import org.neo4j.kernel.impl.annotations.Documented;
 import org.neo4j.server.rest.web.PropertyValueException;
 import org.neo4j.test.GraphDescription;
@@ -41,8 +39,6 @@ import static org.junit.Assert.assertThat;
 
 import static org.neo4j.graphdb.DynamicLabel.label;
 import static org.neo4j.graphdb.Neo4jMatchers.containsOnly;
-import static org.neo4j.helpers.collection.Iterables.map;
-import static org.neo4j.helpers.collection.IteratorUtil.asSet;
 import static org.neo4j.helpers.collection.MapUtil.map;
 import static org.neo4j.server.rest.domain.JsonHelper.createJsonFrom;
 import static org.neo4j.server.rest.domain.JsonHelper.jsonToList;
@@ -51,16 +47,17 @@ import static org.neo4j.server.rest.domain.JsonHelper.jsonToMap;
 public class SchemaIndexDocIT extends AbstractRestFunctionalTestBase
 {
     /**
-     * Create schema index.
+     * Create index.
      *
-     * This will start a background job in the database that will create and populate the new index.
+     * This will start a background job in the database that will create and populate the index.
      * You can check the status of your index by listing all the indexes for the relevant label.
-     * The new index will show up, but have a state of "POPULATING" until the index is ready.
+     * The created index will show up, but have a state of +POPULATING+ until the index is ready,
+     * where it is marked as +ONLINE+.
      */
     @Documented
     @Test
     @GraphDescription.Graph( nodes = {} )
-    public void create_schema_index() throws PropertyValueException
+    public void create_index() throws PropertyValueException
     {
         data.get();
         
@@ -68,6 +65,7 @@ public class SchemaIndexDocIT extends AbstractRestFunctionalTestBase
         Map<String, Object> definition = map( "property_keys", asList( propertyKey ) );
 
         String result = gen.get()
+            .noGraph()
             .expectedStatus( 200 )
             .payload( createJsonFrom( definition ) )
             .post( getSchemaIndexLabelUri( labelName ) )
@@ -84,15 +82,16 @@ public class SchemaIndexDocIT extends AbstractRestFunctionalTestBase
     @Documented
     @Test
     @GraphDescription.Graph( nodes = {} )
-    public void get_schema_indexes() throws PropertyValueException
+    public void get_indexes() throws PropertyValueException
     {
         data.get();
         
         String labelName = "user", propertyKey = "name";
-        createSchemaIndex( labelName, propertyKey );
+        createIndex( labelName, propertyKey );
         Map<String, Object> definition = map( "property_keys", asList( propertyKey ) );
 
         String result = gen.get()
+            .noGraph()
             .expectedStatus( 200 )
             .payload( createJsonFrom( definition ) )
             .get( getSchemaIndexLabelUri( labelName ) )
@@ -106,20 +105,21 @@ public class SchemaIndexDocIT extends AbstractRestFunctionalTestBase
     }
 
     /**
-     * Drop schema index
+     * Drop index
      */
     @Documented
     @Test
     @GraphDescription.Graph( nodes = {} )
-    public void drop_schema_index() throws Exception
+    public void drop_index() throws Exception
     {
         data.get();
 
         String labelName = "SomeLabel", propertyKey = "name";
-        IndexDefinition schemaIndex = createSchemaIndex( labelName, propertyKey );
+        IndexDefinition schemaIndex = createIndex( labelName, propertyKey );
         assertThat( Neo4jMatchers.getIndexes( graphdb(), label( labelName ) ), containsOnly( schemaIndex ) );
 
         gen.get()
+            .noGraph()
             .expectedStatus( 204 )
             .delete( getSchemaIndexLabelPropertyUri( labelName, propertyKey ) )
             .entity();
@@ -128,23 +128,24 @@ public class SchemaIndexDocIT extends AbstractRestFunctionalTestBase
     }
     
     /**
-     * Create a schema index for a label and property key which already exists.
+     * Create an index for a label and property key which already exists.
      */
     @Test
-    public void create_existing_schema_index() throws PropertyValueException
+    public void create_existing_index()
     {
         String labelName = "mylabel", propertyKey = "name";
-        createSchemaIndex( labelName, propertyKey );
+        createIndex( labelName, propertyKey );
         Map<String, Object> definition = map( "property_keys", asList( propertyKey ) );
 
         gen.get()
+            .noGraph()
             .expectedStatus( 409 )
             .payload( createJsonFrom( definition ) )
             .post( getSchemaIndexLabelUri( labelName ) );
     }
     
     @Test
-    public void drop_non_existent_schema_index() throws Exception
+    public void drop_non_existent_index() throws Exception
     {
         // GIVEN
         String labelName = "ALabel", propertyKey = "name";
@@ -156,44 +157,28 @@ public class SchemaIndexDocIT extends AbstractRestFunctionalTestBase
     }
 
     /**
-     * Create a compound schema index should not yet be supported
+     * Creating a compound index should not yet be supported
      */
     @Test
-    public void create_compound_schema_index() throws PropertyValueException
+    public void create_compound_index()
     {
         Map<String, Object> definition = map( "property_keys", asList( "first", "other" ) );
 
         gen.get()
+                .noGraph()
                 .expectedStatus( 400 )
                 .payload( createJsonFrom( definition ) )
                 .post( getSchemaIndexLabelUri( "a_label" ) );
     }
     
-    private IndexDefinition createSchemaIndex( String labelName, String propertyKey )
+    private IndexDefinition createIndex( String labelName, String propertyKey )
     {
-        Transaction tx = graphdb().beginTx();
-        try
+        try ( Transaction tx = graphdb().beginTx() )
         {
             IndexDefinition indexDefinition = graphdb().schema().indexFor( label( labelName ) ).on( propertyKey )
                     .create();
             tx.success();
             return indexDefinition;
         }
-        finally
-        {
-            tx.finish();
-        }
-    }
-
-    private Set<Set<String>> asProperties( Iterable<IndexDefinition> indexes )
-    {
-        return asSet( map( new Function<IndexDefinition, Set<String>>()
-        {
-            @Override
-            public Set<String> apply( IndexDefinition from )
-            {
-                return asSet( from.getPropertyKeys() );
-            }
-        }, indexes ) );
     }
 }

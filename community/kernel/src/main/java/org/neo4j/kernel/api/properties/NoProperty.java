@@ -21,20 +21,15 @@ package org.neo4j.kernel.api.properties;
 
 import org.neo4j.kernel.api.EntityType;
 import org.neo4j.kernel.api.exceptions.PropertyNotFoundException;
-import org.neo4j.kernel.impl.nioneo.store.PropertyData;
-import org.neo4j.kernel.impl.nioneo.store.PropertyDatas;
-
-import static java.lang.String.format;
 
 final class NoProperty extends Property
 {
-    private final long propertyKeyId;
     private final EntityType entityType;
     private final long entityId;
 
-    NoProperty( long propertyKeyId, EntityType entityType, long entityId )
+    NoProperty( int propertyKeyId, EntityType entityType, long entityId )
     {
-        this.propertyKeyId = propertyKeyId;
+        super( propertyKeyId );
         this.entityType = entityType;
         this.entityId = entityId;
     }
@@ -42,8 +37,18 @@ final class NoProperty extends Property
     @Override
     public String toString()
     {
-        return format( "%s[propertyKeyId=%s, %sId=%s]", getClass().getSimpleName(),
-                propertyKeyId, entityType.name().toLowerCase(), entityId );
+        StringBuilder string = new StringBuilder( getClass().getSimpleName() );
+        string.append( "[" ).append( entityType.name().toLowerCase() );
+        if ( entityType == EntityType.GRAPH )
+        {
+            string.append( "Property" );
+        }
+        else
+        {
+            string.append( "Id=" ).append( entityId );
+        }
+        string.append( ", propertyKeyId=" ).append( propertyKeyId );
+        return string.append( "]" ).toString();
     }
 
     @Override
@@ -53,19 +58,13 @@ final class NoProperty extends Property
     }
 
     @Override
-    public boolean isNoProperty()
+    public boolean isDefined()
     {
-        return true;
+        return false;
     }
 
     @Override
     public int hashCode()
-    {
-        return (int) (propertyKeyId ^ (propertyKeyId >>> 32));
-    }
-
-    @Override
-    public long propertyKeyId()
     {
         return propertyKeyId;
     }
@@ -86,6 +85,12 @@ final class NoProperty extends Property
     public String stringValue( String defaultValue )
     {
         return defaultValue;
+    }
+
+    @Override
+    public String valueAsString() throws PropertyNotFoundException
+    {
+        throw new PropertyNotFoundException( propertyKeyId, entityType, entityId );
     }
 
     @Override
@@ -115,43 +120,36 @@ final class NoProperty extends Property
     @Override
     public Object value() throws PropertyNotFoundException
     {
-        throw new PropertyNotFoundException( propertyKeyId );
+        throw new PropertyNotFoundException( propertyKeyId, entityType, entityId );
     }
 
     @Override
     public String stringValue() throws PropertyNotFoundException
     {
-        throw new PropertyNotFoundException( propertyKeyId );
+        throw new PropertyNotFoundException( propertyKeyId, entityType, entityId );
     }
 
     @Override
     public boolean booleanValue() throws PropertyNotFoundException
     {
-        throw new PropertyNotFoundException( propertyKeyId );
+        throw new PropertyNotFoundException( propertyKeyId, entityType, entityId );
     }
 
     @Override
     public Number numberValue() throws PropertyNotFoundException
     {
-        throw new PropertyNotFoundException( propertyKeyId );
+        throw new PropertyNotFoundException( propertyKeyId, entityType, entityId );
     }
 
     @Override
     public int intValue() throws PropertyNotFoundException
     {
-        throw new PropertyNotFoundException( propertyKeyId );
+        throw new PropertyNotFoundException( propertyKeyId, entityType, entityId );
     }
 
     @Override
     public long longValue() throws PropertyNotFoundException
     {
-        throw new PropertyNotFoundException( propertyKeyId );
-    }
-    
-    @Override
-    @Deprecated
-    public PropertyData asPropertyDataJustForIntegration()
-    {
-        return PropertyDatas.noProperty( propertyKeyId );
+        throw new PropertyNotFoundException( propertyKeyId, entityType, entityId );
     }
 }

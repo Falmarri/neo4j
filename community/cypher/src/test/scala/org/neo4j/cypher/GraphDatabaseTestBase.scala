@@ -28,12 +28,10 @@ import org.neo4j.kernel.ThreadToStatementContextBridge
 import org.neo4j.kernel.GraphDatabaseAPI
 import org.neo4j.cypher.internal.helpers.GraphIcing
 import org.neo4j.cypher.internal.spi.PlanContext
-import org.neo4j.cypher.internal.spi.gdsimpl.TransactionBoundPlanContext
 import org.scalatest.Assertions
-import org.neo4j.kernel.api.StatementOperations
-import org.neo4j.kernel.api.operations.StatementState
-import org.neo4j.kernel.api.StatementOperationParts
 import org.neo4j.cypher.internal.spi.gdsimpl.TransactionBoundPlanContext
+import org.neo4j.tooling.GlobalGraphOperations
+import org.neo4j.kernel.api.DataWriteOperations
 
 class GraphDatabaseTestBase extends GraphIcing with Assertions {
 
@@ -44,8 +42,11 @@ class GraphDatabaseTestBase extends GraphIcing with Assertions {
   @Before
   def baseInit() {
     graph = new ImpermanentGraphDatabase() with Snitch
-    refNode = graph.inTx(graph.getReferenceNode)
+    refNode = getReferenceNode
   }
+
+
+  def getReferenceNode = graph.inTx(graph.getReferenceNode)
 
   def assertInTx(f: => Option[String]) {
     graph.inTx {
@@ -64,6 +65,26 @@ class GraphDatabaseTestBase extends GraphIcing with Assertions {
 
   def indexRel(r: Relationship, idxName: String, key: String, value: String) {
     graph.inTx(r.getGraphDatabase.index.forRelationships(idxName).add(r, key, value))
+  }
+
+  def nodeId(n: Node) = graph.inTx {
+    n.getId
+  }
+
+  def relationshipId(r: Relationship) = graph.inTx {
+    r.getId
+  }
+
+  def labels(n: Node) = graph.inTx {
+    n.getLabels.iterator().asScala.map(_.toString).toSet
+  }
+
+  def countNodes() = graph.inTx {
+    GlobalGraphOperations.at(graph).getAllNodes.asScala.size
+  }
+
+  def countRelationships() = graph.inTx {
+    GlobalGraphOperations.at(graph).getAllRelationships.asScala.size
   }
 
   def createNode(): Node = createNode(Map[String, Any]())
@@ -99,13 +120,23 @@ class GraphDatabaseTestBase extends GraphIcing with Assertions {
 
   def createNode(values: (String, Any)*): Node = createNode(values.toMap)
 
-  def execStatement[T](f: (StatementOperationParts => T)): T = {
+  def deleteAllEntities() = graph.inTx {
+    val relIterator = GlobalGraphOperations.at(graph).getAllRelationships.iterator()
+
+    while (relIterator.hasNext) {
+      relIterator.next().delete()
+    }
+
+    val nodeIterator = GlobalGraphOperations.at(graph).getAllNodes.iterator()
+    while (nodeIterator.hasNext) {
+      nodeIterator.next().delete()
+    }
+  }
+
+
+  def execStatement[T](f: (DataWriteOperations => T)): T = {
     val tx = graph.beginTx
-    val ctx = graph
-      .getDependencyResolver
-      .resolveDependency(classOf[ThreadToStatementContextBridge])
-      .getCtxForWriting
-    val result = f(ctx)
+    val result = f(statement.dataWriteOperations())
     tx.success()
     tx.finish()
     result
@@ -129,11 +160,11 @@ class GraphDatabaseTestBase extends GraphIcing with Assertions {
   }
 
   def relate(n1: Node, n2: Node, relType: String, props: Map[String, Any] = Map()): Relationship = graph.inTx {
-      val r = n1.createRelationshipTo(n2, DynamicRelationshipType.withName(relType))
+    val r = n1.createRelationshipTo(n2, DynamicRelationshipType.withName(relType))
 
-      props.foreach((kv) => r.setProperty(kv._1, kv._2))
-      r
-    }
+    props.foreach((kv) => r.setProperty(kv._1, kv._2))
+    r
+  }
 
   def relate(x: ((String, String), String)): Relationship = graph.inTx {
     x match {
@@ -149,7 +180,7 @@ class GraphDatabaseTestBase extends GraphIcing with Assertions {
     nodes.find(_.getProperty("name") == name).get
   }
 
-  def relType(name: String): RelationshipType = graph.getRelationshipTypes.asScala.find(_.name() == name).get
+  def relType(name: String): RelationshipType = GlobalGraphOperations.at(graph).getAllRelationshipTypes.asScala.find(_.name() == name).get
 
   def createNodes(names: String*): List[Node] = {
     nodes = names.map(x => createNode(Map("name" -> x))).toList
@@ -178,20 +209,19 @@ class GraphDatabaseTestBase extends GraphIcing with Assertions {
     (a, b, c, d)
   }
 
-  def statementContext:StatementOperationParts =
-    graph.getDependencyResolver.resolveDependency(classOf[ThreadToStatementContextBridge]).getCtxForWriting
+  def statement = graph.getDependencyResolver.resolveDependency(classOf[ThreadToStatementContextBridge]).statement()
 
-  def cakeState:StatementState =
-    graph.getDependencyResolver.resolveDependency(classOf[ThreadToStatementContextBridge]).statementForWriting
-    
-  def readOnlyStatementContext:StatementOperationParts =
-    graph.getDependencyResolver.resolveDependency(classOf[ThreadToStatementContextBridge]).getCtxForReading
+  def planContext: PlanContext = new TransactionBoundPlanContext(statement, graph)
+}
 
-  def planContext:PlanContext= new TransactionBoundPlanContext(
-      statementContext.keyReadOperations, statementContext.schemaReadOperations, cakeState, graph)
+trait DeletedReferenceNode {
 
-  def readOnlyCakeState:StatementState =
-    graph.getDependencyResolver.resolveDependency(classOf[ThreadToStatementContextBridge]).statementForReading
+  self: GraphDatabaseTestBase =>
+
+  override def getReferenceNode: Node = {
+    RichGraph(graph).inTx(graph.getReferenceNode.delete())
+    null
+  }
 }
 
 trait Snitch extends GraphDatabaseAPI {

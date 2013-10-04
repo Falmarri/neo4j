@@ -19,6 +19,8 @@
  */
 package org.neo4j.kernel.api.exceptions.schema;
 
+import static java.lang.String.format;
+
 public class SchemaRuleNotFoundException extends SchemaKernelException
 {
     public SchemaRuleNotFoundException( String message )
@@ -29,5 +31,15 @@ public class SchemaRuleNotFoundException extends SchemaKernelException
     public SchemaRuleNotFoundException( String message, Throwable cause )
     {
         super( message, cause );
+    }
+
+    public SchemaRuleNotFoundException( long labelId, long propertyKeyId, String message )
+    {
+        this( message( labelId, propertyKeyId, message ) );
+    }
+
+    private static String message( long labelId, long propertyKeyId, String message )
+    {
+        return format( "Index rule(s) for label: %s and property: %s: %s", labelId, propertyKeyId, message );
     }
 }

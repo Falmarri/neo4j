@@ -21,14 +21,15 @@ package org.neo4j.kernel.api.properties;
 
 import java.util.Arrays;
 
-import org.neo4j.kernel.impl.nioneo.store.PropertyData;
-import org.neo4j.kernel.impl.nioneo.store.PropertyDatas;
+import static org.neo4j.kernel.impl.cache.SizeOfs.sizeOfArray;
+import static org.neo4j.kernel.impl.cache.SizeOfs.withObjectOverhead;
+import static org.neo4j.kernel.impl.cache.SizeOfs.withReference;
 
-class BooleanArrayProperty extends FullSizeProperty
+class BooleanArrayProperty extends DefinedProperty
 {
     private final boolean[] value;
 
-    BooleanArrayProperty( long propertyKeyId, boolean[] value )
+    BooleanArrayProperty( int propertyKeyId, boolean[] value )
     {
         super( propertyKeyId );
         assert value != null;
@@ -38,15 +39,15 @@ class BooleanArrayProperty extends FullSizeProperty
     @Override
     public boolean[] value()
     {
-        return value;
+        return value.clone();
     }
 
     @Override
     public boolean valueEquals( Object value )
     {
-        if ( value instanceof boolean[])
+        if ( value instanceof boolean[] )
         {
-            return Arrays.equals(this.value, (boolean[])value);
+            return Arrays.equals( this.value, (boolean[]) value );
         }
 
         if ( value instanceof Boolean[] )
@@ -75,15 +76,14 @@ class BooleanArrayProperty extends FullSizeProperty
     }
 
     @Override
-    boolean hasEqualValue( FullSizeProperty that )
+    boolean hasEqualValue( DefinedProperty that )
     {
         return Arrays.equals( this.value, ((BooleanArrayProperty)that).value );
     }
-    
+
     @Override
-    @Deprecated
-    public PropertyData asPropertyDataJustForIntegration()
+    public int sizeOfObjectInBytesIncludingOverhead()
     {
-        return PropertyDatas.forStringOrArray( (int) propertyKeyId, -1, value );
+        return withObjectOverhead( withReference( sizeOfArray( value ) ) );
     }
 }

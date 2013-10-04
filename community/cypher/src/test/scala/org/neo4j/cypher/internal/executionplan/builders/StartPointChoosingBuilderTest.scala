@@ -22,34 +22,22 @@ package org.neo4j.cypher.internal.executionplan.builders
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.mockito.Mockito._
-import org.neo4j.cypher.internal.commands._
+import org.scalatest.mock.MockitoSugar
+import org.mockito.Matchers
 import org.neo4j.cypher.internal.commands.expressions._
 import org.neo4j.cypher.internal.commands.values.{KeyToken, TokenType}
 import org.neo4j.cypher.internal.executionplan.PartiallySolvedQuery
 import org.neo4j.cypher.internal.mutation.UpdateAction
-import org.neo4j.cypher.internal.parser.v2_0.DefaultFalse
 import org.neo4j.cypher.internal.pipes.FakePipe
 import org.neo4j.cypher.internal.spi.PlanContext
 import org.neo4j.cypher.internal.symbols.NodeType
 import org.neo4j.graphdb.Direction
 import org.neo4j.kernel.impl.api.index.IndexDescriptor
-import org.scalatest.mock.MockitoSugar
-import org.mockito.Matchers
 import org.neo4j.kernel.api.constraints.UniquenessConstraint
 import org.neo4j.cypher.internal.commands.values.TokenType._
-import org.neo4j.cypher.internal.commands.expressions.IdFunction
 import org.neo4j.cypher.internal.mutation.MergeNodeAction
-import org.neo4j.cypher.internal.commands.AllNodes
-import org.neo4j.cypher.internal.commands.SchemaIndex
-import org.neo4j.cypher.internal.commands.expressions.Literal
-import scala.Some
-import org.neo4j.cypher.internal.commands.HasLabel
-import org.neo4j.cypher.internal.commands.SingleNode
-import org.neo4j.cypher.internal.commands.Equals
-import org.neo4j.cypher.internal.commands.NodeByLabel
-import org.neo4j.cypher.internal.commands.ShortestPath
-import org.neo4j.cypher.internal.commands.expressions.Nullable
-import org.neo4j.cypher.internal.commands.expressions.Property
+import org.neo4j.cypher.internal.commands._
+import org.neo4j.cypher.internal.parser.v1_9.DefaultFalse
 
 
 class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
@@ -115,7 +103,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
 
     // Then
     assert(plan.query.start.toList === Seq(
-      Unsolved(SchemaIndex(identifier, "Person", "prop1", None)),
+      Unsolved(SchemaIndex(identifier, "Person", "prop1", AnyIndex, None)),
       Unsolved(AllNodes(otherIdentifier))))
   }
 
@@ -147,7 +135,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     val plan = assertAccepts(query)
 
     // Then
-    assert(plan.query.start.toList === Seq(Unsolved(SchemaIndex(identifier, label, property, None))))
+    assert(plan.query.start.toList === Seq(Unsolved(SchemaIndex(identifier, label, property, AnyIndex, None))))
   }
 
   @Test
@@ -167,7 +155,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     val plan = assertAccepts(query)
 
     // Then
-    assert(plan.query.start.toList === Seq(Unsolved(SchemaIndex(identifier, label, property, None))))
+    assert(plan.query.start.toList === Seq(Unsolved(SchemaIndex(identifier, label, property, AnyIndex, None))))
   }
 
 
@@ -188,7 +176,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     val plan = assertAccepts(query)
 
     // Then
-    assert(plan.query.start.toList === List(Unsolved(SchemaIndex(identifier, label, property, None))))
+    assert(plan.query.start.toList === List(Unsolved(SchemaIndex(identifier, label, property, AnyIndex, None))))
   }
 
   @Test
@@ -208,7 +196,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     val plan = assertAccepts(query)
 
     // Then
-    assert(plan.query.start.toList === Seq(Unsolved(SchemaIndex(identifier, label, property, None))))
+    assert(plan.query.start.toList === Seq(Unsolved(SchemaIndex(identifier, label, property, AnyIndex, None))))
   }
 
   @Test
@@ -216,7 +204,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     // Given
     val query = q(where = Seq(
       HasLabel(Identifier(identifier), KeyToken.Unresolved(label, TokenType.Label)),
-      Equals(new Nullable(Property(Identifier(identifier), propertyKey)) with DefaultFalse, expression)
+      Equals(Property(Identifier(identifier), propertyKey), expression)
     ), patterns = Seq(
       SingleNode(identifier)
     ))
@@ -228,7 +216,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     val plan = assertAccepts(query)
 
     // Then
-    assert(plan.query.start.toList === Seq(Unsolved(SchemaIndex(identifier, label, property, None))))
+    assert(plan.query.start.toList === Seq(Unsolved(SchemaIndex(identifier, label, property, AnyIndex, None))))
   }
 
   @Test
@@ -236,7 +224,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     // Given
     val query = q(where = Seq(
       HasLabel(Identifier(identifier), KeyToken.Unresolved(label, TokenType.Label)),
-      Equals(expression, new Nullable(Property(Identifier(identifier), propertyKey)) with DefaultFalse)
+      Equals(expression, Property(Identifier(identifier), propertyKey))
     ), patterns = Seq(
       SingleNode(identifier)
     ))
@@ -248,7 +236,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     val plan = assertAccepts(query)
 
     // Then
-    assert(plan.query.start.toList === Seq(Unsolved(SchemaIndex(identifier, label, property, None))))
+    assert(plan.query.start.toList === Seq(Unsolved(SchemaIndex(identifier, label, property, AnyIndex, None))))
   }
 
   @Test
@@ -256,7 +244,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     // Given
     val query = q(where = Seq(
       HasLabel(Identifier(identifier), KeyToken.Unresolved(label, TokenType.Label)),
-      Equals(new Nullable(Property(Identifier(identifier), propertyKey)) with DefaultFalse, expression)
+      Equals(Property(Identifier(identifier), propertyKey), expression)
     ), patterns = Seq(
       SingleNode(identifier)
     ))
@@ -268,7 +256,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     val plan = assertAccepts(query)
 
     // Then
-    assert(plan.query.start.toList === Seq(Unsolved(SchemaIndex(identifier, label, property, None))))
+    assert(plan.query.start.toList === Seq(Unsolved(SchemaIndex(identifier, label, property, AnyIndex, None))))
   }
 
   @Test
@@ -313,7 +301,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     val result = assertAccepts(query).query
 
     // Then
-    assertEquals(Some(Unsolved(SchemaIndex(identifier, label, otherProperty, None))), result.start.find(_.token.isInstanceOf[SchemaIndex]))
+    assertEquals(Some(Unsolved(SchemaIndex(identifier, label, otherProperty, AnyIndex, None))), result.start.find(_.token.isInstanceOf[SchemaIndex]))
   }
 
   @Test
@@ -336,7 +324,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     val result = assertAccepts(query).query
 
     // Then
-    assertEquals(Some(Unsolved(SchemaIndex(identifier, label, property, None))), result.start.find(_.token.isInstanceOf[SchemaIndex]))
+    assertEquals(Some(Unsolved(SchemaIndex(identifier, label, property, AnyIndex, None))), result.start.find(_.token.isInstanceOf[SchemaIndex]))
   }
 
   @Test
@@ -367,7 +355,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     // When
     val plan = assertAccepts(query)
 
-    assert(plan.query.start.toList === List(Unsolved(NodeById(identifier, nodeId))))
+    assert(plan.query.start.toList === List(Unsolved(NodeByIdOrEmpty(identifier, nodeId))))
   }
 
   @Test
@@ -417,7 +405,7 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
         Equals(Property(Identifier(otherIdentifier), propertyKey), expression2)),
 
       patterns = Seq(
-        ShortestPath("p", identifier, otherIdentifier, Nil, Direction.OUTGOING, None, optional = false, single = true, None))
+        ShortestPath("p", SingleNode(identifier), SingleNode(otherIdentifier), Nil, Direction.OUTGOING, None, optional = false, single = true, None))
     )
 
     when(context.getIndexRule(label, property)).thenReturn(None)
@@ -440,8 +428,8 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     val query = q(
       start = Seq(NodeById("a", 0)),
       patterns = Seq(
-        RelatedTo("a", "b", "x", Seq.empty, Direction.OUTGOING, optional = false),
-        RelatedTo("c", "d", "x", Seq.empty, Direction.OUTGOING, optional = false)
+        RelatedTo(SingleNode("a"),SingleNode("b"), "x", Seq.empty, Direction.OUTGOING, optional = false),
+        RelatedTo(SingleNode("c"), SingleNode("d"), "x", Seq.empty, Direction.OUTGOING, optional = false)
       )
     )
 
@@ -451,7 +439,6 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
     // Then
     assert(plan.query.start.contains(Unsolved(AllNodes("c"))))
   }
-
 
   @Test
   def should_not_introduce_start_points_if_provided_by_last_pipe() {
@@ -466,26 +453,6 @@ class StartPointChoosingBuilderTest extends BuilderTest with MockitoSugar {
 
     // Then
     assert(plan.query.start.toList === Seq(Unsolved(AllNodes(otherIdentifier))))
-  }
-
-  @Test
-  def should_solved_merge_node_start_points() {
-    // Given MERGE (x:Label)
-    val pipe = new FakePipe(Iterator.empty, identifier -> NodeType())
-    val query = q(
-      updates = Seq(MergeNodeAction("x", Seq(HasLabel(Identifier("x"), KeyToken.Unresolved("Label", TokenType.Label))), Seq.empty, Seq.empty, None))
-    )
-    when(context.getOptLabelId("Label")).thenReturn(Some(42L))
-
-    // When
-    val plan = assertAccepts(pipe, query)
-
-    // Then
-    plan.query.updates match {
-      case Seq(Unsolved(MergeNodeAction("x", Seq(), Seq(), Seq(), Some(_)))) =>
-      case _                                                                 =>
-        fail("Expected something else, but got this: " + plan.query.start)
-    }
   }
 
   private def q(start: Seq[StartItem] = Seq(),

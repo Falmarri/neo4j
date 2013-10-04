@@ -28,9 +28,11 @@ import org.neo4j.cypher.internal.ExecutionContext
 case class ForeachAction(collection: Expression, id: String, actions: Seq[UpdateAction])
   extends UpdateAction
   with CollectionSupport {
+
   def exec(context: ExecutionContext, state: QueryState) = {
     val seq = makeTraversable(collection(context)(state))
-    seq.foreach(element => {
+
+    for (element <- seq) {
       val inner = context.newWith(id, element)
 
       // We do a fold left here to allow updates to introduce
@@ -38,7 +40,7 @@ case class ForeachAction(collection: Expression, id: String, actions: Seq[Update
       actions.foldLeft(Seq(inner))((contexts, action) => {
         contexts.flatMap(c => action.exec(c, state))
       })
-    })
+    }
 
     Iterator(context)
   }

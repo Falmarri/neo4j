@@ -24,9 +24,7 @@ import org.neo4j.graphdb.DynamicLabel._
 import org.neo4j.kernel.{ThreadToStatementContextBridge, GraphDatabaseAPI}
 import collection.JavaConverters._
 import java.util.concurrent.TimeUnit
-import org.neo4j.kernel.api.StatementOperations
-import org.neo4j.kernel.api.operations.StatementState
-import org.neo4j.kernel.api.StatementOperationParts
+import org.neo4j.kernel.api.Statement
 
 trait GraphIcing {
 
@@ -61,28 +59,12 @@ trait GraphIcing {
       }
     }
 
-    def statementContextForReading: StatementOperationParts = graph.
-      getDependencyResolver.
-      resolveDependency(classOf[ThreadToStatementContextBridge]).
-      getCtxForReading
-    def stateForReading: StatementState = graph.
-      getDependencyResolver.
-      resolveDependency(classOf[ThreadToStatementContextBridge]).
-      statementForReading
-      
-    def state: StatementState = graph.
-      getDependencyResolver.
-      resolveDependency(classOf[ThreadToStatementContextBridge]).
-      statementForWriting
+    def statement: Statement = txBridge.statement()
 
-    def inTx[T](f: StatementOperationParts => T): T = {
+    def inTx[T](f: => T): T = {
       val tx = graph.beginTx()
       try {
-        val context = graph.
-          getDependencyResolver.
-          resolveDependency(classOf[ThreadToStatementContextBridge]).getCtxForWriting
-
-        val result = f(context)
+        val result = f
         tx.success()
         result
       } finally {
@@ -90,8 +72,8 @@ trait GraphIcing {
       }
     }
 
-    def inTx[T](f: => T): T = inTx {
-      _ => f
-    }
+    private def txBridge: ThreadToStatementContextBridge = graph.
+      getDependencyResolver.
+      resolveDependency(classOf[ThreadToStatementContextBridge])
   }
 }

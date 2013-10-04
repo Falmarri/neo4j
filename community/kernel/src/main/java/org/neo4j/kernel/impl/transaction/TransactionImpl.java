@@ -33,6 +33,7 @@ import javax.transaction.Status;
 import javax.transaction.Synchronization;
 import javax.transaction.SystemException;
 import javax.transaction.Transaction;
+import javax.transaction.TransactionManager;
 import javax.transaction.xa.XAException;
 import javax.transaction.xa.XAResource;
 import javax.transaction.xa.Xid;
@@ -40,7 +41,6 @@ import javax.transaction.xa.Xid;
 import org.neo4j.helpers.Exceptions;
 import org.neo4j.kernel.api.KernelTransaction;
 import org.neo4j.kernel.api.exceptions.TransactionFailureException;
-import org.neo4j.kernel.api.operations.StatementState;
 import org.neo4j.kernel.impl.core.TransactionState;
 import org.neo4j.kernel.impl.nioneo.xa.NeoStoreXaDataSource;
 import org.neo4j.kernel.impl.transaction.xaframework.ForceMode;
@@ -59,10 +59,8 @@ class TransactionImpl implements Transaction
     private volatile boolean active = true;
     private boolean globalStartRecordWritten = false;
 
-    private final LinkedList<ResourceElement> resourceList =
-            new LinkedList<ResourceElement>();
-    private List<Synchronization> syncHooks =
-            new ArrayList<Synchronization>();
+    private final LinkedList<ResourceElement> resourceList = new LinkedList<>();
+    private List<Synchronization> syncHooks = new ArrayList<>();
 
     private final int eventIdentifier;
 
@@ -72,7 +70,7 @@ class TransactionImpl implements Transaction
     private Thread owner;
 
     private final TransactionState state;
-    private KernelTransaction transactionContext;
+    private KernelTransaction kernelTransaction;
 
     TransactionImpl( TxManager txManager, ForceMode forceMode, TransactionStateFactory stateFactory,
                      StringLogger logger )
@@ -114,6 +112,31 @@ class TransactionImpl implements Transaction
                 eventIdentifier, owner.getName(), txManager.getTxStatusAsString( status ), resourceList.size() );
     }
 
+    /**
+     * This implementation assumes this call hierarchy:
+     * {@link TransactionImpl#commit()} --> {@link KernelTransaction#commit()} --> {@link TransactionManager#commit()}
+     *
+     *
+     * TransactionImpl#commit -> TransactionManaager#commit -> KernelTransaction#commit
+     *
+     * Now:
+     *   Kernel does:
+     *     #commit()
+     *       -> Prepare commands for commit
+     *       -> call txmanager#commit()
+     *       -> roll back if failure
+     *       -> in any case, release locks
+     *
+     * TxManager does:
+     *   KernelTx#prepare()
+     *     -> prepare commands
+     *   We commit
+     *   or Kernel -> rollback
+     *     -> drop created indexes
+     *     -> release locks
+     *   or Kernel -> commit
+     *     -> release locks
+     */
     @Override
     public synchronized void commit() throws RollbackException,
             HeuristicMixedException, HeuristicRollbackException,
@@ -121,7 +144,7 @@ class TransactionImpl implements Transaction
     {
         try
         {
-            transactionContext.commit();
+            kernelTransaction.commit();
         }
         catch ( TransactionFailureException e )
         {
@@ -140,7 +163,7 @@ class TransactionImpl implements Transaction
     {
         try
         {
-            transactionContext.rollback();
+            kernelTransaction.rollback();
         }
         catch ( TransactionFailureException e )
         {
@@ -338,8 +361,7 @@ class TransactionImpl implements Transaction
     }
 
     private boolean beforeCompletionRunning = false;
-    private List<Synchronization> syncHooksAdded =
-            new ArrayList<Synchronization>();
+    private List<Synchronization> syncHooksAdded = new ArrayList<>();
 
     @Override
     public synchronized void registerSynchronization( Synchronization s )
@@ -396,7 +418,7 @@ class TransactionImpl implements Transaction
             while ( !syncHooksAdded.isEmpty() )
             {
                 List<Synchronization> addedHooks = syncHooksAdded;
-                syncHooksAdded = new ArrayList<Synchronization>();
+                syncHooksAdded = new ArrayList<>();
                 for ( Synchronization s : addedHooks )
                 {
                     s.beforeCompletion();
@@ -503,7 +525,7 @@ class TransactionImpl implements Transaction
         {
             // prepare
             status = Status.STATUS_PREPARING;
-            LinkedList<Xid> preparedXids = new LinkedList<Xid>();
+            LinkedList<Xid> preparedXids = new LinkedList<>();
             for ( ResourceElement re : resourceList )
             {
                 if ( !preparedXids.contains( re.getXid() ) )
@@ -579,7 +601,7 @@ class TransactionImpl implements Transaction
     void doRollback() throws XAException
     {
         status = Status.STATUS_ROLLING_BACK;
-        LinkedList<Xid> rolledbackXids = new LinkedList<Xid>();
+        LinkedList<Xid> rolledbackXids = new LinkedList<>();
         for ( ResourceElement re : resourceList )
         {
             if ( !rolledbackXids.contains( re.getXid() ) )
@@ -589,11 +611,6 @@ class TransactionImpl implements Transaction
             }
         }
         status = Status.STATUS_ROLLEDBACK;
-    }
-
-    public StatementState newStatement()
-    {
-        return transactionContext.newStatementState();
     }
 
     /*
@@ -607,9 +624,9 @@ class TransactionImpl implements Transaction
      * However, in the spirit of baby steps, we hook into the current tx infrastructure at a few
      * points to not have to do the full move in one step.
      */
-    public void setTransactionContext( KernelTransaction transactionContext )
+    public void setKernelTransaction( KernelTransaction kernelTransaction )
     {
-        this.transactionContext = transactionContext;
+        this.kernelTransaction = kernelTransaction;
     }
 
     private static class ResourceElement
@@ -739,6 +756,6 @@ class TransactionImpl implements Transaction
 
     public KernelTransaction getTransactionContext()
     {
-        return transactionContext;
+        return kernelTransaction;
     }
 }

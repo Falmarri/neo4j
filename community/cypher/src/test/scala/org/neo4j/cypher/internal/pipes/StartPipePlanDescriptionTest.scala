@@ -47,13 +47,13 @@ class StartPipePlanDescriptionTest extends MockitoSugar {
     planContext = mock[PlanContext]
     factory = new EntityProducerFactory
     when(planContext.getIndexRule(label, prop)).thenReturn(Some(new IndexDescriptor(123,456)))
-    when(planContext.getOptLabelId(label)).thenReturn(Some(1L))
+    when(planContext.getOptLabelId(label)).thenReturn(Some(1))
   }
 
   @Test
   def schema_index() {
     //GIVEN
-    val planDescription = createPlanDescription(SchemaIndex("n", label, prop, Some(Literal(value))))
+    val planDescription = createPlanDescription(SchemaIndex("n", label, prop, AnyIndex, Some(Literal(value))))
 
     //WHEN
     val result = planDescription.toString

@@ -33,11 +33,13 @@ import org.neo4j.cypher.internal.pipes.QueryState
  */
 class MatchingContext(boundIdentifiers: SymbolTable,
                       predicates: Seq[Predicate] = Seq(),
-                      patternGraph: PatternGraph) {
+                      patternGraph: PatternGraph,
+                      identifiersInClause: Set[String]) {
 
   val builder: MatcherBuilder = decideWhichMatcherToUse()
 
-  private def identifiers: immutable.Map[String, CypherType] = patternGraph.patternRels.values.flatMap(p => p.identifiers2).toMap
+  private def identifiers: immutable.Map[String, CypherType] =
+    patternGraph.patternRels.values.flatMap(p => p.identifiers2).toMap
 
   lazy val symbols = {
     val ids = identifiers
@@ -55,9 +57,9 @@ class MatchingContext(boundIdentifiers: SymbolTable,
 
   private def decideWhichMatcherToUse(): MatcherBuilder = {
     if(SimplePatternMatcherBuilder.canHandle(patternGraph)) {
-      new SimplePatternMatcherBuilder(patternGraph, predicates, symbols)
+      new SimplePatternMatcherBuilder(patternGraph, predicates, symbols, identifiersInClause)
     } else {
-      new PatterMatchingBuilder(patternGraph, predicates)
+      new PatternMatchingBuilder(patternGraph, predicates, identifiersInClause)
     }
   }
 }

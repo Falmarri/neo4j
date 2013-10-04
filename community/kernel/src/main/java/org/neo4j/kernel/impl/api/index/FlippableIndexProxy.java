@@ -25,13 +25,17 @@ import java.util.concurrent.Future;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import org.neo4j.kernel.api.exceptions.index.ExceptionDuringFlipKernelException;
 import org.neo4j.kernel.api.exceptions.index.FlipFailedKernelException;
+import org.neo4j.kernel.api.exceptions.index.IndexActivationFailedKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexNotFoundKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexPopulationFailedKernelException;
+import org.neo4j.kernel.api.exceptions.index.IndexProxyAlreadyClosedKernelException;
 import org.neo4j.kernel.api.index.IndexReader;
 import org.neo4j.kernel.api.index.InternalIndexState;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
+import org.neo4j.kernel.impl.api.constraints.ConstraintVerificationFailedKernelException;
 
 public class FlippableIndexProxy implements IndexProxy
 {
@@ -207,7 +211,7 @@ public class FlippableIndexProxy implements IndexProxy
     }
 
     @Override
-    public void activate()
+    public void activate() throws IndexActivationFailedKernelException
     {
         // use write lock, since activate() might call flip*() which acquires a write lock itself.
         lock.writeLock().lock();
@@ -222,7 +226,7 @@ public class FlippableIndexProxy implements IndexProxy
     }
 
     @Override
-    public void validate() throws IndexPopulationFailedKernelException
+    public void validate() throws IndexPopulationFailedKernelException, ConstraintVerificationFailedKernelException
     {
         lock.readLock().lock();
         try
@@ -290,7 +294,7 @@ public class FlippableIndexProxy implements IndexProxy
             catch ( Exception e )
             {
                 this.delegate = failureDelegate.create( e );
-                throw new FlipFailedKernelException( e );
+                throw new ExceptionDuringFlipKernelException( e );
             }
         }
         finally
@@ -305,12 +309,11 @@ public class FlippableIndexProxy implements IndexProxy
         return getClass().getSimpleName() + " -> " + delegate + "[target:" + flipTarget + "]";
     }
 
-    private void assertStillOpenForBusiness()
+    private void assertStillOpenForBusiness() throws IndexProxyAlreadyClosedKernelException
     {
         if ( closed )
         {
-            throw new IllegalStateException(
-                    this.getClass().getSimpleName() + " has been closed. No more interactions allowed" );
+            throw new IndexProxyAlreadyClosedKernelException( this.getClass() );
         }
     }
 }

@@ -20,25 +20,14 @@
 package org.neo4j.cypher.internal.pipes
 
 import org.neo4j.kernel.{ThreadToStatementContextBridge, GraphDatabaseAPI}
-import org.neo4j.cypher.internal.spi.gdsimpl.TransactionBoundQueryContext
-
+import org.neo4j.cypher.internal.spi.gdsimpl.TransactionBoundExecutionContext
 
 object QueryStateHelper {
   def empty = new QueryState(null, null, Map.empty, NullDecorator)
 
   def queryStateFrom(db: GraphDatabaseAPI) = {
     val tx = db.beginTx()
-
-    val ctx = db
-      .getDependencyResolver
-      .resolveDependency(classOf[ThreadToStatementContextBridge])
-      .getCtxForWriting
-    val state = db
-      .getDependencyResolver
-      .resolveDependency(classOf[ThreadToStatementContextBridge])
-      .statementForWriting
-
-    new QueryState(db, new TransactionBoundQueryContext(db, tx, ctx, state), Map.empty, NullDecorator, None)
+    val statement = db.getDependencyResolver.resolveDependency(classOf[ThreadToStatementContextBridge]).statement()
+    new QueryState(db, new TransactionBoundExecutionContext(db, tx, statement), Map.empty, NullDecorator, None)
   }
 }
-

@@ -28,15 +28,18 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameters;
+
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.ResourceIterable;
 import org.neo4j.graphdb.Transaction;
+import org.neo4j.helpers.ArrayUtil;
 import org.neo4j.helpers.Function;
 import org.neo4j.test.TestGraphDatabaseFactory;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.runners.Parameterized.Parameters;
+
 import static org.neo4j.graphdb.DynamicLabel.label;
 import static org.neo4j.graphdb.Neo4jMatchers.createIndex;
 import static org.neo4j.helpers.collection.Iterables.map;
@@ -47,7 +50,7 @@ import static org.neo4j.helpers.collection.IteratorUtil.asSet;
 /*
  * The purpose of this test class is to make sure all index providers produce the same results.
  *
- * Schema Indexes should always produce the same result as scanning all nodes and checking properties. By extending this
+ * Indexes should always produce the same result as scanning all nodes and checking properties. By extending this
  * class in the index provider module, all value types will be checked against the index provider.
  */
 @RunWith(value = Parameterized.class)
@@ -138,7 +141,12 @@ public abstract class SchemaProviderApprovalTest
         @Override
         public Object apply( Node node )
         {
-            return node.getProperty( PROPERTY_KEY );
+            Object value = node.getProperty( PROPERTY_KEY );
+            if ( value.getClass().isArray() )
+            {
+                return new ArrayEqualityObject( value );
+            }
+            return value;
         }
     };
 
@@ -156,29 +164,26 @@ public abstract class SchemaProviderApprovalTest
     private static Map<TestValue, Set<Object>> runFindByLabelAndProperty( GraphDatabaseService db )
     {
         HashMap<TestValue, Set<Object>> results = new HashMap<>();
-        Transaction tx = db.beginTx();
-        try
+        try ( Transaction tx = db.beginTx() )
         {
             for ( TestValue value : TestValue.values() )
             {
                 addToResults( db, results, value );
             }
-        }
-        finally
-        {
-            tx.finish();
+            tx.success();
         }
         return results;
     }
 
     private static Node createNode( GraphDatabaseService db, String propertyKey, Object value )
     {
-        Transaction tx = db.beginTx();
-        Node node = db.createNode( label( LABEL ) );
-        node.setProperty( propertyKey, value );
-        tx.success();
-        tx.finish();
-        return node;
+        try ( Transaction tx = db.beginTx() )
+        {
+            Node node = db.createNode( label( LABEL ) );
+            node.setProperty( propertyKey, value );
+            tx.success();
+            return node;
+        }
     }
 
     private static void addToResults( GraphDatabaseService db, HashMap<TestValue, Set<Object>> results,
@@ -187,5 +192,37 @@ public abstract class SchemaProviderApprovalTest
         ResourceIterable<Node> foundNodes = db.findNodesByLabelAndProperty( label( LABEL ), PROPERTY_KEY, value.value );
         Set<Object> propertyValues = asSet( map( PROPERTY_EXTRACTOR, foundNodes ) );
         results.put( value, propertyValues );
+    }
+
+    private static class ArrayEqualityObject
+    {
+        private final Object array;
+
+        ArrayEqualityObject( Object array )
+        {
+            this.array = array;
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return ArrayUtil.hashCode( array );
+        }
+
+        @Override
+        public boolean equals( Object obj )
+        {
+            if ( obj instanceof ArrayEqualityObject )
+            {
+                return ArrayUtil.equals( array, ((ArrayEqualityObject) obj).array );
+            }
+            return false;
+        }
+
+        @Override
+        public String toString()
+        {
+            return ArrayUtil.toString( array );
+        }
     }
 }

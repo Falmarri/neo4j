@@ -25,7 +25,9 @@ import java.nio.channels.ReadableByteChannel;
 import java.util.ArrayList;
 import java.util.Collection;
 
+import org.neo4j.kernel.api.exceptions.index.IndexActivationFailedKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexNotFoundKernelException;
+import org.neo4j.kernel.api.exceptions.index.IndexPopulationFailedKernelException;
 import org.neo4j.kernel.api.exceptions.schema.MalformedSchemaRuleException;
 import org.neo4j.kernel.impl.api.index.IndexingService;
 import org.neo4j.kernel.impl.core.CacheAccessBackDoor;
@@ -52,6 +54,7 @@ import org.neo4j.kernel.impl.nioneo.store.RelationshipTypeTokenRecord;
 import org.neo4j.kernel.impl.nioneo.store.RelationshipTypeTokenStore;
 import org.neo4j.kernel.impl.nioneo.store.SchemaRule;
 import org.neo4j.kernel.impl.nioneo.store.SchemaStore;
+import org.neo4j.kernel.impl.nioneo.store.UniquenessConstraintRule;
 import org.neo4j.kernel.impl.transaction.xaframework.LogBuffer;
 import org.neo4j.kernel.impl.transaction.xaframework.XaCommand;
 
@@ -234,11 +237,6 @@ public abstract class Command extends XaCommand
         if ( !readDynamicRecords( byteChannel, buffer, toReturn, PROPERTY_BLOCK_DYNAMIC_RECORD_ADDER ) )
             return null;
 
-        // TODO we had this assertion before, necessary?
-//            assert toReturn.getValueRecords().size() == noOfDynRecs : "read in "
-//                                                                      + toReturn.getValueRecords().size()
-//                                                                      + " instead of the proper "
-//                                                                      + noOfDynRecs;
         return toReturn;
     }
     
@@ -949,7 +947,20 @@ public abstract class Command extends XaCommand
             
             if ( !readDynamicRecords( byteChannel, buffer, record, PROPERTY_DELETED_DYNAMIC_RECORD_ADDER ) )
                 return null;
-            
+
+            buffer.flip();
+            int deletedRecords = buffer.getInt(); // 4
+            assert deletedRecords >= 0;
+            while ( deletedRecords-- > 0 )
+            {
+                DynamicRecord read = readDynamicRecord( byteChannel, buffer );
+                if ( read == null )
+                {
+                    return null;
+                }
+                record.addDeletedRecord( read );
+            }
+
             if ( ( inUse && !record.inUse() ) || ( !inUse && record.inUse() ) )
             {
                 throw new IllegalStateException( "Weird, inUse was read in as "
@@ -1144,31 +1155,39 @@ public abstract class Command extends XaCommand
 
     static class SchemaRuleCommand extends Command
     {
+        private final NeoStore neoStore;
         private final IndexingService indexes;
         private final SchemaStore store;
-        private final Collection<DynamicRecord> records;
+        private final Collection<DynamicRecord> recordsBefore;
+        private final Collection<DynamicRecord> recordsAfter;
         private final SchemaRule schemaRule;
 
-        SchemaRuleCommand( SchemaStore store, IndexingService indexes,
-                           Collection<DynamicRecord> records, SchemaRule schemaRule )
+        private long txId;
+
+        SchemaRuleCommand( NeoStore neoStore, SchemaStore store, IndexingService indexes,
+                           Collection<DynamicRecord> recordsBefore, Collection<DynamicRecord> recordsAfter,
+                           SchemaRule schemaRule, long txId )
         {
-            super( first( records ).getId(), Mode.fromRecordState( first( records ) ) );
+            super( first( recordsAfter ).getId(), Mode.fromRecordState( first( recordsAfter ) ) );
+            this.neoStore = neoStore;
             this.indexes = indexes;
             this.store = store;
-            this.records = records;
+            this.recordsBefore = recordsBefore;
+            this.recordsAfter = recordsAfter;
             this.schemaRule = schemaRule;
+            this.txId = txId;
         }
 
         @Override
         public void accept( CommandRecordVisitor visitor )
         {
-            visitor.visitSchemaRule( records );
+            visitor.visitSchemaRule( recordsAfter );
         }
 
         @Override
         public String toString()
         {
-            return "SchemaRule" + records;
+            return "SchemaRule" + recordsAfter;
         }
 
         @Override
@@ -1177,15 +1196,15 @@ public abstract class Command extends XaCommand
             cacheAccess.removeSchemaRuleFromCache( getKey() );
         }
         
-        Collection<DynamicRecord> getRecords()
+        Collection<DynamicRecord> getRecordsAfter()
         {
-            return unmodifiableCollection( records );
+            return unmodifiableCollection( recordsAfter );
         }
 
         @Override
         public void execute()
         {
-            for ( DynamicRecord record : records )
+            for ( DynamicRecord record : recordsAfter )
                 store.updateRecord( record );
 
             if ( schemaRule instanceof IndexRule )
@@ -1193,20 +1212,23 @@ public abstract class Command extends XaCommand
                 switch ( getMode() )
                 {
                 case UPDATE:
+                    // Shouldn't we be more clear about that we are waiting for an index to come online here?
+                    // right now we just assume that an update to index records means wait for it to be online.
                     if ( ((IndexRule) schemaRule).isConstraintIndex() )
                     {
                         try
                         {
                             indexes.activateIndex( schemaRule.getId() );
                         }
-                        catch ( IndexNotFoundKernelException e )
+                        catch ( IndexNotFoundKernelException | IndexActivationFailedKernelException |
+                                IndexPopulationFailedKernelException e )
                         {
-                            throw new IllegalStateException( "Index should have existed.", e );
+                            throw new IllegalStateException( "Unable to enable constraint, backing index is not online.", e );
                         }
                     }
                     break;
                 case CREATE:
-                    indexes.createIndex( (IndexRule)schemaRule );
+                    indexes.createIndex( (IndexRule) schemaRule );
                     break;
                 case DELETE:
                     indexes.dropIndex( (IndexRule)schemaRule );
@@ -1215,14 +1237,31 @@ public abstract class Command extends XaCommand
                     throw new IllegalStateException( getMode().name() );
                 }
             }
+
+            if( schemaRule instanceof UniquenessConstraintRule )
+            {
+                switch ( getMode() )
+                {
+                    case UPDATE:
+                    case CREATE:
+                        neoStore.setLatestConstraintIntroducingTx( txId );
+                        break;
+                    case DELETE:
+                        break;
+                    default:
+                        throw new IllegalStateException( getMode().name() );
+                }
+            }
         }
 
         @Override
         public void writeToFile( LogBuffer buffer ) throws IOException
         {
             buffer.put( SCHEMA_RULE_COMMAND );
-            writeDynamicRecords( buffer, records );
-            buffer.put( first( records ).isCreated() ? (byte) 1 : 0);
+            writeDynamicRecords( buffer, recordsBefore );
+            writeDynamicRecords( buffer, recordsAfter );
+            buffer.put( first( recordsAfter ).isCreated() ? (byte) 1 : 0);
+            buffer.putLong( txId );
         }
         
         public SchemaRule getSchemaRule()
@@ -1230,11 +1269,24 @@ public abstract class Command extends XaCommand
             return schemaRule;
         }
 
+        public long getTxId()
+        {
+            return txId;
+        }
+
+        public void setTxId( long txId )
+        {
+            this.txId = txId;
+        }
+
         static Command readFromFile( NeoStore neoStore, IndexingService indexes, ReadableByteChannel byteChannel,
                 ByteBuffer buffer ) throws IOException
         {
-            Collection<DynamicRecord> records = new ArrayList<>();
-            readDynamicRecords( byteChannel, buffer, records, COLLECTION_DYNAMIC_RECORD_ADDER );
+            Collection<DynamicRecord> recordsBefore = new ArrayList<>();
+            readDynamicRecords( byteChannel, buffer, recordsBefore, COLLECTION_DYNAMIC_RECORD_ADDER );
+
+            Collection<DynamicRecord> recordsAfter = new ArrayList<>();
+            readDynamicRecords( byteChannel, buffer, recordsAfter, COLLECTION_DYNAMIC_RECORD_ADDER );
 
             if ( !readAndFlip( byteChannel, buffer, 1 ) )
                 throw new IllegalStateException( "Missing SchemaRule.isCreated flag in deserialization" );
@@ -1242,28 +1294,41 @@ public abstract class Command extends XaCommand
             byte isCreated = buffer.get();
             if ( 1 == isCreated )
             {
-                for ( DynamicRecord record : records )
+                for ( DynamicRecord record : recordsAfter )
                 {
                     record.setCreated();
                 }
             }
 
-            SchemaRule rule = null;
-            if ( first( records ).inUse() )
+            if ( !readAndFlip( byteChannel, buffer, 8 ) )
+                throw new IllegalStateException( "Missing SchemaRule.txId in deserialization" );
+
+            long txId = buffer.getLong();
+
+            SchemaRule rule = first( recordsAfter ).inUse() ?
+                    readSchemaRule( recordsAfter ) :
+                    readSchemaRule( recordsBefore );
+
+            return new SchemaRuleCommand( neoStore, neoStore != null ? neoStore.getSchemaStore() : null,
+                    indexes, recordsBefore, recordsAfter, rule, txId );
+        }
+
+        private static SchemaRule readSchemaRule( Collection<DynamicRecord> recordsBefore )
+        {
+            assert first(recordsBefore).inUse() : "Asked to deserialize schema records that were not in use.";
+
+            SchemaRule rule;
+            ByteBuffer deserialized = AbstractDynamicStore.concatData( recordsBefore, new byte[100] );
+            try
             {
-                ByteBuffer deserialized = AbstractDynamicStore.concatData( records, new byte[100] );
-                try
-                {
-                    rule = SchemaRule.Kind.deserialize( first( records ).getId(), deserialized );
-                }
-                catch ( MalformedSchemaRuleException e )
-                {
-                    // TODO This is bad. We should probably just shut down if that happens
-                    throw launderedException( e );
-                }
+                rule = SchemaRule.Kind.deserialize( first( recordsBefore ).getId(), deserialized );
             }
-            return new SchemaRuleCommand( neoStore != null ? neoStore.getSchemaStore() : null,
-                    indexes, records, rule );
+            catch ( MalformedSchemaRuleException e )
+            {
+                // TODO This is bad. We should probably just shut down if that happens
+                throw launderedException( e );
+            }
+            return rule;
         }
     }
     

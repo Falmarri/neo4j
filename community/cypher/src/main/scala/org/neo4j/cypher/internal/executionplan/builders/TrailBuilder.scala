@@ -78,11 +78,11 @@ final class TrailBuilder(patterns: Seq[Pattern], boundPoints: Seq[String], predi
       val patternsLeft = patternsToDo.filterNot(_ == p)
 
       val result: Trail = p match {
-        case rel: RelatedTo if rel.left == done.end           => singleStep(rel, rel.right, rel.direction)
-        case rel: RelatedTo if rel.right == done.end          => singleStep(rel, rel.left, rel.direction.reverse())
-        case rel: VarLengthRelatedTo if rel.end == done.end   => multiStep(rel, rel.start, rel.direction.reverse())
-        case rel: VarLengthRelatedTo if rel.start == done.end => multiStep(rel, rel.end, rel.direction)
-        case _                                                => throw new ThisShouldNotHappenError("Andres", "This pattern is not expected")
+        case rel: RelatedTo if rel.left.name == done.end           => singleStep(rel, rel.right.name, rel.direction)
+        case rel: RelatedTo if rel.right.name == done.end          => singleStep(rel, rel.left.name, rel.direction.reverse())
+        case rel: VarLengthRelatedTo if rel.right.name == done.end   => multiStep(rel, rel.left.name, rel.direction.reverse())
+        case rel: VarLengthRelatedTo if rel.left.name == done.end => multiStep(rel, rel.right.name, rel.direction)
+        case _                                                     => throw new ThisShouldNotHappenError("Andres", "This pattern is not expected")
       }
 
       (result, patternsLeft)
@@ -91,8 +91,8 @@ final class TrailBuilder(patterns: Seq[Pattern], boundPoints: Seq[String], predi
     val result: Seq[(Trail, Seq[Pattern])] = doneSeq.flatMap {
       case (done: Trail, patternsToDo: Seq[Pattern]) =>
         val relatedToes: Seq[Pattern] = patternsToDo.filter {
-          case rel: RelatedTo          => done.end == rel.left || done.end == rel.right
-          case rel: VarLengthRelatedTo => done.end == rel.end || done.end == rel.start
+          case rel: RelatedTo          => done.end == rel.left.name || done.end == rel.right.name
+          case rel: VarLengthRelatedTo => done.end == rel.right.name || done.end == rel.left.name
         }
 
         val newValues = relatedToes.map(transformToTrail(_, done, patternsToDo))
@@ -102,7 +102,9 @@ final class TrailBuilder(patterns: Seq[Pattern], boundPoints: Seq[String], predi
     val uniqueResults = result.distinct
     val uniqueInput = doneSeq.distinct
 
-    if (uniqueResults == uniqueInput)
+    if (uniqueResults == uniqueInput ||
+      uniqueResults.size > Math.pow(patterns.size, 3)) // This number is rather arbitrary - it just makes sure we don't
+                                                       // loop forever trying to find a trail
       result
     else
       internalFindLongestPath(uniqueResults)
@@ -111,7 +113,7 @@ final class TrailBuilder(patterns: Seq[Pattern], boundPoints: Seq[String], predi
   private def findLongestTrail(): Option[LongestTrail] = {
     def findAllPaths(): Seq[(Trail, scala.Seq[Pattern])] = {
       val startPoints = boundPoints.map(point => (EndPoint(point), patterns))
-      val foundPaths = internalFindLongestPath(startPoints)
+      val foundPaths: Seq[(Trail, Seq[Pattern])] = internalFindLongestPath(startPoints)
       val filteredPaths = foundPaths.filter {
         case (trail, toes) => !trail.isEndPoint && trail.start != trail.end
       }

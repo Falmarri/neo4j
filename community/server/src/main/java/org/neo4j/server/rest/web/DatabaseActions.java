@@ -27,6 +27,7 @@ import java.util.Set;
 
 import com.sun.jersey.api.core.HttpContext;
 import org.apache.lucene.search.Sort;
+
 import org.neo4j.graphalgo.CommonEvaluators;
 import org.neo4j.graphalgo.CostEvaluator;
 import org.neo4j.graphalgo.GraphAlgoFactory;
@@ -51,6 +52,7 @@ import org.neo4j.graphdb.index.IndexManager;
 import org.neo4j.graphdb.index.ReadableIndex;
 import org.neo4j.graphdb.index.ReadableRelationshipIndex;
 import org.neo4j.graphdb.index.UniqueFactory;
+import org.neo4j.graphdb.index.UniqueFactory.UniqueEntity;
 import org.neo4j.graphdb.schema.ConstraintCreator;
 import org.neo4j.graphdb.schema.ConstraintDefinition;
 import org.neo4j.graphdb.schema.ConstraintType;
@@ -248,6 +250,22 @@ public class DatabaseActions
     public NodeRepresentation getReferenceNode()
     {
         return new NodeRepresentation( graphDb.getReferenceNode() );
+    }
+
+    // Property keys
+
+    public Representation getAllPropertyKeys()
+    {
+        Collection<ValueRepresentation> propKeys = asSet( map( new Function<String, ValueRepresentation>()
+        {
+            @Override
+            public ValueRepresentation apply( String key )
+            {
+                return ValueRepresentation.string( key );
+            }
+        }, GlobalGraphOperations.at( graphDb ).getAllPropertyKeys() ) );
+
+        return new ListRepresentation( RepresentationType.STRING, propKeys );
     }
 
     // Node properties
@@ -891,7 +909,11 @@ public class DatabaseActions
             created = result == null;
             if ( created )
             {
-                result = node;
+                UniqueNodeFactory factory = new UniqueNodeFactory( indexName, properties );
+                UniqueEntity<Node> entity = factory.getOrCreateWithOutcome( key, value );
+                // when given a node id, return as created if that node was newly added to the index
+                created = entity.entity().getId() == node.getId() || entity.wasCreated();
+                result = entity.entity();
             }
         }
         else
@@ -904,8 +926,9 @@ public class DatabaseActions
                 }
             }
             UniqueNodeFactory factory = new UniqueNodeFactory( indexName, properties );
-            result = factory.getOrCreate( key, value );
-            created = factory.created;
+            UniqueEntity<Node> entity = factory.getOrCreateWithOutcome( key, value );
+            result = entity.entity();
+            created = entity.wasCreated();
         }
         return Pair.of( new IndexedEntityRepresentation( result, key, value,
                 new NodeIndexRepresentation( indexName, Collections.<String, String>emptyMap() ) ), created );
@@ -934,7 +957,12 @@ public class DatabaseActions
             result = graphDb.index().forRelationships( indexName ).putIfAbsent( relationship, key, value );
             if ( created = result == null )
             {
-                result = relationship;
+                UniqueRelationshipFactory factory =
+                    new UniqueRelationshipFactory( indexName, relationship.getStartNode(), relationship.getEndNode(), relationship.getType().name(), properties );
+                UniqueEntity<Relationship> entity = factory.getOrCreateWithOutcome( key, value );
+                // when given a relationship id, return as created if that relationship was newly added to the index
+                created = entity.entity().getId() == relationship.getId() || entity.wasCreated();
+                result = entity.entity();
             }
         }
         else if ( startNode == null || type == null || endNode == null )
@@ -944,10 +972,11 @@ public class DatabaseActions
         }
         else
         {
-            UniqueRelationshipFactory factory = new UniqueRelationshipFactory( indexName, node( startNode ),
-                    node( endNode ), type, properties );
-            result = factory.getOrCreate( key, value );
-            created = factory.created;
+            UniqueRelationshipFactory factory =
+                new UniqueRelationshipFactory( indexName, node( startNode ), node( endNode ), type, properties );
+            UniqueEntity<Relationship> entity = factory.getOrCreateWithOutcome( key, value );
+            result = entity.entity();
+            created = entity.wasCreated();
         }
         return Pair.of( new IndexedEntityRepresentation( result, key, value,
                 new RelationshipIndexRepresentation( indexName, Collections.<String, String>emptyMap() ) ),
@@ -959,7 +988,6 @@ public class DatabaseActions
         private final Node start, end;
         private final RelationshipType type;
         private final Map<String, Object> properties;
-        boolean created;
 
         UniqueRelationshipFactory( String index, Node start, Node end, String type, Map<String, Object> properties )
         {
@@ -983,14 +1011,12 @@ public class DatabaseActions
             {
                 relationship.setProperty( property.getKey(), property.getValue() );
             }
-            this.created = true;
         }
     }
 
     private class UniqueNodeFactory extends UniqueFactory.UniqueNodeFactory
     {
         private final Map<String, Object> properties;
-        boolean created;
 
         UniqueNodeFactory( String index, Map<String, Object> properties )
         {
@@ -1005,7 +1031,6 @@ public class DatabaseActions
             {
                 node.setProperty( property.getKey(), property.getValue() );
             }
-            this.created = true;
         }
     }
 

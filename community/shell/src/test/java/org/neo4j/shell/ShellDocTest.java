@@ -24,6 +24,7 @@ import java.io.PrintWriter;
 import org.junit.Test;
 
 import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Transaction;
 import org.neo4j.helpers.Settings;
 import org.neo4j.kernel.GraphDatabaseAPI;
 import org.neo4j.shell.impl.CollectingOutput;
@@ -36,6 +37,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+
 import static org.neo4j.shell.ShellLobby.NO_INITIAL_SESSION;
 import static org.neo4j.shell.ShellLobby.remoteLocation;
 import static org.neo4j.visualization.asciidoc.AsciidocHelper.createGraphVizWithNodeId;
@@ -157,13 +159,15 @@ public class ShellDocTest
         GraphDatabaseAPI db = (GraphDatabaseAPI)new TestGraphDatabaseFactory().newImpermanentDatabase();
         final GraphDatabaseShellServer server = new GraphDatabaseShellServer( db, false );
 
-        db.beginTx();
-        Documenter doc = new Documenter( "simple cypher result dump", server );
-        doc.add( "mknode --cd --np \"{'name':'Neo'}\"", "", "create a new node and go to it" );
-        doc.add( "mkrel -c -d i -t LIKES --np \"{'app':'foobar'}\"", "", "create a relationship" );
-        doc.add( "dump START n=node({self}) MATCH (n)-[r]-(m) return n,r,m;",
-                "create (_1 {`name`:\"Neo\"})", "Export the cypher statement results" );
-        doc.run();
+        try ( Transaction tx = db.beginTx() )
+        {
+            Documenter doc = new Documenter( "simple cypher result dump", server );
+            doc.add( "mknode --cd --np \"{'name':'Neo'}\"", "", "create a new node and go to it" );
+            doc.add( "mkrel -c -d i -t LIKES --np \"{'app':'foobar'}\"", "", "create a relationship" );
+            doc.add( "dump START n=node({self}) MATCH (n)-[r]-(m) return n,r,m;",
+                    "create (_1 {`name`:\"Neo\"})", "Export the cypher statement results" );
+            doc.run();
+        }
         server.shutdown();
         db.shutdown();
     }
@@ -174,7 +178,6 @@ public class ShellDocTest
         GraphDatabaseAPI db = (GraphDatabaseAPI)new TestGraphDatabaseFactory().newImpermanentDatabase();
         final GraphDatabaseShellServer server = new GraphDatabaseShellServer( db, false );
 
-        db.beginTx();
         Documenter doc = new Documenter( "database dump", server );
         doc.add( "create index on :Person(name);", "", "create an index" );
         doc.add( "create (m:Person:Hacker {name:'Mattias'}), (m)-[:KNOWS]->(m);", "", "create one labeled node and a relationship" );
@@ -251,15 +254,18 @@ public class ShellDocTest
 //                "return zionist.name;",
 //                "ColumnFilter",
 //                "profile the query by displaying more query execution information" );
-        db.beginTx();
-        doc.run();
+        try ( Transaction tx = db.beginTx() )
+        {
+            doc.run();
+        }
         server.shutdown();
-        PrintWriter writer = doc.getWriter( "shell-matrix-example-graph" );
-        db.beginTx();
-        writer.println( createGraphVizWithNodeId( "Shell Matrix Example", db,
-                "graph" ) );
-        writer.flush();
-        writer.close();
+        
+        try ( PrintWriter writer = doc.getWriter( "shell-matrix-example-graph" );
+                Transaction tx = db.beginTx() )
+        {
+            writer.println( createGraphVizWithNodeId( "Shell Matrix Example", db, "graph" ) );
+            writer.flush();
+        }
         db.shutdown();
     }
 

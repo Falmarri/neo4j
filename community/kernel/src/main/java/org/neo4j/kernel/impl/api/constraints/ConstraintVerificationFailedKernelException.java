@@ -25,8 +25,14 @@ import java.util.Set;
 import org.neo4j.kernel.api.constraints.UniquenessConstraint;
 import org.neo4j.kernel.api.exceptions.KernelException;
 import org.neo4j.kernel.api.index.IndexEntryConflictException;
-import org.neo4j.kernel.api.operations.KeyNameLookup;
+import org.neo4j.kernel.api.operations.TokenNameLookup;
 
+/**
+ * Constraint verification happens when a new constraint is created, and the database verifies that existing
+ * data adheres to the new constraint.
+ *
+ * @see ConstraintViolationKernelException
+ */
 public class ConstraintVerificationFailedKernelException extends KernelException
 {
     private final UniquenessConstraint constraint;
@@ -84,15 +90,15 @@ public class ConstraintVerificationFailedKernelException extends KernelException
     }
 
     @Override
-    public String getUserMessage( KeyNameLookup keyNameLookup )
+    public String getUserMessage( TokenNameLookup tokenNameLookup )
     {
         StringBuilder message = new StringBuilder();
         for ( Evidence evidenceItem : evidence() )
         {
             IndexEntryConflictException conflict = evidenceItem.conflict;
             message.append( conflict.evidenceMessage(
-                    keyNameLookup.getLabelName( constraint.label() ),
-                    keyNameLookup.getPropertyKeyName( constraint.property() ) ) );
+                    tokenNameLookup.labelGetName( constraint.label() ),
+                    tokenNameLookup.propertyKeyGetName( constraint.propertyKeyId() ) ) );
         }
         return message.toString();
     }

@@ -45,7 +45,6 @@ import org.neo4j.helpers.Exceptions;
 import org.neo4j.helpers.UTF8;
 import org.neo4j.kernel.api.KernelAPI;
 import org.neo4j.kernel.api.KernelTransaction;
-import org.neo4j.kernel.api.operations.StatementState;
 import org.neo4j.kernel.impl.core.KernelPanicEventGenerator;
 import org.neo4j.kernel.impl.core.TransactionState;
 import org.neo4j.kernel.impl.nioneo.store.FileSystemAbstraction;
@@ -69,9 +68,9 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
     private String txLog1FileName = "tm_tx_log.1";
     private String txLog2FileName = "tm_tx_log.2";
     private final int maxTxLogRecordCount = 1000;
-    private int eventIdentifierCounter = 0;
+    private final AtomicInteger eventIdentifierCounter = new AtomicInteger( 0 );
 
-    private final Map<RecoveredBranchInfo, Boolean> branches = new HashMap<RecoveredBranchInfo, Boolean>();
+    private final Map<RecoveredBranchInfo, Boolean> branches = new HashMap<>();
     private volatile TxLog txLog = null;
     private boolean tmOk = false;
     private Throwable tmNotOkCause;
@@ -110,9 +109,9 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
         this.stateFactory = stateFactory;
     }
 
-    synchronized int getNextEventIdentifier()
+    int getNextEventIdentifier()
     {
-        return eventIdentifierCounter++;
+        return eventIdentifierCounter.incrementAndGet();
     }
 
     private <E extends Exception> E logAndReturn( String msg, E exception )
@@ -139,7 +138,7 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
     public synchronized void start()
             throws Throwable
     {
-        txThreadMap = new ThreadLocalWithSize<TransactionImpl>();
+        txThreadMap = new ThreadLocalWithSize<>();
         openLog();
         findPendingDatasources();
         dataSourceRegistrationListener = new TxManagerDataSourceRegistrationListener();
@@ -249,8 +248,10 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
     synchronized void setTmNotOk( Throwable cause )
     {
         if ( !tmOk )
+        {
             return;
-        
+        }
+
         tmOk = false;
         tmNotOkCause = cause;
         log.logMessage( "setting TM not OK", cause );
@@ -283,7 +284,7 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
         startedTxCount.incrementAndGet();
         // start record written on resource enlistment
 
-        tx.setTransactionContext(kernel.newTransaction() );
+        tx.setKernelTransaction( kernel.newTransaction() );
     }
 
     private void assertTmOk() throws SystemException
@@ -365,7 +366,22 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
             txThreadMap.remove();
             if ( hasAnyLocks )
             {
-                tx.finish( successful );
+                if(successful)
+                {
+                    tx.finish( true );
+                }
+                else
+                {
+                    try
+                    {
+                        tx.finish( false );
+                    }
+                    catch(RuntimeException e)
+                    {
+                        log.error( "Failed to commit transaction, and was then subsequently unable to " +
+                                   "finish the failed tx.", e );
+                    }
+                }
             }
         }
     }
@@ -442,10 +458,10 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
                 {
                     log.logMessage( "Commit failed", t );
 
-                        setTmNotOk( t );
-                        // this should never be
-                        throw logAndReturn("TM error tx commit",new TransactionFailureException(
-                                "commit threw exception but status is committed?", t ));
+                    setTmNotOk( t );
+                    // this should never be
+                    throw logAndReturn("TM error tx commit",new TransactionFailureException(
+                            "commit threw exception but status is committed?", t ));
                 }
             }
 
@@ -501,13 +517,13 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
                 if ( commitFailureCause == null )
                 {
                     throw logAndReturn( "TM error tx commit", new HeuristicRollbackException(
-                            "Failed to commit, transaction rolledback ---> "
+                            "Failed to commit, transaction rolled back ---> "
                                     + "error code was: " + xaErrorCode ) );
                 }
                 else
                 {
                     throw logAndReturn( "TM error tx commit", Exceptions.withCause( new HeuristicRollbackException(
-                            "Failed to commit, transaction rolledback ---> " +
+                            "Failed to commit, transaction rolled back ---> " +
                                     commitFailureCause ), commitFailureCause ) );
                 }
             }
@@ -568,7 +584,7 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
         }
         tx.setStatus( Status.STATUS_NO_TRANSACTION );
         RollbackException rollbackException = new RollbackException(
-                "Failed to commit, transaction rolledback" );
+                "Failed to commit, transaction rolled back" );
         ExceptionCauseSetter.setCause( rollbackException, tx.getRollbackCause() );
         throw rollbackException;
     }
@@ -661,7 +677,7 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
         assertTmOk();
         return txThreadMap.get();
     }
-    
+
     @Override
     public void resume( Transaction tx ) throws IllegalStateException,
             SystemException
@@ -765,14 +781,14 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
                 FileChannel fc = fileSystem.open( logSwitcherFileName, "rw" );
                 fc.write( buf );
                 txLog = new TxLog( new File( txLogDir, txLog1FileName), fileSystem );
-                log.logMessage( "TM new log: " + txLog1FileName, true );
+                log.info( "TM new log: " + txLog1FileName );
                 fc.force( true );
                 fc.close();
             }
         }
         catch ( IOException e )
         {
-            log.logMessage( "Unable to start TM", e );
+            log.error( "Unable to start TM", e );
             throw logAndReturn( "TM startup failure",
                     new TransactionFailureException( "Unable to start TM", e ) );
         }
@@ -947,27 +963,13 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
     }
 
     @Override
-    public StatementState newStatement()
-    {
-        Transaction tx;
-        try
-        {
-            tx = getTransaction();
-        }
-        catch ( SystemException e )
-        {
-            throw new RuntimeException( e );
-        }
-        return tx != null ? ((TransactionImpl)tx).newStatement() : null;
-    }
-
-    @Override
     public void setKernel(KernelAPI kernel)
     {
         this.kernel = kernel;
     }
-    
+
     @Override
+    @SuppressWarnings("deprecation")
     public KernelTransaction getKernelTransaction()
     {
         Transaction tx;
@@ -981,7 +983,7 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
         }
         return tx != null ? ((TransactionImpl)tx).getTransactionContext() : null;
     }
-    
+
     private class TxManagerDataSourceRegistrationListener implements DataSourceRegistrationListener
     {
         @Override

@@ -21,11 +21,15 @@ package org.neo4j.kernel.api.properties;
 
 import java.util.Arrays;
 
-class LongArrayProperty extends FullSizeProperty
+import static org.neo4j.kernel.impl.cache.SizeOfs.sizeOfArray;
+import static org.neo4j.kernel.impl.cache.SizeOfs.withObjectOverhead;
+import static org.neo4j.kernel.impl.cache.SizeOfs.withReference;
+
+class LongArrayProperty extends DefinedProperty
 {
     private final long[] value;
 
-    LongArrayProperty( long propertyKeyId, long[] value )
+    LongArrayProperty( int propertyKeyId, long[] value )
     {
         super( propertyKeyId );
         assert value != null;
@@ -35,15 +39,15 @@ class LongArrayProperty extends FullSizeProperty
     @Override
     public long[] value()
     {
-        return value;
+        return value.clone();
     }
 
     @Override
     public boolean valueEquals( Object value )
     {
-        if ( value instanceof long[])
+        if ( value instanceof long[] )
         {
-            return Arrays.equals(this.value, (long[])value);
+            return Arrays.equals( this.value, (long[]) value );
         }
         return valueCompare( this.value, value );
     }
@@ -55,8 +59,14 @@ class LongArrayProperty extends FullSizeProperty
     }
 
     @Override
-    boolean hasEqualValue( FullSizeProperty that )
+    boolean hasEqualValue( DefinedProperty that )
     {
         return Arrays.equals( this.value, ((LongArrayProperty)that).value );
+    }
+
+    @Override
+    public int sizeOfObjectInBytesIncludingOverhead()
+    {
+        return withObjectOverhead( withReference( sizeOfArray( value ) ) );
     }
 }

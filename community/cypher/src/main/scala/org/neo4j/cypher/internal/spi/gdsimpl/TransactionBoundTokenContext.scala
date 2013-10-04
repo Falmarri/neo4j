@@ -21,24 +21,38 @@ package org.neo4j.cypher.internal.spi.gdsimpl
 
 import org.neo4j.cypher.internal.spi.TokenContext
 import org.neo4j.kernel.api.exceptions.{PropertyKeyNotFoundException, LabelNotFoundKernelException}
-import org.neo4j.kernel.api.StatementOperations
-import org.neo4j.kernel.api.operations.StatementState
-import org.neo4j.kernel.api.StatementOperationParts
 import org.neo4j.kernel.api.operations.KeyReadOperations
+import org.neo4j.kernel.api.Statement
 
-abstract class TransactionBoundTokenContext(ctx: KeyReadOperations, state: StatementState) extends TokenContext
+abstract class TransactionBoundTokenContext(statement: Statement) extends TokenContext
 {
-  def getOptPropertyKeyId(propertyKeyName: String): Option[Long] =
+  def getOptPropertyKeyId(propertyKeyName: String): Option[Int] =
     TokenContext.tryGet[PropertyKeyNotFoundException](getPropertyKeyId(propertyKeyName))
 
-  def getPropertyKeyId(propertyKeyName: String) = ctx.propertyKeyGetForName(state, propertyKeyName)
+  def getPropertyKeyId(propertyKeyName: String) =
+  {
+    val propertyId: Int = statement.readOperations().propertyKeyGetForName(propertyKeyName)
+    if ( propertyId == KeyReadOperations.NO_SUCH_PROPERTY_KEY )
+    {
+      throw new PropertyKeyNotFoundException("No such property.", null)
+    }
+    propertyId
+  }
 
-  def getPropertyKeyName(propertyKeyId: Long): String = ctx.propertyKeyGetName(state, propertyKeyId)
+  def getPropertyKeyName(propertyKeyId: Int): String = statement.readOperations().propertyKeyGetName(propertyKeyId)
 
-  def getLabelId(labelName: String): Long = ctx.labelGetForName(state, labelName)
+  def getLabelId(labelName: String): Int =
+  {
+    val labelId: Int = statement.readOperations().labelGetForName(labelName)
+    if ( labelId == KeyReadOperations.NO_SUCH_LABEL )
+    {
+      throw new LabelNotFoundKernelException("No such label", null)
+    }
+    labelId
+  }
 
-  def getOptLabelId(labelName: String): Option[Long] =
+  def getOptLabelId(labelName: String): Option[Int] =
     TokenContext.tryGet[LabelNotFoundKernelException](getLabelId(labelName))
 
-  def getLabelName(labelId: Long): String = ctx.labelGetName(state, labelId)
+  def getLabelName(labelId: Int): String = statement.readOperations().labelGetName(labelId)
 }

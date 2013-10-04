@@ -22,7 +22,6 @@ package org.neo4j.kernel.impl.api;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-
 import javax.transaction.Transaction;
 
 import org.neo4j.graphdb.Direction;
@@ -36,8 +35,11 @@ import org.neo4j.graphdb.ResourceIterable;
 import org.neo4j.graphdb.ReturnableEvaluator;
 import org.neo4j.graphdb.StopEvaluator;
 import org.neo4j.graphdb.Traverser;
+import org.neo4j.kernel.api.exceptions.ReleaseLocksFailedKernelException;
 import org.neo4j.kernel.impl.core.GraphProperties;
 import org.neo4j.kernel.impl.core.NodeManager;
+import org.neo4j.kernel.impl.core.SchemaLock;
+import org.neo4j.kernel.impl.locking.IndexEntryLock;
 import org.neo4j.kernel.impl.transaction.LockManager;
 import org.neo4j.kernel.impl.transaction.LockType;
 
@@ -45,7 +47,7 @@ public class LockHolderImpl implements LockHolder
 {
     private final LockManager lockManager;
     private final Transaction tx;
-    private final List<Releasable> locks = new ArrayList<Releasable>();
+    private final List<LockReleaseCallback> locks = new ArrayList<>();
     private final NodeManager nodeManager;
 
     public LockHolderImpl( LockManager lockManager, Transaction tx, NodeManager nodeManager )
@@ -61,65 +63,81 @@ public class LockHolderImpl implements LockHolder
     @Override
     public void acquireNodeReadLock( long nodeId )
     {
-        NodeLock resource = new NodeLock( LockType.READ, nodeId );
+        NodeLock resource = new NodeLock( nodeId );
         lockManager.getReadLock( resource, tx );
-        locks.add( resource );
+        locks.add( new LockReleaseCallback( LockType.READ, resource ) );
     }
 
     @Override
     public void acquireNodeWriteLock( long nodeId )
     {
-        NodeLock resource = new NodeLock( LockType.WRITE, nodeId );
+        NodeLock resource = new NodeLock( nodeId );
         lockManager.getWriteLock( resource, tx );
-        locks.add( resource );
+        locks.add( new LockReleaseCallback( LockType.WRITE, resource ) );
     }
-    
+
     @Override
     public void acquireRelationshipReadLock( long relationshipId )
     {
-        RelationshipLock resource = new RelationshipLock( LockType.READ, relationshipId );
+        RelationshipLock resource = new RelationshipLock( relationshipId );
         lockManager.getReadLock( resource, tx );
-        locks.add( resource );
+        locks.add( new LockReleaseCallback( LockType.READ, resource ) );
     }
 
     @Override
     public void acquireRelationshipWriteLock( long relationshipId )
     {
-        RelationshipLock resource = new RelationshipLock( LockType.WRITE, relationshipId );
+        RelationshipLock resource = new RelationshipLock( relationshipId );
         lockManager.getWriteLock( resource, tx );
-        locks.add( resource );
+        locks.add( new LockReleaseCallback( LockType.WRITE, resource ) );
     }
-    
+
     @Override
     public void acquireGraphWriteLock()
     {
-        GraphLock resource = new GraphLock( LockType.WRITE );
+        GraphLock resource = new GraphLock();
         lockManager.getWriteLock( resource, tx );
-        locks.add( resource );
+        locks.add( new LockReleaseCallback( LockType.WRITE, resource ) );
     }
-    
+
     @Override
     public void acquireSchemaReadLock()
     {
-        SchemaLock resource = new SchemaLock( LockType.READ );
+        SchemaLock resource = new SchemaLock();
         lockManager.getReadLock( resource, tx );
-        locks.add( resource );
+        locks.add( new LockReleaseCallback( LockType.READ, resource ) );
     }
 
     @Override
     public void acquireSchemaWriteLock()
     {
-        SchemaLock resource = new SchemaLock( LockType.WRITE );
+        SchemaLock resource = new SchemaLock();
         lockManager.getWriteLock( resource, tx );
-        locks.add( resource );
+        locks.add( new LockReleaseCallback( LockType.WRITE, resource ) );
     }
-    
+
     @Override
-    public void releaseLocks()
+    public void acquireIndexEntryReadLock( int labelId, int propertyKeyId, String propertyValue )
     {
-        Collection<Releasable> releaseFailures = null;
+        IndexEntryLock resource = new IndexEntryLock( labelId, propertyKeyId, propertyValue );
+        lockManager.getReadLock( resource, tx );
+        locks.add( new LockReleaseCallback( LockType.READ, resource ) );
+    }
+
+    @Override
+    public void acquireIndexEntryWriteLock( int labelId, int propertyKeyId, String propertyValue )
+    {
+        IndexEntryLock resource = new IndexEntryLock( labelId, propertyKeyId, propertyValue );
+        lockManager.getWriteLock( resource, tx );
+        locks.add( new LockReleaseCallback( LockType.WRITE, resource ) );
+    }
+
+    @Override
+    public void releaseLocks() throws ReleaseLocksFailedKernelException
+    {
+        Collection<LockReleaseCallback> releaseFailures = null;
         Exception releaseException = null;
-        for ( Releasable lockElement : locks )
+        for ( LockReleaseCallback lockElement : locks )
         {
             try
             {
@@ -129,58 +147,68 @@ public class LockHolderImpl implements LockHolder
             {
                 releaseException = e;
                 if ( releaseFailures == null )
-                    releaseFailures = new ArrayList<Releasable>();
+                {
+                    releaseFailures = new ArrayList<>();
+                }
                 releaseFailures.add( lockElement );
             }
         }
-        
+
         if ( releaseException != null )
         {
-            throw new RuntimeException( "Unable to release locks: " + releaseFailures + ".", releaseException );
+            throw new ReleaseLocksFailedKernelException( "Unable to release locks: " + releaseFailures + ".",
+                    releaseException );
         }
     }
-    
-    private abstract class Releasable
+
+    private final class LockReleaseCallback
     {
         private final LockType lockType;
-        
-        public Releasable( LockType lockType )
+        private final Object lock;
+
+        public LockReleaseCallback( LockType lockType, Object lock )
         {
             this.lockType = lockType;
+            this.lock = lock;
         }
-        
+
         public void release()
         {
-            lockType.release( lockManager, this, tx );
+            lockType.release( lockManager, lock, tx );
         }
-        
-        protected UnsupportedOperationException unsupportedOperation()
+
+        @Override
+        public String toString()
         {
-            return new UnsupportedOperationException( getClass().getSimpleName() +
-                    " does not support this operation." );
+            return String.format( "%s_LOCK(%s)", lockType.name(), lock );
         }
     }
-    
-    private abstract class EntityLock extends Releasable implements PropertyContainer
+
+    private abstract class EntityLock implements PropertyContainer
     {
         private final long id;
 
-        public EntityLock( LockType lockType, long id )
+        public EntityLock( long id )
         {
-            super( lockType );
             this.id = id;
         }
-        
+
+        @Override
+        public String toString()
+        {
+            return String.format( "%s[id=%d]", getClass().getSimpleName(), id );
+        }
+
         public long getId()
         {
             return id;
         }
-        
+
         public void delete()
         {
             throw unsupportedOperation();
         }
-        
+
         @Override
         public GraphDatabaseService getGraphDatabase()
         {
@@ -229,21 +257,28 @@ public class LockHolderImpl implements LockHolder
         {
             throw unsupportedOperation();
         }
-        
+
         @Override
         public int hashCode()
         {
-            return (int) (( id >>> 32 ) ^ id );
+            return (int) ((id >>> 32) ^ id);
+        }
+
+        protected UnsupportedOperationException unsupportedOperation()
+        {
+            return new UnsupportedOperationException( getClass().getSimpleName() +
+                    " does not support this operation." );
         }
     }
-    
+
     // Have them be releasable also since they are internal and will save the
     // amount of garbage produced
+    @SuppressWarnings("deprecation")
     private class NodeLock extends EntityLock implements Node
     {
-        public NodeLock( LockType lockType, long id )
+        public NodeLock( long id )
         {
-            super( lockType, id );
+            super( id );
         }
 
         @Override
@@ -367,20 +402,16 @@ public class LockHolderImpl implements LockHolder
         @Override
         public boolean equals( Object o )
         {
-            if ( !(o instanceof Node) )
-            {
-                return false;
-            }
-            return this.getId() == ((Node) o).getId();
+            return o instanceof Node && this.getId() == ((Node) o).getId();
         }
         // NOTE hashCode is implemented in super
     }
-    
+
     private class RelationshipLock extends EntityLock implements Relationship
     {
-        public RelationshipLock( LockType lockType, long id )
+        public RelationshipLock( long id )
         {
-            super( lockType, id );
+            super( id );
         }
 
         @Override
@@ -422,19 +453,15 @@ public class LockHolderImpl implements LockHolder
         @Override
         public boolean equals( Object o )
         {
-            if ( !(o instanceof Relationship) )
-            {
-                return false;
-            }
-            return this.getId() == ((Relationship) o).getId();
+            return o instanceof Relationship && this.getId() == ((Relationship) o).getId();
         }
     }
-    
+
     private class GraphLock extends EntityLock implements GraphProperties
     {
-        public GraphLock( LockType lockType )
+        public GraphLock()
         {
-            super( lockType, -1 );
+            super( -1 );
         }
 
         @Override
@@ -442,37 +469,12 @@ public class LockHolderImpl implements LockHolder
         {
             return nodeManager;
         }
-        
+
         @Override
         public boolean equals( Object o )
         {
-            if ( !(o instanceof GraphProperties) )
-            {
-                return false;
-            }
-            return this.getNodeManager().equals( ((GraphProperties)o).getNodeManager() );
-        }
-    }
-
-    class SchemaLock extends Releasable
-    {
-        private final org.neo4j.kernel.impl.core.SchemaLock actual = new org.neo4j.kernel.impl.core.SchemaLock();
-        
-        public SchemaLock( LockType lockType )
-        {
-            super( lockType );
-        }
-
-        @Override
-        public int hashCode()
-        {
-            return actual.hashCode();
-        }
-        
-        @Override
-        public boolean equals( Object obj )
-        {
-            return actual.equals( obj );
+            return o instanceof GraphProperties &&
+                    this.getNodeManager().equals( ((GraphProperties) o).getNodeManager() );
         }
     }
 }

@@ -39,11 +39,10 @@ trait NumericHelper {
   protected def asDouble(a: Any) = asNumber(a).doubleValue()
   protected def asInt(a: Any) = asNumber(a).intValue()
 
-  private def asNumber(a: Any): Number = try {
-    a.asInstanceOf[Number]
-  }
-  catch {
-    case x: ClassCastException => throw new CypherTypeException("Expected a numeric value for " + toString + ", but got: " + a.toString)
+  private def asNumber(a: Any): Number = a match {
+    case null     => throw new CypherTypeException("Expected a numeric value for " + toString + ", but got null")
+    case a:Number => a
+    case _        => throw new CypherTypeException("Expected a numeric value for " + toString + ", but got: " + a.toString)
   }
 }
 
@@ -185,6 +184,15 @@ case class SinFunction(argument: Expression) extends MathFunction(argument) {
   def apply(ctx: ExecutionContext)(implicit state: QueryState): Any = math.sin(asDouble(argument(ctx)))
 
   def rewrite(f: (Expression) => Expression) = f(SinFunction(argument.rewrite(f)))
+
+  override def calculateType(symbols: SymbolTable) = DoubleType()
+}
+
+case class HaversinFunction(argument: Expression) extends MathFunction(argument) {
+
+  def apply(ctx: ExecutionContext)(implicit state: QueryState): Any = ( 1.0d - math.cos(asDouble(argument(ctx))) ) / 2
+
+  def rewrite(f: (Expression) => Expression) = f(HaversinFunction(argument.rewrite(f)))
 
   override def calculateType(symbols: SymbolTable) = DoubleType()
 }

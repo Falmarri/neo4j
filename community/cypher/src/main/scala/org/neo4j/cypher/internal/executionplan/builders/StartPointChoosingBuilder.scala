@@ -19,12 +19,11 @@
  */
 package org.neo4j.cypher.internal.executionplan.builders
 
-import org.neo4j.cypher.internal.executionplan.{PartiallySolvedQuery, PlanBuilder, ExecutionPlanInProgress}
+import org.neo4j.cypher.internal.executionplan.{MatchPattern, PartiallySolvedQuery, PlanBuilder}
 import org.neo4j.cypher.internal.spi.PlanContext
 import org.neo4j.cypher.internal.commands._
-import org.neo4j.cypher.internal.mutation.{UpdateAction, MergeNodeAction}
-import org.neo4j.graphdb.Node
-import org.neo4j.cypher.internal.pipes.EntityProducer
+import org.neo4j.cypher.internal.executionplan.ExecutionPlanInProgress
+import org.neo4j.cypher.internal.commands.ShortestPath
 
 /*
 This builder is concerned with finding queries without start items and without index hints, and
@@ -38,7 +37,6 @@ To do this, three things are done.
  */
 
 
-//TODO: We should mark predicates used to find start points as solved
 class StartPointChoosingBuilder extends PlanBuilder {
   val Single = 0
 
@@ -56,25 +54,7 @@ class StartPointChoosingBuilder extends PlanBuilder {
     // Find disconnected patterns, and make sure we have start points for all of them
     val disconnectedStarItems: Seq[QueryToken[StartItem]] = findStartItemsForDisconnectedPatterns(plan, ctx).map(Unsolved(_))
 
-    // Find merge points that do not have a node producer, and produce one for them
-    val updatesWithSolvedMergePoints = plan.query.updates.map(solveUnsolvedMergePoints(ctx))
-
-    plan.copy(query = q.copy(start = disconnectedStarItems ++ q.start, updates = updatesWithSolvedMergePoints))
-  }
-
-  private def solveUnsolvedMergePoints(ctx: PlanContext): (QueryToken[UpdateAction] => QueryToken[UpdateAction]) = {
-    case Unsolved(mergeNodeAction@MergeNodeAction(identifier, where, _, _, None)) =>
-      val startItem = NodeFetchStrategy.findStartStrategy(identifier, where, ctx)
-      val nodeProducer: EntityProducer[Node] = entityProducerFactory.nodeStartItems(ctx, startItem.s)
-      val predicatesLeft = where.toSet -- startItem.solvedPredicates
-
-      val newMergeNodeAction = mergeNodeAction.copy(
-        nodeProducerOption = Some(nodeProducer),
-        expectations = predicatesLeft.toSeq)
-
-      Unsolved(newMergeNodeAction)
-    case x                                                                                            => x
-
+    plan.copy(query = q.copy(start = disconnectedStarItems ++ q.start))
   }
 
   private def findStartItemsForDisconnectedPatterns(plan: ExecutionPlanInProgress, ctx: PlanContext): Seq[StartItem] = {
@@ -89,7 +69,7 @@ class StartPointChoosingBuilder extends PlanBuilder {
 
     def findStartItemFor(pattern: MatchPattern): Iterable[StartItem] = {
       val shortestPathPoints: Set[IdentifierName] = plan.query.patterns.collect {
-        case Unsolved(ShortestPath(_, start, end, _, _, _, _, _, _)) => Seq(start, end)
+        case Unsolved(ShortestPath(_, start, end, _, _, _, _, _, _)) => Seq(start.name, end.name)
       }.flatten.toSet
 
       val startPoints: Set[RatedStartItem] =
@@ -113,7 +93,7 @@ class StartPointChoosingBuilder extends PlanBuilder {
 
     disconnectedPatterns.flatMap(
       (pattern: MatchPattern) => {
-        val startPointsAlreadyInPattern = (startPointNames intersect pattern.nodes)
+        val startPointsAlreadyInPattern = startPointNames intersect pattern.nodes
 
         if (startPointsAlreadyInPattern.isEmpty)
           findStartItemFor(pattern)

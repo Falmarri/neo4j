@@ -140,12 +140,13 @@ class TraversalMatcherBuilder extends PlanBuilder with PatternGraphBuilder {
       case Unsolved(NodeByIndexQuery(id, _, _)) => Some(id)
       case Unsolved(NodeByIndex(id, _, _, _))   => Some(id)
       case Unsolved(NodeById(id, _))            => Some(id)
+      case Unsolved(NodeByIdOrEmpty(id, _))     => Some(id)
       case _                                    => None
     }
 
     val pattern = plan.query.patterns.flatMap {
       case Unsolved(r: RelatedTo) if !r.optional && r.left != r.right         => Some(r)
-      case Unsolved(r: VarLengthRelatedTo) if !r.optional && r.start != r.end => Some(r)
+      case Unsolved(r: VarLengthRelatedTo) if !r.optional && r.left != r.right => Some(r)
       case _                                                                  => None
     }
 

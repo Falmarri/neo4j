@@ -26,12 +26,11 @@ import internal.profiler.Profiler
 import internal.spi.{PlanContext, QueryContext}
 import internal.ClosingIterator
 import internal.commands._
-import internal.symbols.SymbolTable
+import org.neo4j.cypher.internal.symbols.SymbolTable
 import org.neo4j.graphdb.GraphDatabaseService
 import org.neo4j.cypher.ExecutionResult
 import org.neo4j.cypher.internal.commands.values.{TokenType, KeyToken}
-import org.neo4j.cypher.internal.commands.expressions.ExpressionResolver
-import org.neo4j.cypher.internal.helpers.IsMap
+import org.neo4j.cypher.internal.executionplan.builders.prepare.KeyTokenResolver
 
 class ExecutionPlanBuilder(graph: GraphDatabaseService) extends PatternGraphBuilder {
 
@@ -75,23 +74,14 @@ class ExecutionPlanBuilder(graph: GraphDatabaseService) extends PatternGraphBuil
   }
 
   def buildQuery(inputQuery: Query, context: PlanContext): PipeAndIsUpdating = {
-    val initialPSQ = PartiallySolvedQuery(inputQuery).rewrite(ExpressionResolver(context))
+    val initialPSQ = PartiallySolvedQuery(inputQuery)
 
     var continue = true
     var planInProgress = ExecutionPlanInProgress(initialPSQ, NullPipe, isUpdating = false)
 
-    while (continue) {
-      while (builders.exists(_.canWorkWith(planInProgress, context))) {
-        val matchingBuilders = builders.filter(_.canWorkWith(planInProgress, context))
-
-        val builder = matchingBuilders.sortBy(_.priority).head
-        val newPlan = builder(planInProgress, context)
-
-        if (planInProgress == newPlan)
-          throw new InternalException("Something went wrong trying to build your query. The offending builder was: "
-            + builder.getClass.getSimpleName)
-
-        planInProgress = newPlan
+   while (continue) {
+      phases.foreach { phase =>
+        planInProgress = phase(planInProgress, context)
       }
 
       if (!planInProgress.query.isSolved) {
@@ -172,7 +162,7 @@ class ExecutionPlanBuilder(graph: GraphDatabaseService) extends PatternGraphBuil
   }
 
   private def produceAndThrowException(plan: ExecutionPlanInProgress) {
-    val errors = builders.flatMap(builder => builder.missingDependencies(plan).map(builder -> _)).toList.
+    val errors = builders.flatMap(builder => builder.missingDependencies(plan).map(builder ->)).toList.
       sortBy {
       case (builder, _) => builder.priority
     }
@@ -192,24 +182,61 @@ The Neo4j Team""")
     throw new SyntaxException(errorMessage)
   }
 
-  lazy val builders = Seq(
-    new StartPointBuilder,
-    new FilterBuilder,
-    new NamedPathBuilder,
-    new ExtractBuilder,
-    new MatchBuilder,
-    new SortBuilder,
-    new ColumnFilterBuilder,
-    new SliceBuilder,
-    new AggregationBuilder,
-    new ShortestPathBuilder,
-    new CreateNodesAndRelationshipsBuilder(graph),
-    new UpdateActionBuilder(graph),
-    new EmptyResultBuilder,
-    new TraversalMatcherBuilder,
-    new TopPipeBuilder,
-    new DistinctBuilder,
-    new IndexLookupBuilder,
-    new StartPointChoosingBuilder
+  val phases: Seq[Phase] = Seq(
+    prepare,  /* Prepares the query by rewriting it before other plan builders start working on it. */
+    matching, /* Pulls in data from the stores, adds named paths, and filters the result */
+    updates,  /* Plans update actions */
+    extract,  /* Handles RETURN and WITH expression */
+    finish    /* Prepares the return set so it looks like the user specified */
   )
+
+  lazy val builders = phases.flatMap(_.myBuilders).distinct
+
+  def prepare = new Phase {
+    def myBuilders: Seq[PlanBuilder] = Seq(
+      new IndexLookupBuilder,
+      new StartPointChoosingBuilder,
+      new PredicateRewriter,
+      new KeyTokenResolver,
+      new MergeStartPointBuilder
+    )
+  }
+
+  def matching = new Phase {
+    def myBuilders: Seq[PlanBuilder] = Seq(
+      new StartPointBuilder,
+      new MatchBuilder,
+      new TraversalMatcherBuilder,
+      new ShortestPathBuilder,
+      new NamedPathBuilder,
+      new FilterBuilder
+    )
+  }
+
+  def updates = new Phase {
+    def myBuilders: Seq[PlanBuilder] = Seq(
+      new CreateNodesAndRelationshipsBuilder(graph),
+      new UpdateActionBuilder(graph),
+      new NamedPathBuilder
+    )
+  }
+
+  def extract = new Phase {
+    def myBuilders: Seq[PlanBuilder] = Seq(
+      new ExtractBuilder,
+      new SortBuilder,
+      new SliceBuilder,
+      new TopPipeBuilder,
+      new AggregationBuilder
+    )
+  }
+
+  def finish = new Phase {
+    def myBuilders: Seq[PlanBuilder] = Seq(
+      new ColumnFilterBuilder,
+      new EmptyResultBuilder,
+      new DistinctBuilder
+    )
+  }
+
 }

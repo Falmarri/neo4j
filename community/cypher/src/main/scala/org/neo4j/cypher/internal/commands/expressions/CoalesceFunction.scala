@@ -29,9 +29,9 @@ case class CoalesceFunction(children: Expression*) extends Expression {
       view.
       map(expression => expression(ctx)).
       find(value => value != null) match {
-      case None    => null
-      case Some(x) => x
-    }
+        case None    => null
+        case Some(x) => x
+      }
 
   def innerExpectedType: Option[CypherType] = None
 

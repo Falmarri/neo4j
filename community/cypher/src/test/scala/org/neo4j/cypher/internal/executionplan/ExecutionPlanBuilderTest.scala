@@ -22,20 +22,23 @@ package org.neo4j.cypher.internal.executionplan
 import scala.collection.Seq
 import org.junit.Test
 import org.junit.Assert._
-import org.neo4j.cypher.internal.commands.{HasLabel, NodeById, Query, ReturnItem}
+import org.neo4j.cypher.internal.commands.{NodeById, Query}
 import org.neo4j.graphdb.{DynamicLabel, GraphDatabaseService}
 import org.scalatest.Assertions
 import org.neo4j.cypher.{PlanDescription, GraphDatabaseTestBase, InternalException}
 import java.util.concurrent._
 import org.neo4j.cypher.internal.spi.PlanContext
-import org.neo4j.cypher.internal.pipes.{FilterPipe, ExecuteUpdateCommandsPipe, Pipe, QueryState}
+import org.neo4j.cypher.internal.pipes._
 import org.neo4j.cypher.internal.commands.expressions.Identifier
 import org.scalatest.mock.MockitoSugar
 import org.mockito.Mockito._
-import org.neo4j.cypher.internal.spi.gdsimpl.TransactionBoundQueryContext
+import org.neo4j.cypher.internal.spi.gdsimpl.TransactionBoundExecutionContext
 import org.neo4j.cypher.internal.commands.values.TokenType.{Label, PropertyKey}
+import org.neo4j.cypher.internal.commands.ReturnItem
 import org.neo4j.cypher.internal.mutation.DeletePropertyAction
+import org.neo4j.cypher.internal.commands.HasLabel
 import org.neo4j.cypher.internal.symbols.SymbolTable
+import org.neo4j.cypher.internal.pipes.QueryState
 
 class ExecutionPlanBuilderTest extends GraphDatabaseTestBase with Assertions with Timed with MockitoSugar {
   @Test def should_not_accept_returning_the_input_execution_plan() {
@@ -57,7 +60,7 @@ class ExecutionPlanBuilderTest extends GraphDatabaseTestBase with Assertions wit
     val q = Query.start(NodeById("x", 0)).returns(ReturnItem(Identifier("x"), "x"))
 
     val execPlanBuilder = new FakeExecPlanBuilder(graph, Seq(new ExplodingPipeBuilder))
-    val queryContext = new TransactionBoundQueryContext(graph, tx, statementContext, cakeState)
+    val queryContext = new TransactionBoundExecutionContext(graph, tx, statement)
 
     // when
     intercept[ExplodingException] {
@@ -83,7 +86,7 @@ class ExecutionPlanBuilderTest extends GraphDatabaseTestBase with Assertions wit
       .returns(ReturnItem(Identifier("x"), "x"))
 
     val execPlanBuilder = new ExecutionPlanBuilder(graph)
-    val queryContext = new TransactionBoundQueryContext(graph, tx, statementContext, cakeState)
+    val queryContext = new TransactionBoundExecutionContext(graph, tx, statement)
     val pkId = queryContext.getPropertyKeyId("foo")
 
     // when
@@ -97,14 +100,13 @@ class ExecutionPlanBuilderTest extends GraphDatabaseTestBase with Assertions wit
     val tx = graph.beginTx()
     val node = graph.createNode(DynamicLabel.label("Person"))
 
-    val identifier = Identifier("x")
     val q = Query
       .start(NodeById("x", node.getId))
       .where(HasLabel(Identifier("x"), Label("Person")))
       .returns(ReturnItem(Identifier("x"), "x"))
 
     val execPlanBuilder = new ExecutionPlanBuilder(graph)
-    val queryContext = new TransactionBoundQueryContext(graph, tx, statementContext, cakeState)
+    val queryContext = new TransactionBoundExecutionContext(graph, tx, statement)
     val labelId = queryContext.getLabelId("Person")
 
     // when
@@ -114,16 +116,20 @@ class ExecutionPlanBuilderTest extends GraphDatabaseTestBase with Assertions wit
   }
 }
 
-class FakeExecPlanBuilder(gds: GraphDatabaseService, myBuilders: Seq[PlanBuilder]) extends ExecutionPlanBuilder(gds) {
-  override lazy val builders = myBuilders
+class FakeExecPlanBuilder(gds: GraphDatabaseService, builders: Seq[PlanBuilder]) extends ExecutionPlanBuilder(gds) {
+  override val phases: Seq[Phase] = Seq(
+    new Phase {
+      def myBuilders: Seq[PlanBuilder] = builders
+    }
+  )
 }
 
 // This is a builder that accepts everything, but changes nothing
 // It's a never ending loop waiting to happen
-class BadBuilder extends LegacyPlanBuilder {
-  def apply(plan: ExecutionPlanInProgress) = plan
+class BadBuilder extends PlanBuilder {
+  def apply(plan: ExecutionPlanInProgress, ctx: PlanContext) = plan
 
-  def canWorkWith(plan: ExecutionPlanInProgress) = true
+  def canWorkWith(plan: ExecutionPlanInProgress, ctx: PlanContext) = true
 
   def priority = 0
 }

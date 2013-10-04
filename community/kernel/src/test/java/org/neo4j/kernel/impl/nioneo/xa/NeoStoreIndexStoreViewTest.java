@@ -26,6 +26,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+
 import org.neo4j.graphdb.DynamicLabel;
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
@@ -34,16 +35,18 @@ import org.neo4j.graphdb.factory.GraphDatabaseFactory;
 import org.neo4j.helpers.collection.Visitor;
 import org.neo4j.kernel.GraphDatabaseAPI;
 import org.neo4j.kernel.ThreadToStatementContextBridge;
-import org.neo4j.kernel.api.StatementOperationParts;
-import org.neo4j.kernel.api.exceptions.schema.SchemaKernelException;
+import org.neo4j.kernel.api.Statement;
+import org.neo4j.kernel.api.exceptions.KernelException;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
-import org.neo4j.kernel.api.operations.StatementState;
+import org.neo4j.kernel.api.scan.NodeLabelUpdate;
 import org.neo4j.kernel.impl.api.index.StoreScan;
 import org.neo4j.kernel.impl.nioneo.store.NeoStore;
 import org.neo4j.kernel.impl.nioneo.store.StoreAccess;
 import org.neo4j.test.TargetDirectory;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.mockito.Mockito.mock;
+
 import static org.neo4j.helpers.collection.IteratorUtil.asSet;
 import static org.neo4j.helpers.collection.IteratorUtil.emptySetOf;
 
@@ -57,8 +60,8 @@ public class NeoStoreIndexStoreViewTest
     GraphDatabaseAPI graphDb;
     NeoStoreIndexStoreView storeView;
 
-    long labelId;
-    long propertyKeyId;
+    int labelId;
+    int propertyKeyId;
 
     Node alistair;
     Node stefan;
@@ -68,8 +71,10 @@ public class NeoStoreIndexStoreViewTest
     {
         // given
         NodeUpdateCollectingVisitor visitor = new NodeUpdateCollectingVisitor();
+        @SuppressWarnings( "unchecked" )
+        Visitor<NodeLabelUpdate,Exception> labelVisitor = mock( Visitor.class );
         StoreScan<Exception> storeScan =
-            storeView.visitNodes( new long[] { labelId }, new long[] { propertyKeyId }, visitor );
+            storeView.visitNodes( new int[] { labelId }, new int[] { propertyKeyId }, visitor, labelVisitor );
 
         // when
         storeScan.run();
@@ -89,8 +94,10 @@ public class NeoStoreIndexStoreViewTest
         deleteAlistairAndStefanNodes();
 
         NodeUpdateCollectingVisitor visitor = new NodeUpdateCollectingVisitor();
+        @SuppressWarnings( "unchecked" )
+        Visitor<NodeLabelUpdate,Exception> labelVisitor = mock( Visitor.class );
         StoreScan<Exception> storeScan =
-                storeView.visitNodes( new long[] { labelId }, new long[] { propertyKeyId }, visitor );
+                storeView.visitNodes( new int[] { labelId }, new int[] { propertyKeyId }, visitor, labelVisitor );
 
         // when
         storeScan.run();
@@ -100,7 +107,7 @@ public class NeoStoreIndexStoreViewTest
     }
 
     @Before
-    public void before() throws SchemaKernelException
+    public void before() throws KernelException
     {
         String graphDbPath = testDirectory.directory().getAbsolutePath();
         graphDb = (GraphDatabaseAPI) new GraphDatabaseFactory().newEmbeddedDatabase( graphDbPath );
@@ -121,8 +128,7 @@ public class NeoStoreIndexStoreViewTest
 
     private void createAlistairAndStefanNodes()
     {
-        Transaction tx = graphDb.beginTx();
-        try
+        try ( Transaction tx = graphDb.beginTx() )
         {
             alistair = graphDb.createNode( label );
             alistair.setProperty( "name", "Alistair" );
@@ -130,51 +136,37 @@ public class NeoStoreIndexStoreViewTest
             stefan.setProperty( "name", "Stefan" );
             tx.success();
         }
-        finally
-        {
-            tx.finish();
-        }
     }
 
     private void deleteAlistairAndStefanNodes()
     {
-        Transaction tx = graphDb.beginTx();
-        try
+        try ( Transaction tx = graphDb.beginTx() )
         {
             alistair.delete();
             stefan.delete();
             tx.success();
         }
-        finally
-        {
-            tx.finish();
-        }
     }
 
-    private void getOrCreateIds() throws SchemaKernelException
+    private void getOrCreateIds() throws KernelException
     {
-        Transaction tx = graphDb.beginTx();
-        try
+        try ( Transaction tx = graphDb.beginTx() )
         {
             ThreadToStatementContextBridge bridge =
                     graphDb.getDependencyResolver().resolveDependency( ThreadToStatementContextBridge.class );
 
-            StatementOperationParts ctx = bridge.getCtxForWriting();
-            StatementState state = bridge.statementForWriting();
-            labelId = ctx.keyWriteOperations().labelGetOrCreateForName( state, "Person" );
-            propertyKeyId = ctx.keyWriteOperations().propertyKeyGetOrCreateForName( state, "name" );
-            state.close();
+            try ( Statement statement = bridge.statement() )
+            {
+                labelId = statement.dataWriteOperations().labelGetOrCreateForName( "Person" );
+                propertyKeyId = statement.dataWriteOperations().propertyKeyGetOrCreateForName( "name" );
+            }
             tx.success();
-        }
-        finally
-        {
-            tx.finish();
         }
     }
 
     class NodeUpdateCollectingVisitor implements Visitor<NodePropertyUpdate, Exception>
     {
-        private final Set<NodePropertyUpdate> updates = new HashSet<NodePropertyUpdate>();
+        private final Set<NodePropertyUpdate> updates = new HashSet<>();
 
         @Override
         public boolean visit( NodePropertyUpdate element ) throws Exception

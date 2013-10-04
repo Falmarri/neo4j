@@ -19,49 +19,49 @@
  */
 package org.neo4j.kernel.api.properties;
 
+import java.util.concurrent.Callable;
+
 import org.neo4j.kernel.api.EntityType;
 import org.neo4j.kernel.api.exceptions.PropertyNotFoundException;
-import org.neo4j.kernel.impl.nioneo.store.PropertyData;
 
 public abstract class Property
 {
-    public static Property noNodeProperty( long nodeId, long propertyKeyId )
+    public static Property noNodeProperty( long nodeId, int propertyKeyId )
     {
         return noProperty( propertyKeyId, EntityType.NODE, nodeId );
     }
 
-    public static Property noRelationshipProperty( long relationshipId, long propertyKeyId )
+    public static Property noRelationshipProperty( long relationshipId, int propertyKeyId )
     {
         return noProperty( propertyKeyId, EntityType.RELATIONSHIP, relationshipId );
     }
-    
-    public static Property noGraphProperty( long propertyKeyId )
+
+    public static Property noGraphProperty( int propertyKeyId )
     {
-        return new NoGraphProperty( propertyKeyId );
+        return noProperty( propertyKeyId, EntityType.GRAPH, -1 );
     }
-    
-    public static Property noProperty( long propertyKeyId, EntityType type, long entityId )
+
+    private static Property noProperty( int propertyKeyId, EntityType type, long entityId )
     {
         return new NoProperty( propertyKeyId, type, entityId );
     }
 
-    public static Property propertyFromNode( long nodeId, long propertyKeyId, Object value )
-    {
-        return null == value ? noNodeProperty( nodeId, propertyKeyId ) : property( propertyKeyId, value );
-    }
-
-    public static Property propertyFromRelationship( long relationshipId, long propertyKeyId, Object value )
-    {
-        return null == value ?
-            noRelationshipProperty( relationshipId, propertyKeyId ) : property( propertyKeyId, value );
-    }
-
-    public static Property property( long propertyKeyId, Object value )
+    public static DefinedProperty property( int propertyKeyId, Object value )
     {
         return PropertyConversion.convertProperty( propertyKeyId, value );
     }
 
-    public abstract long propertyKeyId();
+    final int propertyKeyId;
+
+    Property( int propertyKeyId )
+    {
+        this.propertyKeyId = propertyKeyId;
+    }
+
+    public final int propertyKeyId()
+    {
+        return propertyKeyId;
+    }
 
     public abstract boolean valueEquals( Object other );
 
@@ -72,6 +72,8 @@ public abstract class Property
     public abstract String stringValue() throws PropertyNotFoundException;
 
     public abstract String stringValue( String defaultValue );
+
+    public abstract String valueAsString() throws PropertyNotFoundException;
 
     public abstract Number numberValue() throws PropertyNotFoundException;
 
@@ -89,110 +91,113 @@ public abstract class Property
 
     public abstract boolean booleanValue( boolean defaultValue );
 
-    // more factory methods
-
-    public static Property stringProperty( long propertyKeyId, String value )
-    {
-        return new StringProperty( propertyKeyId, value );
-    }
-
-    public static Property longProperty( long propertyKeyId, long value )
-    {
-        return PropertyConversion.chooseLongPropertyType( propertyKeyId, value );
-    }
-
-    public static Property intProperty( long propertyKeyId, int value )
-    {
-        return new IntProperty( propertyKeyId, value );
-    }
-
-    public static Property shortProperty( long propertyKeyId, short value )
-    {
-        return new ShortProperty( propertyKeyId, value );
-    }
-
-    public static Property byteProperty( long propertyKeyId, byte value )
-    {
-        return new ByteProperty( propertyKeyId, value );
-    }
-
-    public static Property booleanProperty( long propertyKeyId, boolean value )
-    {
-        return new BooleanProperty( propertyKeyId, value );
-    }
-
-    public static Property charProperty( long propertyKeyId, char value )
-    {
-        return new CharProperty( propertyKeyId, value );
-    }
-
-    public static Property doubleProperty( long propertyKeyId, double value )
-    {
-        return new DoubleProperty( propertyKeyId, value );
-    }
-
-    public static Property floatProperty( long propertyKeyId, float value )
-    {
-        return new FloatProperty( propertyKeyId, value );
-    }
-
-    public static Property stringArrayProperty( long propertyKeyId, String[] value )
-    {
-        return new StringArrayProperty( propertyKeyId, value );
-    }
-
-    public static Property byteArrayProperty( long propertyKeyId, byte[] value )
-    {
-        return new ByteArrayProperty( propertyKeyId, value );
-    }
-
-    public static Property longArrayProperty( long propertyKeyId, long[] value )
-    {
-        return new LongArrayProperty( propertyKeyId, value );
-    }
-
-    public static Property intArrayProperty( long propertyKeyId, int[] value )
-    {
-        return new IntArrayProperty( propertyKeyId, value );
-    }
-
-    public static Property doubleArrayProperty( long propertyKeyId, double[] value )
-    {
-        return new DoubleArrayProperty( propertyKeyId, value );
-    }
-
-    public static Property floatArrayProperty( long propertyKeyId, float[] value )
-    {
-        return new FloatArrayProperty( propertyKeyId, value );
-    }
-
-    public static Property booleanArrayProperty( long propertyKeyId, boolean[] value )
-    {
-        return new BooleanArrayProperty( propertyKeyId,value );
-    }
-
-    public static Property charArrayProperty( long propertyKeyId, char[] value )
-    {
-        return new CharArrayProperty( propertyKeyId, value );
-    }
-
-    public static Property shortArrayProperty( long propertyKeyId, short[] value )
-    {
-        return new ShortArrayProperty( propertyKeyId, value );
-    }
-
-    Property()
-    {
-    }
-
     @Override
     public abstract boolean equals( Object obj );
 
     @Override
     public abstract int hashCode();
 
-    public abstract boolean isNoProperty();
-    
-    @Deprecated
-    public abstract PropertyData asPropertyDataJustForIntegration();
+    public abstract boolean isDefined();
+
+    // direct factory methods
+
+    public static DefinedProperty stringProperty( int propertyKeyId, String value )
+    {
+        return new StringProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty lazyStringProperty( int propertyKeyId, Callable<String> producer )
+    {
+        return new LazyStringProperty( propertyKeyId, producer );
+    }
+
+    public static DefinedProperty lazyArrayProperty( int propertyKeyId, Callable<Object> producer )
+    {
+        return new LazyArrayProperty( propertyKeyId, producer );
+    }
+
+    public static DefinedProperty longProperty( int propertyKeyId, long value )
+    {
+        return new LongProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty intProperty( int propertyKeyId, int value )
+    {
+        return new IntProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty shortProperty( int propertyKeyId, short value )
+    {
+        return new ShortProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty byteProperty( int propertyKeyId, byte value )
+    {
+        return new ByteProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty booleanProperty( int propertyKeyId, boolean value )
+    {
+        return new BooleanProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty charProperty( int propertyKeyId, char value )
+    {
+        return new CharProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty doubleProperty( int propertyKeyId, double value )
+    {
+        return new DoubleProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty floatProperty( int propertyKeyId, float value )
+    {
+        return new FloatProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty stringArrayProperty( int propertyKeyId, String[] value )
+    {
+        return new StringArrayProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty byteArrayProperty( int propertyKeyId, byte[] value )
+    {
+        return new ByteArrayProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty longArrayProperty( int propertyKeyId, long[] value )
+    {
+        return new LongArrayProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty intArrayProperty( int propertyKeyId, int[] value )
+    {
+        return new IntArrayProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty doubleArrayProperty( int propertyKeyId, double[] value )
+    {
+        return new DoubleArrayProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty floatArrayProperty( int propertyKeyId, float[] value )
+    {
+        return new FloatArrayProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty booleanArrayProperty( int propertyKeyId, boolean[] value )
+    {
+        return new BooleanArrayProperty( propertyKeyId,value );
+    }
+
+    public static DefinedProperty charArrayProperty( int propertyKeyId, char[] value )
+    {
+        return new CharArrayProperty( propertyKeyId, value );
+    }
+
+    public static DefinedProperty shortArrayProperty( int propertyKeyId, short[] value )
+    {
+        return new ShortArrayProperty( propertyKeyId, value );
+    }
 }

@@ -37,6 +37,7 @@ import org.neo4j.cluster.member.ClusterMemberEvents;
 import org.neo4j.cluster.member.paxos.MemberIsAvailable;
 import org.neo4j.cluster.member.paxos.PaxosClusterMemberAvailability;
 import org.neo4j.cluster.member.paxos.PaxosClusterMemberEvents;
+import org.neo4j.cluster.protocol.atomicbroadcast.ObjectStreamFactory;
 import org.neo4j.cluster.protocol.cluster.ClusterConfiguration;
 import org.neo4j.cluster.protocol.cluster.ClusterListener;
 import org.neo4j.cluster.protocol.election.ElectionCredentialsProvider;
@@ -50,6 +51,7 @@ import org.neo4j.helpers.collection.Iterables;
 import org.neo4j.kernel.IdGeneratorFactory;
 import org.neo4j.kernel.InternalAbstractGraphDatabase;
 import org.neo4j.kernel.KernelData;
+import org.neo4j.kernel.api.exceptions.InvalidTransactionTypeKernelException;
 import org.neo4j.kernel.extension.KernelExtensionFactory;
 import org.neo4j.kernel.ha.cluster.DefaultElectionCredentialsProvider;
 import org.neo4j.kernel.ha.cluster.HANewSnapshotFunction;
@@ -181,12 +183,6 @@ public class HighlyAvailableGraphDatabase extends InternalAbstractGraphDatabase
         diagnosticsManager.appendProvider( new HighAvailabilityDiagnostics( memberStateMachine, clusterClient ) );
     }
 
-    @Override
-    protected boolean isHighlyAvailable()
-    {
-        return true;
-    }
-
     public void start()
     {
         life.start();
@@ -214,7 +210,8 @@ public class HighlyAvailableGraphDatabase extends InternalAbstractGraphDatabase
     @Override
     protected Logging createLogging()
     {
-        return life.add( new LogbackWeakDependency().tryLoadLogbackService( config, NEW_LOGGER_CONTEXT, DEFAULT_TO_CLASSIC ) );
+        return life.add( new LogbackWeakDependency().tryLoadLogbackService( config, NEW_LOGGER_CONTEXT,
+                DEFAULT_TO_CLASSIC ) );
     }
 
     @Override
@@ -274,7 +271,11 @@ public class HighlyAvailableGraphDatabase extends InternalAbstractGraphDatabase
                     }
                 } );
 
-        clusterClient = new ClusterClient( ClusterClient.adapt( config ), logging, electionCredentialsProvider );
+
+        ObjectStreamFactory objectStreamFactory = new ObjectStreamFactory();
+
+
+        clusterClient = new ClusterClient( ClusterClient.adapt( config ), logging, electionCredentialsProvider, objectStreamFactory, objectStreamFactory );
         PaxosClusterMemberEvents localClusterEvents = new PaxosClusterMemberEvents( clusterClient, clusterClient,
                 clusterClient, clusterClient, logging, new Predicate<PaxosClusterMemberEvents.ClusterMembersSnapshot>()
         {
@@ -296,7 +297,7 @@ public class HighlyAvailableGraphDatabase extends InternalAbstractGraphDatabase
                 }
                 return true;
             }
-        }, new HANewSnapshotFunction() );
+        }, new HANewSnapshotFunction(), objectStreamFactory, objectStreamFactory );
 
         // Force a reelection after we enter the cluster
         // and when that election is finished refresh the snapshot
@@ -324,7 +325,7 @@ public class HighlyAvailableGraphDatabase extends InternalAbstractGraphDatabase
 
         HighAvailabilityMemberContext localMemberContext = new SimpleHighAvailabilityMemberContext( clusterClient.getServerId() );
         PaxosClusterMemberAvailability localClusterMemberAvailability = new PaxosClusterMemberAvailability(
-            clusterClient.getServerId(), clusterClient, clusterClient, logging );
+            clusterClient.getServerId(), clusterClient, clusterClient, logging, objectStreamFactory, objectStreamFactory );
 
         // Here we decide whether to start in compatibility mode or mode or not
         if ( !config.get( HaSettings.coordinators ).isEmpty() &&
@@ -359,6 +360,11 @@ public class HighlyAvailableGraphDatabase extends InternalAbstractGraphDatabase
                 new InstanceId( config.get( ClusterSettings.server_id ) ) );
         memberStateMachine = new HighAvailabilityMemberStateMachine( memberContext, accessGuard, members, clusterEvents,
                 clusterClient, logging.getMessagesLog( HighAvailabilityMemberStateMachine.class ) );
+
+        HighAvailabilityConsoleLogger highAvailabilityConsoleLogger = new HighAvailabilityConsoleLogger( logging.getConsoleLog( HighAvailabilityConsoleLogger.class), new InstanceId(config.get(ClusterSettings.server_id) ));
+        accessGuard.addListener( highAvailabilityConsoleLogger );
+        clusterEvents.addClusterMemberListener( highAvailabilityConsoleLogger );
+        clusterClient.addClusterListener( highAvailabilityConsoleLogger );
 
         if ( compatibilityMode )
         {
@@ -399,6 +405,17 @@ public class HighlyAvailableGraphDatabase extends InternalAbstractGraphDatabase
     }
 
     @Override
+    public void assertSchemaWritesAllowed() throws InvalidTransactionTypeKernelException
+    {
+        if (!isMaster())
+        {
+            throw new InvalidTransactionTypeKernelException(
+                    "Modifying the database schema can only be done on the master server, " +
+                    "this server is a slave. Please issue schema modification commands directly to the master." );
+        }
+    }
+
+    @Override
     protected TxIdGenerator createTxIdGenerator()
     {
         DelegateInvocationHandler<TxIdGenerator> txIdGeneratorDelegate = new DelegateInvocationHandler<TxIdGenerator>();
@@ -416,8 +433,7 @@ public class HighlyAvailableGraphDatabase extends InternalAbstractGraphDatabase
     @Override
     protected IdGeneratorFactory createIdGeneratorFactory()
     {
-
-        idGeneratorFactory = new HaIdGeneratorFactory( master, memberStateMachine, logging );
+        idGeneratorFactory = new HaIdGeneratorFactory( master, logging );
         highAvailabilityModeSwitcher = new HighAvailabilityModeSwitcher( masterDelegateInvocationHandler,
                 clusterMemberAvailability, memberStateMachine, this, (HaIdGeneratorFactory) idGeneratorFactory,
                 config, logging, updateableSchemaState );
@@ -586,6 +602,11 @@ public class HighlyAvailableGraphDatabase extends InternalAbstractGraphDatabase
     public String getInstanceState()
     {
         return memberStateMachine.getCurrentState().name();
+    }
+
+    public String role()
+    {
+        return members.getSelf().getHARole();
     }
 
     public boolean isMaster()

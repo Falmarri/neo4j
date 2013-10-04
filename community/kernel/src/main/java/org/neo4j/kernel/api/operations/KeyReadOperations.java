@@ -21,31 +21,42 @@ package org.neo4j.kernel.api.operations;
 
 import java.util.Iterator;
 
+import org.neo4j.kernel.api.Statement;
+import org.neo4j.kernel.api.StatementConstants;
 import org.neo4j.kernel.api.exceptions.LabelNotFoundKernelException;
-import org.neo4j.kernel.api.exceptions.PropertyKeyIdNotFoundException;
-import org.neo4j.kernel.api.exceptions.PropertyKeyNotFoundException;
+import org.neo4j.kernel.api.exceptions.PropertyKeyIdNotFoundKernelException;
+import org.neo4j.kernel.api.exceptions.RelationshipTypeIdNotFoundKernelException;
 import org.neo4j.kernel.impl.core.Token;
 
 public interface KeyReadOperations
 {
-    /**
-     * Returns a label id for a label name. If the label doesn't exist a
-     * {@link org.neo4j.kernel.api.exceptions.LabelNotFoundKernelException} will be thrown.
-     */
-    long labelGetForName( StatementState state, String labelName ) throws LabelNotFoundKernelException;
+    int NO_SUCH_LABEL = StatementConstants.NO_SUCH_LABEL;
+    int NO_SUCH_PROPERTY_KEY = StatementConstants.NO_SUCH_PROPERTY_KEY;
+
+    /** Returns a label id for a label name. If the label doesn't exist, {@link #NO_SUCH_LABEL} will be returned. */
+    int labelGetForName( Statement state, String labelName );
 
     /** Returns the label name for the given label id. */
-    String labelGetName( StatementState state, long labelId ) throws LabelNotFoundKernelException;
+    String labelGetName( Statement state, int labelId ) throws LabelNotFoundKernelException;
 
     /**
-     * Returns a property key id for the given property key. If the property key doesn't exist a
-     * {@link org.neo4j.kernel.api.exceptions.PropertyKeyNotFoundException} will be thrown.
+     * Returns a property key id for the given property key. If the property key doesn't exist,
+     * {@link #NO_SUCH_PROPERTY_KEY} will be returned.
      */
-    long propertyKeyGetForName( StatementState state, String propertyKeyName ) throws PropertyKeyNotFoundException;
+    int propertyKeyGetForName( Statement state, String propertyKeyName );
 
     /** Returns the name of a property given its property key id */
-    String propertyKeyGetName( StatementState state, long propertyKeyId ) throws PropertyKeyIdNotFoundException;
+    String propertyKeyGetName( Statement state, int propertyKeyId ) throws PropertyKeyIdNotFoundKernelException;
+
+    /** Returns the property keys currently stored in the database */
+    Iterator<Token> propertyKeyGetAllTokens( Statement state );
 
     /** Returns the labels currently stored in the database **/
-    Iterator<Token> labelsGetAllTokens( StatementState state ); // TODO: Token is a store level concern, should not make it this far up the stack
+    Iterator<Token> labelsGetAllTokens( Statement state ); // TODO: Token is a store level concern, should not make it this far up the stack
+
+    int relationshipTypeGetForName( Statement state, String relationshipTypeName );
+
+    String relationshipTypeGetName( Statement state, int relationshipTypeId )
+            throws RelationshipTypeIdNotFoundKernelException;
+
 }

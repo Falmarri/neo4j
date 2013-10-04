@@ -23,17 +23,19 @@ import org.neo4j.cypher.internal.symbols.{NodeType, CypherType, SymbolTable}
 import org.neo4j.cypher.internal.commands.AstNode
 import org.neo4j.cypher.internal.ExecutionContext
 import org.neo4j.cypher.internal.pipes.QueryState
-import org.neo4j.cypher.internal.helpers.CastSupport.erasureCastOrFail
+import org.neo4j.cypher.internal.helpers.CastSupport.castOrFail
 import org.neo4j.graphdb.Relationship
 
 case class RelationshipEndPoints(relExpression: Expression, start: Boolean) extends Expression {
-  def apply(ctx: ExecutionContext)(implicit state: QueryState): Any = {
-    val rel = erasureCastOrFail[Relationship](relExpression(ctx))
+  def apply(ctx: ExecutionContext)(implicit state: QueryState): Any = relExpression(ctx) match {
+    case null => null
+    case value =>
+      val rel = castOrFail[Relationship](value)
 
-    if (start)
-      rel.getStartNode
-    else
-      rel.getEndNode
+      if (start)
+        rel.getStartNode
+      else
+        rel.getEndNode
   }
 
   def children: Seq[AstNode[_]] = Seq(relExpression)

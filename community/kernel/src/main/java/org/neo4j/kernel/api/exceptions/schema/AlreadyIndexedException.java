@@ -19,22 +19,24 @@
  */
 package org.neo4j.kernel.api.exceptions.schema;
 
-import org.neo4j.kernel.api.operations.KeyNameLookup;
+import org.neo4j.kernel.api.operations.TokenNameLookup;
 import org.neo4j.kernel.impl.api.index.IndexDescriptor;
 
 public class AlreadyIndexedException extends SchemaKernelException
 {
+    private static final String MESSAGE = "Already indexed %s.";
+
     private final IndexDescriptor descriptor;
 
     public AlreadyIndexedException( IndexDescriptor descriptor )
     {
-        super( String.format( "Already indexed %s.", descriptor ) );
+        super( String.format( MESSAGE, descriptor ) );
         this.descriptor = descriptor;
     }
 
     @Override
-    public String getUserMessage( KeyNameLookup keyNameLookup )
+    public String getUserMessage( TokenNameLookup tokenNameLookup )
     {
-        return String.format( String.format( "Already indexed %s.", descriptor.userDescription( keyNameLookup ) ) );
+        return String.format( String.format( MESSAGE, descriptor.userDescription( tokenNameLookup ) ) );
     }
 }

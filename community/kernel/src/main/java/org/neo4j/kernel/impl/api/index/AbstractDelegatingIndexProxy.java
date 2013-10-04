@@ -22,12 +22,14 @@ package org.neo4j.kernel.impl.api.index;
 import java.io.IOException;
 import java.util.concurrent.Future;
 
+import org.neo4j.kernel.api.exceptions.index.IndexActivationFailedKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexNotFoundKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexPopulationFailedKernelException;
 import org.neo4j.kernel.api.index.IndexReader;
 import org.neo4j.kernel.api.index.InternalIndexState;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
+import org.neo4j.kernel.impl.api.constraints.ConstraintVerificationFailedKernelException;
 
 public abstract class AbstractDelegatingIndexProxy implements IndexProxy
 {
@@ -100,13 +102,13 @@ public abstract class AbstractDelegatingIndexProxy implements IndexProxy
     }
 
     @Override
-    public void activate()
+    public void activate() throws IndexActivationFailedKernelException
     {
         getDelegate().activate();
     }
 
     @Override
-    public void validate() throws IndexPopulationFailedKernelException
+    public void validate() throws ConstraintVerificationFailedKernelException, IndexPopulationFailedKernelException
     {
         getDelegate().validate();
     }

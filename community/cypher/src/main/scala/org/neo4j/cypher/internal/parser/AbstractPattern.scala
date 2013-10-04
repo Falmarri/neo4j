@@ -19,7 +19,7 @@
  */
 package org.neo4j.cypher.internal.parser
 
-import org.neo4j.cypher.internal.commands.{And, HasLabel, Predicate, AstNode}
+import org.neo4j.cypher.internal.commands._
 import org.neo4j.cypher.internal.commands.expressions.{Expression, Identifier}
 import org.neo4j.graphdb.Direction
 import org.neo4j.cypher.SyntaxException
@@ -33,14 +33,6 @@ abstract sealed class AbstractPattern extends AstNode[AbstractPattern] {
   def makeOutgoing: AbstractPattern
 
   def parsedEntities: Seq[ParsedEntity]
-
-  def parsedLabelPredicates: Seq[Predicate] =
-    parsedEntities.flatMap {
-      (entity: ParsedEntity) =>
-        val ident: Identifier = Identifier(entity.name)
-        val labelPreds: Seq[HasLabel] = entity.labels.map(HasLabel(ident, _))
-        if (labelPreds.isEmpty) None else Some(labelPreds.reduce(And.apply))
-    }
 
   def possibleStartPoints:Seq[(String,CypherType)]
 
@@ -82,6 +74,8 @@ case class ParsedEntity(name: String,
   def start: AbstractPattern = this
 
   def end: AbstractPattern = this
+
+  def asSingleNode = new SingleNode(name, labels)
 }
 
 object ParsedRelation {
@@ -219,3 +213,4 @@ case class ParsedNamedPath(name: String, pieces: Seq[AbstractPattern]) extends P
 
   def end: AbstractPattern = pieces.last
 }
+

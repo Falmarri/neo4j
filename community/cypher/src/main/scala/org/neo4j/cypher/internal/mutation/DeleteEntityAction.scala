@@ -30,6 +30,7 @@ import org.neo4j.cypher.internal.ExecutionContext
 
 case class DeleteEntityAction(elementToDelete: Expression)
   extends UpdateAction {
+
   def exec(context: ExecutionContext, state: QueryState) = {
     elementToDelete(context)(state) match {
       case n: Node => delete(n, state)
@@ -38,7 +39,6 @@ case class DeleteEntityAction(elementToDelete: Expression)
       case p:Path => p.iterator().asScala.foreach( pc => delete(pc, state))
       case x => throw new CypherTypeException("Expression `" + elementToDelete.toString() + "` yielded `" + x.toString + "`. Don't know how to delete that.")
     }
-
     Iterator(context)
   }
 

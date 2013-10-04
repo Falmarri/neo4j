@@ -20,28 +20,30 @@
 package org.neo4j.kernel.api.exceptions.schema;
 
 import org.neo4j.kernel.api.exceptions.KernelException;
-import org.neo4j.kernel.api.operations.KeyNameLookup;
+import org.neo4j.kernel.api.operations.TokenNameLookup;
+import org.neo4j.kernel.impl.api.index.IndexDescriptor;
 
 import static java.lang.String.format;
 
 public class AddIndexFailureException extends SchemaKernelException
 {
-    private final static String message = "Unable to add index on [label: %s, %s] : %s";
+    private final static String MESSAGE = "Unable to add index %s : %s";
 
-    private final long labelId;
-    private final long propertyKey;
+    private final int labelId;
+    private final int propertyKey;
 
-    public AddIndexFailureException( long labelId, long propertyKey, KernelException cause )
+    public AddIndexFailureException( int labelId, int propertyKey, KernelException cause )
     {
-        super( format( message, labelId, propertyKey, cause.getMessage() ), cause );
+        super( format( MESSAGE, new IndexDescriptor( labelId, propertyKey ), cause.getMessage() ), cause );
         this.labelId = labelId;
         this.propertyKey = propertyKey;
     }
 
     @Override
-    public String getUserMessage( KeyNameLookup nameLookup )
+    public String getUserMessage( TokenNameLookup tokenNameLookup )
     {
-        return format( message, nameLookup.getLabelName( labelId ), nameLookup.getPropertyKeyName( propertyKey ),
-                ((KernelException) getCause()).getUserMessage( nameLookup ) );
+        return String.format( format( MESSAGE,
+                new IndexDescriptor( labelId, propertyKey ).userDescription( tokenNameLookup ),
+                ((KernelException) getCause()).getUserMessage( tokenNameLookup ) ) );
     }
 }

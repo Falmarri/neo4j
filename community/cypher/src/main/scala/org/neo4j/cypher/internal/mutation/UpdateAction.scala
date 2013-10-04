@@ -33,6 +33,7 @@ import org.neo4j.cypher.internal.commands.AstNode
 import org.neo4j.cypher.internal.ExecutionContext
 
 trait UpdateAction extends TypeSafe with AstNode[UpdateAction] {
+
   def exec(context: ExecutionContext, state: QueryState): Iterator[ExecutionContext]
 
   def throwIfSymbolsMissing(symbols: SymbolTable)

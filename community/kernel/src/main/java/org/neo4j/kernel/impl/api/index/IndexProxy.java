@@ -22,6 +22,7 @@ package org.neo4j.kernel.impl.api.index;
 import java.io.IOException;
 import java.util.concurrent.Future;
 
+import org.neo4j.kernel.api.exceptions.index.IndexActivationFailedKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexNotFoundKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexPopulationFailedKernelException;
 import org.neo4j.kernel.api.index.IndexAccessor;
@@ -30,12 +31,13 @@ import org.neo4j.kernel.api.index.IndexReader;
 import org.neo4j.kernel.api.index.InternalIndexState;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
+import org.neo4j.kernel.impl.api.constraints.ConstraintVerificationFailedKernelException;
 
 import static org.neo4j.helpers.FutureAdapter.VOID;
 
 /**
  * Controls access to {@link IndexPopulator}, {@link IndexAccessor} during different stages
- * of the lifecycle of a schema index. It's designed to be decorated with multiple stacked instances.
+ * of the lifecycle of an index. It's designed to be decorated with multiple stacked instances.
  *
  * The contract of {@link IndexProxy} is
  *
@@ -78,7 +80,7 @@ public interface IndexProxy
     InternalIndexState getState();
     
     /**
-     * @return failure message. Expect a call to it if {@link #getState()} returns {@link InternalIndexState#FAILED}. 
+     * @return failure message. Expect a call to it if {@link #getState()} returns {@link InternalIndexState#FAILED}.
      */
     IndexPopulationFailure getPopulationFailure() throws IllegalStateException;
 
@@ -94,9 +96,9 @@ public interface IndexProxy
      */
     boolean awaitStoreScanCompleted() throws IndexPopulationFailedKernelException, InterruptedException;
 
-    void activate();
+    void activate() throws IndexActivationFailedKernelException;
 
-    void validate() throws IndexPopulationFailedKernelException;
+    void validate() throws ConstraintVerificationFailedKernelException, IndexPopulationFailedKernelException;
 
     class Adapter implements IndexProxy
     {
@@ -155,7 +157,7 @@ public interface IndexProxy
         @Override
         public IndexReader newReader()
         {
-            return new IndexReader.Empty();
+            return IndexReader.EMPTY;
         }
 
         @Override

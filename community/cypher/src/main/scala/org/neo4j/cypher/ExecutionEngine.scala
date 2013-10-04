@@ -22,18 +22,17 @@ package org.neo4j.cypher
 import internal.commands._
 import internal.executionplan.ExecutionPlanBuilder
 import internal.executionplan.verifiers.{OptionalPatternWithoutStartVerifier, HintVerifier, Verifier}
-import internal.LRUCache
-import internal.spi.gdsimpl.{TransactionBoundPlanContext, TransactionBoundQueryContext}
-import internal.spi.QueryContext
+import org.neo4j.cypher.internal.{CypherParser, LRUCache}
+import org.neo4j.cypher.internal.spi.gdsimpl.{TransactionBoundExecutionContext, TransactionBoundPlanContext}
+import org.neo4j.cypher.internal.spi.{ExceptionTranslatingQueryContext, QueryContext}
 import scala.collection.JavaConverters._
 import java.util.{Map => JavaMap}
 import org.neo4j.kernel.{ThreadToStatementContextBridge, GraphDatabaseAPI, InternalAbstractGraphDatabase}
 import org.neo4j.graphdb.{Transaction, GraphDatabaseService}
 import org.neo4j.graphdb.factory.GraphDatabaseSettings
 import org.neo4j.kernel.impl.util.StringLogger
-import org.neo4j.cypher.internal.parser.prettifier.Prettifier
-import org.neo4j.kernel.api.operations.StatementState
-import org.neo4j.kernel.api.StatementOperationParts
+import org.neo4j.cypher.internal.prettifier.Prettifier
+import org.neo4j.kernel.api.Statement
 
 class ExecutionEngine(graph: GraphDatabaseService, logger: StringLogger = StringLogger.DEV_NULL) {
 
@@ -72,18 +71,19 @@ class ExecutionEngine(graph: GraphDatabaseService, logger: StringLogger = String
     })
   }
 
-  private def getStatementContext = graph.asInstanceOf[GraphDatabaseAPI]
-    .getDependencyResolver
-    .resolveDependency(classOf[ThreadToStatementContextBridge])
-    .getCtxForWriting
-
-  private def getCakeState = graph.asInstanceOf[GraphDatabaseAPI]
-    .getDependencyResolver
-    .resolveDependency(classOf[ThreadToStatementContextBridge])
-    .statementForWriting()
-    
-  private def createQueryContext(tx: Transaction, ctx: StatementOperationParts, state: StatementState) = {
-    new TransactionBoundQueryContext(graph.asInstanceOf[GraphDatabaseAPI], tx, ctx, state)
+  def execute(query: AbstractQuery, params: Map[String, Any]): ExecutionResult = {
+    val tx = graph.beginTx()
+    try {
+      verify(query)
+      val plan = executeStatement(stmt => planBuilder.build(new TransactionBoundPlanContext(stmt, graph), query))
+        plan.execute(executionContext(tx), params)
+    }
+    catch {
+      case (t: Throwable) =>
+        tx.failure()
+        tx.close()
+        throw t
+    }
   }
 
   @throws(classOf[SyntaxException])
@@ -92,7 +92,7 @@ class ExecutionEngine(graph: GraphDatabaseService, logger: StringLogger = String
   @throws(classOf[SyntaxException])
   def prepare[T](query: String, run: (ExecutionPlan, QueryContext) => T): T =  {
     // parse query
-    val cachedQuery = queryCache.getOrElseUpdate(query, () => {
+    val cachedQuery: AbstractQuery = queryCache.getOrElseUpdate(query, {
       val parsedQuery = parser.parse(query)
       verify(parsedQuery)
       parsedQuery
@@ -102,41 +102,38 @@ class ExecutionEngine(graph: GraphDatabaseService, logger: StringLogger = String
     while (n < ExecutionEngine.PLAN_BUILDING_TRIES) {
       // create transaction and query context
       var touched = false
-      var statementContext: StatementOperationParts = null
-      var state: StatementState = null
-      var queryContext: QueryContext = null
       val tx = graph.beginTx()
+      val statement = txBridge.statement()
       val plan = try {
-        statementContext = getStatementContext
-        state = getCakeState
-        queryContext = createQueryContext(tx, statementContext, state)
-
         // fetch plan cache
-        val planCache =
-          queryContext.getOrCreateFromSchemaState(this, new LRUCache[String, ExecutionPlan](getQueryCacheSize))
+        val planCache = getOrCreateFromSchemaState(statement, new LRUCache[String, ExecutionPlan](getQueryCacheSize))
 
         // get plan or build it
-        planCache.getOrElseUpdate(query, () => {
+        planCache.getOrElseUpdate(query, {
           touched = true
-          val planContext = new TransactionBoundPlanContext(statementContext.keyReadOperations, statementContext.schemaReadOperations, state, graph)
+          val planContext = new TransactionBoundPlanContext(statement, graph)
           planBuilder.build(planContext, cachedQuery)
         })
       }
       catch {
         case (t: Throwable) =>
-          state.close()
+          statement.close()
           tx.failure()
-          tx.finish()
+          tx.close()
           throw t
       }
 
       if (touched) {
-        state.close()
+        statement.close()
         tx.success()
-        tx.finish()
+        tx.close()
       }
       else {
-          return run(plan, queryContext)
+        val queryContext = executionContext(tx)
+        // close the old statement reference after the statement has been "upgraded"
+        // to either a schema data or a schema statement, so that the locks are "handed over".
+        statement.close()
+        return run(plan, queryContext)
       }
 
       n += 1
@@ -145,26 +142,32 @@ class ExecutionEngine(graph: GraphDatabaseService, logger: StringLogger = String
     throw new IllegalStateException("Could not execute query due to insanely frequent schema changes")
   }
 
-  def verify(query: AbstractQuery) {
-    for (verifier <- verifiers)
-      verifier.verify(query)
+  private def executionContext(tx: Transaction) =
+    new ExceptionTranslatingQueryContext(new TransactionBoundExecutionContext(graph.asInstanceOf[GraphDatabaseAPI], tx, txBridge.statement()))
+
+  private def executeStatement[T](callback: (Statement) => T): T = {
+    val stmt = txBridge.statement()
+    try {
+      callback( stmt )
+    } finally {
+      stmt.close()
+    }
   }
 
-  def execute(query: AbstractQuery, params: Map[String, Any]): ExecutionResult = {
-    val tx = graph.beginTx()
-    try {
-      verify(query)
-      val statementContext = getStatementContext
-      val queryContext = createQueryContext(tx, statementContext, getCakeState)
-      val planContext = new TransactionBoundPlanContext(statementContext.keyReadOperations, statementContext.schemaReadOperations, getCakeState, graph)
-      planBuilder.build(planContext, query).execute(queryContext, params)
+  private def txBridge = graph.asInstanceOf[GraphDatabaseAPI]
+    .getDependencyResolver
+    .resolveDependency(classOf[ThreadToStatementContextBridge])
+
+  private def getOrCreateFromSchemaState[V](statement: Statement, creator: => V) = {
+    val javaCreator = new org.neo4j.helpers.Function[ExecutionEngine, V]() {
+      def apply(key: ExecutionEngine) = creator
     }
-    catch {
-      case (t: Throwable) =>
-        tx.failure()
-        tx.finish()
-        throw t
-    }
+    statement.readOperations().schemaStateGetOrCreate(this, javaCreator)
+  }
+
+  def verify(query: AbstractQuery) {
+    for ( verifier <- verifiers )
+      verifier.verify(query)
   }
 
   def prettify(query:String): String = Prettifier(query)
@@ -173,10 +176,10 @@ class ExecutionEngine(graph: GraphDatabaseService, logger: StringLogger = String
     optGraphAs[InternalAbstractGraphDatabase]
       .andThen(_.getConfig.get(GraphDatabaseSettings.cypher_parser_version))
       .andThen({
-      case v:String => new CypherParser(v)
-      case _        => new CypherParser()
+      case v:String => CypherParser(v)
+      case _        => CypherParser()
     })
-      .applyOrElse(graph, (_: GraphDatabaseService) => new CypherParser() )
+      .applyOrElse(graph, (_: GraphDatabaseService) => CypherParser() )
 
 
   private def getQueryCacheSize : Int =
@@ -197,6 +200,3 @@ object ExecutionEngine {
   val DEFAULT_QUERY_CACHE_SIZE: Int = 100
   val PLAN_BUILDING_TRIES: Int = 20
 }
-
-
-

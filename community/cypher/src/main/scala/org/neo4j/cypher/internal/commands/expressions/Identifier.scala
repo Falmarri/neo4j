@@ -35,7 +35,7 @@ case class Identifier(entityName: String) extends Expression with Typed {
   def apply(ctx: ExecutionContext)(implicit state: QueryState): Any =
     ctx.getOrElse(entityName, throw new NotFoundException("Unknown identifier `%s`.".format(entityName)))
 
-  override def toString(): String = entityName
+  override def toString: String = entityName
 
   def rewrite(f: (Expression) => Expression) = f(this)
 

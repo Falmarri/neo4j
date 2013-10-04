@@ -31,13 +31,14 @@ import org.neo4j.com.Server;
 import org.neo4j.com.TxChecksumVerifier;
 import org.neo4j.helpers.HostnamePort;
 import org.neo4j.kernel.logging.Logging;
-import org.neo4j.tooling.RealClock;
+
+import static org.neo4j.helpers.Clock.SYSTEM_CLOCK;
 
 class BackupServer extends Server<TheBackupInterface, Object>
 {
     static final byte PROTOCOL_VERSION = 1;
     private final BackupRequestType[] contexts = BackupRequestType.values();
-    static int DEFAULT_PORT = DEFAULT_BACKUP_PORT;
+    static int DEFAULT_PORT = 6362;
     static final int FRAME_LENGTH = Protocol.MEGA * 4;
 
     public BackupServer( TheBackupInterface requestTarget, final HostnamePort server , Logging logging ) throws IOException
@@ -68,7 +69,7 @@ class BackupServer extends Server<TheBackupInterface, Object>
                 return server;
             }
         }, logging, FRAME_LENGTH, PROTOCOL_VERSION,
-                TxChecksumVerifier.ALWAYS_MATCH, new RealClock() );
+                TxChecksumVerifier.ALWAYS_MATCH, SYSTEM_CLOCK );
     }
 
     @Override

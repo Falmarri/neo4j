@@ -46,7 +46,6 @@ import org.neo4j.kernel.impl.transaction.xaframework.InMemoryLogBuffer;
 
 public abstract class GraphStoreFixture implements TestRule
 {
-
     private StoreAccess storeAccess;
 
     public void apply( Transaction transaction ) throws IOException
@@ -80,7 +79,7 @@ public abstract class GraphStoreFixture implements TestRule
         {
             InMemoryLogBuffer buffer = new InMemoryLogBuffer();
             TransactionWriter writer = new TransactionWriter( buffer, localId );
-            writer.start( globalId, masterId, myId, startTimestamp );
+            writer.start( globalId, masterId, myId, startTimestamp, txId == null ? 0l : txId );
 
             transactionData( new TransactionDataBuilder( writer ), idGenerator );
 
@@ -106,7 +105,7 @@ public abstract class GraphStoreFixture implements TestRule
             return nodeId++;
         }
 
-        public long label()
+        public int label()
         {
             return labelId++;
         }
@@ -156,11 +155,11 @@ public abstract class GraphStoreFixture implements TestRule
             this.writer = writer;
         }
 
-        public void createSchema( Collection<DynamicRecord> records )
+        public void createSchema( Collection<DynamicRecord> beforeRecords, Collection<DynamicRecord> afterRecords )
         {
             try
             {
-                writer.createSchema( records );
+                writer.createSchema( beforeRecords, afterRecords );
             }
             catch ( IOException e )
             {
@@ -386,10 +385,10 @@ public abstract class GraphStoreFixture implements TestRule
     private int localIdGenerator = 0;
     private long schemaId;
     private long nodeId;
-    private long labelId;
+    private int labelId;
     private long nodeLabelsId;
     private long relId;
-    private long propId;
+    private int propId;
     private long stringPropId;
     private long arrayPropId;
     private int relTypeId;
@@ -404,10 +403,10 @@ public abstract class GraphStoreFixture implements TestRule
             StoreAccess stores = new StoreAccess( graphDb );
             schemaId = stores.getSchemaStore().getHighId();
             nodeId = stores.getNodeStore().getHighId();
-            labelId = stores.getLabelTokenStore().getHighId();
+            labelId = (int) stores.getLabelTokenStore().getHighId();
             nodeLabelsId = stores.getNodeDynamicLabelStore().getHighId();
             relId = stores.getRelationshipStore().getHighId();
-            propId = stores.getPropertyStore().getHighId();
+            propId = (int) stores.getPropertyStore().getHighId();
             stringPropId = stores.getStringStore().getHighId();
             arrayPropId = stores.getArrayStore().getHighId();
             relTypeId = (int) stores.getRelationshipTypeTokenStore().getHighId();

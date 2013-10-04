@@ -23,6 +23,7 @@ import java.net.URI;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
+
 import javax.ws.rs.core.MediaType;
 
 import org.junit.AfterClass;
@@ -32,10 +33,10 @@ import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-
 import org.neo4j.graphdb.DynamicRelationshipType;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Transaction;
+import org.neo4j.helpers.FakeClock;
 import org.neo4j.kernel.impl.annotations.Documented;
 import org.neo4j.server.CommunityNeoServer;
 import org.neo4j.server.database.Database;
@@ -50,13 +51,11 @@ import org.neo4j.server.rest.domain.JsonHelper;
 import org.neo4j.server.scripting.javascript.GlobalJavascriptInitializer;
 import org.neo4j.test.TestData;
 import org.neo4j.test.server.ExclusiveServerTestBase;
-import org.neo4j.tooling.FakeClock;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThat;
-
 import static org.neo4j.test.Mute.muteAll;
 
 public class PagedTraverserDocIT extends ExclusiveServerTestBase
@@ -481,9 +480,8 @@ public class PagedTraverserDocIT extends ExclusiveServerTestBase
 
     private Node createLinkedList( final int listLength, final Database db )
     {
-        Transaction tx = db.getGraph().beginTx();
         Node startNode = null;
-        try
+        try ( Transaction tx = db.getGraph().beginTx() )
         {
             Node previous = null;
             for ( int i = 0; i < listLength; i++ )
@@ -504,10 +502,6 @@ public class PagedTraverserDocIT extends ExclusiveServerTestBase
             }
             tx.success();
             return startNode;
-        }
-        finally
-        {
-            tx.finish();
         }
     }
 }

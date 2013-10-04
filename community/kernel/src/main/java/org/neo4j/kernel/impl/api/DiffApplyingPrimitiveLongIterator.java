@@ -26,7 +26,6 @@ public final class DiffApplyingPrimitiveLongIterator extends AbstractPrimitiveLo
 {
     private enum Phase
     {
-
         FILTERED_SOURCE
         {
             @Override
@@ -50,7 +49,7 @@ public final class DiffApplyingPrimitiveLongIterator extends AbstractPrimitiveLo
             @Override
             void computeNext( DiffApplyingPrimitiveLongIterator self )
             {
-                self.hasNext = false;
+                self.endReached();
             }
         };
 
@@ -69,7 +68,7 @@ public final class DiffApplyingPrimitiveLongIterator extends AbstractPrimitiveLo
     {
         this.source = source;
         this.addedElements = addedElements;
-        this.addedElementsIterator = addedElements == null ? null : addedElements.iterator();
+        this.addedElementsIterator = addedElements.iterator();
         this.removedElements = removedElements;
         phase = Phase.FILTERED_SOURCE;
 
@@ -84,11 +83,11 @@ public final class DiffApplyingPrimitiveLongIterator extends AbstractPrimitiveLo
 
     private void computeNextFromSourceAndFilter()
     {
-        for ( hasNext = source.hasNext(); hasNext; hasNext = source.hasNext() )
+        for ( boolean hasNext = source.hasNext(); hasNext; hasNext = source.hasNext() )
         {
-            nextValue = source.next();
-            if ( ( removedElements == null || !removedElements.contains( nextValue ) ) &&
-                 ( addedElements == null || !addedElements.contains( nextValue ) ) )
+            long value = source.next();
+            next( value );
+            if ( !removedElements.contains( value ) && !addedElements.contains( value ) )
             {
                 return;
             }
@@ -99,16 +98,19 @@ public final class DiffApplyingPrimitiveLongIterator extends AbstractPrimitiveLo
 
     private void transitionToAddedElements()
     {
-        phase = addedElementsIterator == null ? Phase.NO_ADDED_ELEMENTS : Phase.ADDED_ELEMENTS;
+        phase = !addedElementsIterator.hasNext() ? Phase.NO_ADDED_ELEMENTS : Phase.ADDED_ELEMENTS;
         computeNext();
     }
 
     private void computeNextFromAddedElements()
     {
-        hasNext = addedElementsIterator.hasNext();
-        if ( hasNext )
+        if ( addedElementsIterator.hasNext() )
         {
-            nextValue = (Long) addedElementsIterator.next();
+            next( (Long) addedElementsIterator.next() );
+        }
+        else
+        {
+            endReached();
         }
     }
 }

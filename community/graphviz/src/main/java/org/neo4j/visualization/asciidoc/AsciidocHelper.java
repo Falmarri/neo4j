@@ -19,10 +19,6 @@
  */
 package org.neo4j.visualization.asciidoc;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.visualization.graphviz.AsciiDocSimpleStyle;
@@ -30,6 +26,10 @@ import org.neo4j.visualization.graphviz.AsciiDocStyle;
 import org.neo4j.visualization.graphviz.GraphStyle;
 import org.neo4j.visualization.graphviz.GraphvizWriter;
 import org.neo4j.walk.Walker;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 
 import static java.lang.String.format;
 
@@ -126,8 +126,7 @@ public class AsciidocHelper
                                          GraphDatabaseService graph, String identifier,
                                          GraphStyle graphStyle, String graphvizOptions )
     {
-        Transaction transaction = graph.beginTx();
-        try
+        try ( Transaction tx = graph.beginTx() )
         {
             GraphvizWriter writer = new GraphvizWriter( graphStyle );
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -154,23 +153,14 @@ public class AsciidocHelper
                 throw new RuntimeException( e );
             }
         }
-        finally
-        {
-            transaction.finish();
-        }
     }
 
     private static void removeReferenceNode( GraphDatabaseService graph )
     {
-        Transaction tx = graph.beginTx();
-        try
+        try ( Transaction tx = graph.beginTx() )
         {
             graph.getReferenceNode().delete();
             tx.success();
-        }
-        finally
-        {
-            tx.finish();
         }
     }
 
@@ -182,6 +172,12 @@ public class AsciidocHelper
     public static String createQueryResultSnippet( final String output )
     {
         return "[queryresult]\n----\n" + output
+                + (output.endsWith( "\n" ) ? "" : "\n") + "----\n";
+    }
+
+    public static String createQueryFailureSnippet( final String output )
+    {
+        return "[queryfailure]\n----\n" + output
                 + (output.endsWith( "\n" ) ? "" : "\n") + "----\n";
     }
 

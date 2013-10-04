@@ -19,9 +19,6 @@
  */
 package org.neo4j.unsafe.batchinsert;
 
-import static org.neo4j.helpers.collection.Iterables.asResourceIterable;
-import static org.neo4j.helpers.collection.IteratorUtil.asSet;
-
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -48,11 +45,16 @@ import org.neo4j.graphdb.event.KernelEventHandler;
 import org.neo4j.graphdb.event.TransactionEventHandler;
 import org.neo4j.graphdb.index.IndexManager;
 import org.neo4j.graphdb.schema.Schema;
+import org.neo4j.graphdb.traversal.BidirectionalTraversalDescription;
+import org.neo4j.graphdb.traversal.TraversalDescription;
 import org.neo4j.kernel.PlaceboTransaction;
 import org.neo4j.kernel.extension.KernelExtensionFactory;
 import org.neo4j.kernel.impl.cache.LruCache;
 import org.neo4j.kernel.impl.nioneo.store.FileSystemAbstraction;
 import org.neo4j.kernel.impl.nioneo.store.InvalidRecordException;
+
+import static org.neo4j.helpers.collection.Iterables.asResourceIterable;
+import static org.neo4j.helpers.collection.IteratorUtil.asSet;
 
 class BatchGraphDatabaseImpl implements GraphDatabaseService
 {
@@ -137,7 +139,7 @@ class BatchGraphDatabaseImpl implements GraphDatabaseService
 
     static Map<String,Object> emptyProps()
     {
-        return new HashMap<String,Object>();
+        return new HashMap<>();
     }
 
     @Override
@@ -159,8 +161,7 @@ class BatchGraphDatabaseImpl implements GraphDatabaseService
         {
             try
             {
-                node = new NodeBatchImpl( id, this,
-                    batchInserter.getNodeProperties( id ) );
+                node = new NodeBatchImpl( id, this, mutableCopyOf( batchInserter.getNodeProperties( id ) ) );
                 nodes.put( id, node );
             }
             catch ( InvalidRecordException e )
@@ -169,6 +170,11 @@ class BatchGraphDatabaseImpl implements GraphDatabaseService
             }
         }
         return node;
+    }
+
+    private Map<String, Object> mutableCopyOf( Map<String, Object> source )
+    {
+        return new HashMap<>( source );
     }
 
     @Override
@@ -189,7 +195,7 @@ class BatchGraphDatabaseImpl implements GraphDatabaseService
                     batchInserter.getRelationshipById( id );
                 Map<String,Object> props =
                     batchInserter.getRelationshipProperties( id );
-                rel = new RelationshipBatchImpl( simpleRel, this, props );
+                rel = new RelationshipBatchImpl( simpleRel, this, mutableCopyOf( props ) );
                 rels.put( id, rel );
             }
             catch ( InvalidRecordException e )
@@ -224,6 +230,11 @@ class BatchGraphDatabaseImpl implements GraphDatabaseService
 
         @Override
         public void finish()
+        {
+        }
+        
+        @Override
+        public void close()
         {
         }
 
@@ -632,7 +643,7 @@ class BatchGraphDatabaseImpl implements GraphDatabaseService
         @Override
         public boolean isType( RelationshipType type )
         {
-            return rel.getType().equals( type );
+            return rel.getType().name().equals( type.name() );
         }
 
         @Override
@@ -854,6 +865,18 @@ class BatchGraphDatabaseImpl implements GraphDatabaseService
 
     @Override
     public IndexManager index()
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public TraversalDescription traversalDescription()
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public BidirectionalTraversalDescription bidirectionalTraversalDescription()
     {
         throw new UnsupportedOperationException();
     }

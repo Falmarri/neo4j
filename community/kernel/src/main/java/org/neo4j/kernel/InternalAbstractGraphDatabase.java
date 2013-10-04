@@ -31,6 +31,7 @@ import javax.transaction.NotSupportedException;
 import javax.transaction.SystemException;
 import javax.transaction.TransactionManager;
 
+import org.neo4j.graphdb.ConstraintViolationException;
 import org.neo4j.graphdb.DependencyResolver;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Label;
@@ -51,6 +52,8 @@ import org.neo4j.graphdb.index.IndexProvider;
 import org.neo4j.graphdb.index.IndexProviderKernelExtensionFactory;
 import org.neo4j.graphdb.index.IndexProviders;
 import org.neo4j.graphdb.schema.Schema;
+import org.neo4j.graphdb.traversal.BidirectionalTraversalDescription;
+import org.neo4j.graphdb.traversal.TraversalDescription;
 import org.neo4j.helpers.DaemonThreadFactory;
 import org.neo4j.helpers.Function;
 import org.neo4j.helpers.FunctionFromPrimitiveLong;
@@ -59,14 +62,17 @@ import org.neo4j.helpers.Settings;
 import org.neo4j.helpers.collection.Iterables;
 import org.neo4j.helpers.collection.IteratorUtil;
 import org.neo4j.kernel.api.KernelAPI;
-import org.neo4j.kernel.api.StatementOperationParts;
+import org.neo4j.kernel.api.ReadOnlyDatabaseKernelException;
+import org.neo4j.kernel.api.ReadOperations;
+import org.neo4j.kernel.api.Statement;
+import org.neo4j.kernel.api.Transactor;
 import org.neo4j.kernel.api.exceptions.EntityNotFoundException;
-import org.neo4j.kernel.api.exceptions.KernelException;
-import org.neo4j.kernel.api.exceptions.PropertyKeyIdNotFoundException;
+import org.neo4j.kernel.api.exceptions.InvalidTransactionTypeKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexNotFoundKernelException;
+import org.neo4j.kernel.api.exceptions.schema.SchemaKernelException;
 import org.neo4j.kernel.api.exceptions.schema.SchemaRuleNotFoundException;
 import org.neo4j.kernel.api.index.InternalIndexState;
-import org.neo4j.kernel.api.operations.StatementState;
+import org.neo4j.kernel.api.scan.LabelScanStore;
 import org.neo4j.kernel.configuration.Config;
 import org.neo4j.kernel.configuration.ConfigurationChange;
 import org.neo4j.kernel.configuration.ConfigurationChangeListener;
@@ -77,8 +83,11 @@ import org.neo4j.kernel.guard.Guard;
 import org.neo4j.kernel.impl.api.AbstractPrimitiveLongIterator;
 import org.neo4j.kernel.impl.api.Kernel;
 import org.neo4j.kernel.impl.api.KernelSchemaStateStore;
+import org.neo4j.kernel.impl.api.NonTransactionalTokenNameLookup;
 import org.neo4j.kernel.impl.api.PrimitiveLongIterator;
+import org.neo4j.kernel.impl.api.SchemaWriteGuard;
 import org.neo4j.kernel.impl.api.UpdateableSchemaState;
+import org.neo4j.kernel.impl.api.constraints.ConstraintValidationKernelException;
 import org.neo4j.kernel.impl.api.index.IndexDescriptor;
 import org.neo4j.kernel.impl.api.index.IndexingService;
 import org.neo4j.kernel.impl.api.index.RemoveOrphanConstraintIndexesOnStartup;
@@ -99,6 +108,7 @@ import org.neo4j.kernel.impl.core.NodeImpl;
 import org.neo4j.kernel.impl.core.NodeManager;
 import org.neo4j.kernel.impl.core.NodeProxy;
 import org.neo4j.kernel.impl.core.PropertyKeyTokenHolder;
+import org.neo4j.kernel.impl.core.ReadOnlyDbException;
 import org.neo4j.kernel.impl.core.ReadOnlyNodeManager;
 import org.neo4j.kernel.impl.core.RelationshipImpl;
 import org.neo4j.kernel.impl.core.RelationshipProxy;
@@ -111,6 +121,7 @@ import org.neo4j.kernel.impl.nioneo.store.DefaultWindowPoolFactory;
 import org.neo4j.kernel.impl.nioneo.store.FileSystemAbstraction;
 import org.neo4j.kernel.impl.nioneo.store.StoreFactory;
 import org.neo4j.kernel.impl.nioneo.store.StoreId;
+import org.neo4j.kernel.impl.nioneo.xa.NeoStoreProvider;
 import org.neo4j.kernel.impl.nioneo.xa.NeoStoreXaDataSource;
 import org.neo4j.kernel.impl.nioneo.xa.NioNeoDbPersistenceSource;
 import org.neo4j.kernel.impl.persistence.PersistenceManager;
@@ -134,6 +145,8 @@ import org.neo4j.kernel.impl.transaction.xaframework.RecoveryVerifier;
 import org.neo4j.kernel.impl.transaction.xaframework.TransactionInterceptorProvider;
 import org.neo4j.kernel.impl.transaction.xaframework.TxIdGenerator;
 import org.neo4j.kernel.impl.transaction.xaframework.XaFactory;
+import org.neo4j.kernel.impl.traversal.BidirectionalTraversalDescriptionImpl;
+import org.neo4j.kernel.impl.traversal.TraversalDescriptionImpl;
 import org.neo4j.kernel.impl.util.JobScheduler;
 import org.neo4j.kernel.impl.util.Neo4jJobScheduler;
 import org.neo4j.kernel.impl.util.StringLogger;
@@ -153,6 +166,8 @@ import org.neo4j.tooling.GlobalGraphOperations;
 import static java.lang.String.format;
 import static org.neo4j.helpers.Settings.setting;
 import static org.neo4j.helpers.collection.Iterables.map;
+import static org.neo4j.kernel.api.operations.KeyReadOperations.NO_SUCH_LABEL;
+import static org.neo4j.kernel.api.operations.KeyReadOperations.NO_SUCH_PROPERTY_KEY;
 import static org.neo4j.kernel.logging.LogbackWeakDependency.DEFAULT_TO_CLASSIC;
 
 /**
@@ -160,16 +175,16 @@ import static org.neo4j.kernel.logging.LogbackWeakDependency.DEFAULT_TO_CLASSIC;
  * and lifecycle management of these.
  */
 public abstract class InternalAbstractGraphDatabase
-        extends AbstractGraphDatabase implements GraphDatabaseService, GraphDatabaseAPI
+        extends AbstractGraphDatabase implements GraphDatabaseService, GraphDatabaseAPI, SchemaWriteGuard
 {
+
     public static class Configuration
     {
         public static final Setting<Boolean> read_only = GraphDatabaseSettings.read_only;
         public static final Setting<Boolean> use_memory_mapped_buffers =
                 GraphDatabaseSettings.use_memory_mapped_buffers;
         public static final Setting<Boolean> execution_guard_enabled = GraphDatabaseSettings.execution_guard_enabled;
-        public static final GraphDatabaseSettings.CacheTypeSetting cache_type = GraphDatabaseSettings.cache_type;
-        public static final Setting<Boolean> load_kernel_extensions = GraphDatabaseSettings.load_kernel_extensions;
+        public static final Setting<String> cache_type = GraphDatabaseSettings.cache_type;
         public static final Setting<Boolean> ephemeral = setting( "ephemeral", Settings.BOOLEAN, Settings.FALSE );
         public static final Setting<File> store_dir = GraphDatabaseSettings.store_dir;
         public static final Setting<File> neo_store = GraphDatabaseSettings.neo_store;
@@ -204,7 +219,6 @@ public abstract class InternalAbstractGraphDatabase
     protected XaDataSourceManager xaDataSourceManager;
     protected LockManager lockManager;
     protected IdGeneratorFactory idGeneratorFactory;
-    protected TokenCreator relationshipTypeCreator;
     protected NioNeoDbPersistenceSource persistenceSource;
     protected TxEventSyncHookFactory syncHook;
     protected PersistenceManager persistenceManager;
@@ -271,7 +285,7 @@ public abstract class InternalAbstractGraphDatabase
                 UnsatisfiedDependencyStrategies.fail() );
         this.transactionInterceptorProviders = new TransactionInterceptorProviders( transactionInterceptorProviders,
                 dependencyResolver );
-        
+
         this.storeDir = config.get( Configuration.store_dir );
     }
 
@@ -312,7 +326,7 @@ public abstract class InternalAbstractGraphDatabase
                 temporaryThrowable = temporaryThrowable.getCause();
             }
 
-            msgLog.logMessage( msg.toString() );
+            msgLog.error( msg.toString() );
 
             shutdown();
 
@@ -344,7 +358,7 @@ public abstract class InternalAbstractGraphDatabase
         {   // If recovery failed then there's no point in going any further here. The database startup will fail.
             return;
         }
-        
+
         kernelAPI.bootstrapAfterRecovery();
         if ( txManager instanceof TxManager )
         {
@@ -354,7 +368,7 @@ public abstract class InternalAbstractGraphDatabase
             KernelDiagnostics.register( diagnosticsManager, InternalAbstractGraphDatabase.this, neoStoreDataSource );
             if ( isMaster )
             {
-                new RemoveOrphanConstraintIndexesOnStartup( txManager, statementContextProvider, logging ).perform();
+                new RemoveOrphanConstraintIndexesOnStartup( new Transactor( txManager ), logging ).perform();
             }
         }
     }
@@ -369,8 +383,8 @@ public abstract class InternalAbstractGraphDatabase
         // Apply autoconfiguration for memory settings
         AutoConfigurator autoConfigurator = new AutoConfigurator( fileSystem,
                 config.get( NeoStoreXaDataSource.Configuration.store_dir ),
-                GraphDatabaseSettings.UseMemoryMappedBuffers.shouldMemoryMap(
-                        config.get( Configuration.use_memory_mapped_buffers ) ), logging.getConsoleLog( AutoConfigurator.class ) );
+                config.get( Configuration.use_memory_mapped_buffers ),
+                logging.getConsoleLog( AutoConfigurator.class ) );
         if (config.get( GraphDatabaseSettings.dump_configuration ))
         {
             System.out.println( autoConfigurator.getNiceMemoryInformation() );
@@ -465,9 +479,7 @@ public abstract class InternalAbstractGraphDatabase
 
         idGeneratorFactory = createIdGeneratorFactory();
 
-        relationshipTypeCreator = createRelationshipTypeCreator();
-
-        persistenceSource = life.add(new NioNeoDbPersistenceSource(xaDataSourceManager));
+        persistenceSource = life.add( new NioNeoDbPersistenceSource( xaDataSourceManager ) );
 
         syncHook = new DefaultTxEventSyncHookFactory();
 
@@ -476,24 +488,22 @@ public abstract class InternalAbstractGraphDatabase
 
         propertyKeyTokenHolder = life.add( new PropertyKeyTokenHolder( txManager, persistenceManager, persistenceSource, createPropertyKeyCreator() ) );
         labelTokenHolder = life.add( new LabelTokenHolder( txManager, persistenceManager, persistenceSource, createLabelIdCreator() ) );
-
         relationshipTypeTokenHolder = life.add( new RelationshipTypeTokenHolder( txManager,
-                persistenceManager, persistenceSource, relationshipTypeCreator ) );
+                persistenceManager, persistenceSource, createRelationshipTypeCreator() ) );
 
         caches.configure( cacheProvider, config );
         Cache<NodeImpl> nodeCache = diagnosticsManager.tryAppendProvider( caches.node() );
         Cache<RelationshipImpl> relCache = diagnosticsManager.tryAppendProvider( caches.relationship() );
 
-        kernelAPI = life.add( new Kernel( txManager, propertyKeyTokenHolder, labelTokenHolder, persistenceManager,
+        kernelAPI = life.add( new Kernel(
+                txManager, propertyKeyTokenHolder, labelTokenHolder, relationshipTypeTokenHolder, persistenceManager,
                 xaDataSourceManager, lockManager, updateableSchemaState, dependencyResolver,
-                this.isHighlyAvailable() ) );
+                readOnly, this ) );
+
         // XXX: Circular dependency, temporary during transition to KernelAPI - TxManager should not depend on KernelAPI
         txManager.setKernel(kernelAPI);
 
-        ThreadToStatementContextBridge statementBridge = readOnly ?
-                new ThreadToStatementContextBridge.ReadOnly( kernelAPI, txManager ) :
-                new ThreadToStatementContextBridge( kernelAPI, txManager );
-        statementContextProvider = life.add( statementBridge );
+        statementContextProvider = life.add( new ThreadToStatementContextBridge( kernelAPI, txManager ) );
 
         nodeManager = guard != null ?
                 createGuardedNodeManager( readOnly, cacheProvider, nodeCache, relCache ) :
@@ -518,10 +528,7 @@ public abstract class InternalAbstractGraphDatabase
 
         extensions = life.add( createKernelData() );
 
-        if ( config.get( Configuration.load_kernel_extensions ) )
-        {
-            life.add( kernelExtensions );
-        }
+        life.add( kernelExtensions );
 
         schema = new SchemaImpl( statementContextProvider );
 
@@ -558,7 +565,9 @@ public abstract class InternalAbstractGraphDatabase
         life.add( new ConfigurationChangedRestarter() );
     }
 
-    protected abstract boolean isHighlyAvailable();
+    public void assertSchemaWritesAllowed() throws InvalidTransactionTypeKernelException
+    {
+    }
 
     protected CleanupService createCleanupService()
     {
@@ -589,7 +598,7 @@ public abstract class InternalAbstractGraphDatabase
     {
         return new DefaultRelationshipTypeCreator( logging );
     }
-    
+
     protected TokenCreator createPropertyKeyCreator()
     {
         return new DefaultPropertyTokenCreator( logging );
@@ -664,11 +673,11 @@ public abstract class InternalAbstractGraphDatabase
                 }
 
                 @Override
-                public Relationship createRelationship( final Node startNodeProxy, final NodeImpl startNode,
-                                                        final Node endNode, final RelationshipType type )
+                public Relationship createRelationship( Node startNodeProxy, NodeImpl startNode,
+                                                        Node endNode, long relationshipTypeId )
                 {
                     guard.check();
-                    return super.createRelationship( startNodeProxy, startNode, endNode, type );
+                    return super.createRelationship( startNodeProxy, startNode, endNode, relationshipTypeId );
                 }
             };
         }
@@ -713,11 +722,11 @@ public abstract class InternalAbstractGraphDatabase
             }
 
             @Override
-            public Relationship createRelationship( final Node startNodeProxy, final NodeImpl startNode,
-                                                    final Node endNode, final RelationshipType type )
+            public Relationship createRelationship( Node startNodeProxy, NodeImpl startNode,
+                                                    Node endNode, long relationshipTypeId )
             {
                 guard.check();
-                return super.createRelationship( startNodeProxy, startNode, endNode, type );
+                return super.createRelationship( startNodeProxy, startNode, endNode, relationshipTypeId );
             }
         };
     }
@@ -727,11 +736,13 @@ public abstract class InternalAbstractGraphDatabase
     {
         try
         {
+            msgLog.info( "Shutdown started" );
+            msgLog.flush();
             life.shutdown();
         }
         catch ( LifecycleException throwable )
         {
-            msgLog.logMessage( "Shutdown failed", throwable );
+            msgLog.warn( "Shutdown failed", throwable );
         }
     }
 
@@ -861,7 +872,9 @@ public abstract class InternalAbstractGraphDatabase
         neoDataSource = new NeoStoreXaDataSource( config,
                 storeFactory, logging.getMessagesLog( NeoStoreXaDataSource.class ),
                 xaFactory, stateFactory, transactionInterceptorProviders, jobScheduler, logging,
-                updateableSchemaState, nodeManager, dependencyResolver );
+                updateableSchemaState,
+                new NonTransactionalTokenNameLookup( labelTokenHolder, propertyKeyTokenHolder ),
+                dependencyResolver );
         xaDataSourceManager.registerDataSource( neoDataSource );
     }
 
@@ -919,11 +932,6 @@ public abstract class InternalAbstractGraphDatabase
         }
     }
 
-    protected boolean isEphemeral()
-    {
-        return false;
-    }
-
     @Override
     public String toString()
     {
@@ -973,13 +981,56 @@ public abstract class InternalAbstractGraphDatabase
     @Override
     public Node createNode()
     {
-        return nodeManager.createNode();
+        try ( Statement statement = statementContextProvider.statement() )
+        {
+            return nodeManager.newNodeProxyById( statement.dataWriteOperations().nodeCreate() );
+        }
+        catch ( InvalidTransactionTypeKernelException e )
+        {
+            throw new ConstraintViolationException( e.getMessage(), e );
+        }
+        catch ( ReadOnlyDatabaseKernelException e )
+        {
+            throw new ReadOnlyDbException();
+        }
     }
 
     @Override
     public Node createNode( Label... labels )
     {
-        return nodeManager.createNode( labels );
+        try ( Statement statement = statementContextProvider.statement() )
+        {
+            long nodeId = statement.dataWriteOperations().nodeCreate();
+            for ( Label label : labels )
+            {
+                int labelId = statement.tokenWriteOperations().labelGetOrCreateForName( label.name() );
+                try
+                {
+                    statement.dataWriteOperations().nodeAddLabel( nodeId, labelId );
+                }
+                catch ( EntityNotFoundException e )
+                {
+                    throw new NotFoundException( "No node with id " + nodeId + " found.", e );
+                }
+            }
+            return nodeManager.newNodeProxyById( nodeId );
+        }
+        catch ( ConstraintValidationKernelException e )
+        {
+            throw new ConstraintViolationException( "Unable to add label.", e );
+        }
+        catch ( SchemaKernelException e )
+        {
+            throw new IllegalArgumentException( e );
+        }
+        catch ( InvalidTransactionTypeKernelException e )
+        {
+            throw new ConstraintViolationException( e.getMessage(), e );
+        }
+        catch ( ReadOnlyDatabaseKernelException e )
+        {
+            throw new ReadOnlyDbException();
+        }
     }
 
     @Override
@@ -1306,6 +1357,10 @@ public abstract class InternalAbstractGraphDatabase
             {
                 return type.cast( diagnosticsManager );
             }
+            else if ( RelationshipTypeTokenHolder.class.isAssignableFrom( type ) && type.isInstance( relationshipTypeTokenHolder ) )
+            {
+                return type.cast( relationshipTypeTokenHolder );
+            }
             else if ( PropertyKeyTokenHolder.class.isAssignableFrom( type ) && type.isInstance( propertyKeyTokenHolder ) )
             {
                 return type.cast( propertyKeyTokenHolder );
@@ -1352,13 +1407,22 @@ public abstract class InternalAbstractGraphDatabase
             {
                 return type.cast( cleanupService );
             }
+            else if ( LabelScanStore.class.isAssignableFrom( type )
+                && type.isInstance( neoDataSource.getLabelScanStore() ) )
+            {
+                return type.cast( neoDataSource.getLabelScanStore() );
+            }
+            else if ( NeoStoreProvider.class.isAssignableFrom( type ) )
+            {
+                return type.cast( neoDataSource );
+            }
             else if ( DependencyResolver.class.equals( type ) )
             {
                 return type.cast( DependencyResolverImpl.this );
             }
             return null;
         }
-        
+
         @Override
         public <T> T resolveDependency( Class<T> type, SelectionStrategy<T> selector )
         {
@@ -1368,7 +1432,7 @@ public abstract class InternalAbstractGraphDatabase
             {
                 return selector.select( type, Iterables.option( result ) );
             }
-            
+
             // Try with kernel extensions
             return kernelExtensions.resolveDependency( type, selector );
         }
@@ -1391,14 +1455,14 @@ public abstract class InternalAbstractGraphDatabase
         public void start() throws Throwable
         {
             // TODO: Starting database. Make sure none can access it through lock or CAS
-            msgLog.logMessage( "Started - database is now available" );
+            msgLog.info( "Started - database is now available" );
         }
 
         @Override
         public void stop() throws Throwable
         {
             // TODO: Starting database. Make sure none can access it through lock or CAS
-            msgLog.logMessage( "Stopping - database is now unavailable" );
+            msgLog.info( "Stopping - database is now unavailable" );
         }
 
         @Override
@@ -1470,49 +1534,95 @@ public abstract class InternalAbstractGraphDatabase
 
     private ResourceIterator<Node> nodesByLabelAndProperty( Label myLabel, String key, Object value )
     {
-        StatementOperationParts ctx = statementContextProvider.getCtxForReading();
-        StatementState state = statementContextProvider.statementForReading();
+        Statement statement = statementContextProvider.statement();
 
-        long propertyId;
-        long labelId;
-        try
+        ReadOperations readOps = statement.readOperations();
+        int propertyId = readOps.propertyKeyGetForName( key );
+        int labelId = readOps.labelGetForName( myLabel.name() );
+
+        if ( propertyId == NO_SUCH_PROPERTY_KEY || labelId == NO_SUCH_LABEL )
         {
-            propertyId = ctx.keyReadOperations().propertyKeyGetForName( state, key );
-            labelId = ctx.keyReadOperations().labelGetForName( state, myLabel.name() );
-        }
-        catch ( KernelException e )
-        {
-            state.close();
+            statement.close();
             return IteratorUtil.emptyIterator();
         }
 
+        IndexDescriptor descriptor = findAnyIndexByLabelAndProperty( readOps, propertyId, labelId );
+
         try
         {
-            IndexDescriptor indexRule = ctx.schemaReadOperations().indexesGetForLabelAndPropertyKey(
-                    state, labelId, propertyId );
-            if ( ctx.schemaReadOperations().indexGetState( state, indexRule ) == InternalIndexState.ONLINE )
+            if ( null != descriptor )
             {
                 // Ha! We found an index - let's use it to find matching nodes
-                return map2nodes( ctx.entityReadOperations().nodesGetFromIndexLookup( state, indexRule, value ),
-                        state );
+                return map2nodes( readOps.nodesGetFromIndexLookup( descriptor, value ), statement );
+            }
+        }
+        catch ( IndexNotFoundKernelException e )
+        {
+            // weird at this point but ignore and fallback to a label scan
+        }
+
+        return getNodesByLabelAndPropertyWithoutIndex( propertyId, value, statement, labelId );
+    }
+
+    private IndexDescriptor findAnyIndexByLabelAndProperty( ReadOperations readOps, int propertyId, int labelId )
+    {
+        IndexDescriptor descriptor = findUniqueIndexByLabelAndProperty( readOps, labelId, propertyId );
+
+        if ( null == descriptor )
+        {
+            descriptor = findRegularIndexByLabelAndProperty( readOps, labelId, propertyId );
+        }
+        return descriptor;
+    }
+
+    private IndexDescriptor findUniqueIndexByLabelAndProperty( ReadOperations readOps, int labelId, int propertyId )
+    {
+        try
+        {
+            IndexDescriptor descriptor = readOps.indexesGetForLabelAndPropertyKey( labelId, propertyId );
+
+            if ( readOps.indexGetState( descriptor ) == InternalIndexState.ONLINE )
+            {
+                // Ha! We found an index - let's use it to find matching nodes
+                return descriptor;
             }
         }
         catch ( SchemaRuleNotFoundException | IndexNotFoundKernelException e )
         {
             // If we don't find a matching index rule, we'll scan all nodes and filter manually (below)
         }
-
-        return getNodesByLabelAndPropertyWithoutIndex( propertyId, value, ctx, state, labelId );
+        return null;
     }
 
-    private ResourceIterator<Node> getNodesByLabelAndPropertyWithoutIndex( long propertyId, Object value,
-            StatementOperationParts ctx, StatementState state, long labelId )
+    private IndexDescriptor findRegularIndexByLabelAndProperty( ReadOperations readOps, int labelId, int propertyId )
     {
-        return map2nodes( new PropertyValueFilteringNodeIdIterator(
-                ctx.entityReadOperations().nodesGetForLabel( state, labelId ), ctx, state, propertyId, value ), state );
+        try
+        {
+            IndexDescriptor descriptor = readOps.indexesGetForLabelAndPropertyKey( labelId, propertyId );
+
+            if ( readOps.indexGetState( descriptor ) == InternalIndexState.ONLINE )
+            {
+                // Ha! We found an index - let's use it to find matching nodes
+                return descriptor;
+            }
+        }
+        catch ( SchemaRuleNotFoundException | IndexNotFoundKernelException e )
+        {
+            // If we don't find a matching index rule, we'll scan all nodes and filter manually (below)
+        }
+        return null;
     }
 
-    private ResourceIterator<Node> map2nodes( PrimitiveLongIterator input, StatementState state )
+    private ResourceIterator<Node> getNodesByLabelAndPropertyWithoutIndex( int propertyId, Object value,
+            Statement statement, int labelId )
+    {
+        return map2nodes(
+            new PropertyValueFilteringNodeIdIterator(
+                    statement.readOperations().nodesGetForLabel( labelId ),
+                    statement.readOperations(), propertyId, value ), statement );
+    }
+
+    private ResourceIterator<Node> map2nodes( PrimitiveLongIterator input, Statement statement )
     {
         return cleanupService.resourceIterator( map( new FunctionFromPrimitiveLong<Node>()
         {
@@ -1521,51 +1631,58 @@ public abstract class InternalAbstractGraphDatabase
             {
                 return getNodeById( id );
             }
-        }, input ), state );
+        }, input ), statement );
     }
 
     private static class PropertyValueFilteringNodeIdIterator extends AbstractPrimitiveLongIterator
     {
         private final PrimitiveLongIterator nodesWithLabel;
-        private final StatementOperationParts ctx;
-        private final StatementState state;
-        private final long propertyId;
+        private final ReadOperations statement;
+        private final int propertyKeyId;
         private final Object value;
 
-        PropertyValueFilteringNodeIdIterator( PrimitiveLongIterator nodesWithLabel, StatementOperationParts ctx,
-                                              StatementState state, long propertyId, Object value )
+        PropertyValueFilteringNodeIdIterator( PrimitiveLongIterator nodesWithLabel, ReadOperations statement,
+                                              int propertyKeyId, Object value )
         {
             this.nodesWithLabel = nodesWithLabel;
-            this.ctx = ctx;
-            this.state = state;
-            this.propertyId = propertyId;
+            this.statement = statement;
+            this.propertyKeyId = propertyKeyId;
             this.value = value;
             computeNext();
         }
 
+        @Override
         protected void computeNext()
         {
-            for ( hasNext = nodesWithLabel.hasNext(); hasNext; hasNext = nodesWithLabel.hasNext() )
+            for ( boolean hasNext = nodesWithLabel.hasNext(); hasNext; hasNext = nodesWithLabel.hasNext() )
             {
-                nextValue = nodesWithLabel.next();
+                long nextValue = nodesWithLabel.next();
                 try
                 {
-                    if ( ctx.entityReadOperations().nodeGetProperty( state, nextValue, propertyId ).valueEquals( value ) )
+                    if ( statement.nodeGetProperty( nextValue, propertyKeyId ).valueEquals( value ) )
                     {
+                        next( nextValue );
                         return;
                     }
-                }
-                catch ( PropertyKeyIdNotFoundException e )
-                {
-                    // if they key doesn't exist, no node could possibly have a property with that key
-                    hasNext = false;
-                    return;
                 }
                 catch ( EntityNotFoundException e )
                 {
                     // continue to the next node
                 }
             }
+            endReached();
         }
+    }
+
+    @Override
+    public TraversalDescription traversalDescription()
+    {
+        return new TraversalDescriptionImpl();
+    }
+
+    @Override
+    public BidirectionalTraversalDescription bidirectionalTraversalDescription()
+    {
+        return new BidirectionalTraversalDescriptionImpl();
     }
 }

@@ -31,6 +31,8 @@ import util.Random
 import org.neo4j.kernel.{EmbeddedGraphDatabase, EmbeddedReadOnlyGraphDatabase, TopLevelTransaction}
 import org.neo4j.cypher.internal.commands.values.TokenType._
 import java.util.concurrent.TimeUnit
+import org.neo4j.cypher.internal.CypherParser
+import org.neo4j.kernel.api.exceptions.schema.AlreadyIndexedException
 
 class ExecutionEngineTest extends ExecutionEngineHelper with StatisticsChecker {
 
@@ -391,7 +393,7 @@ foreach(x in [1,2,3] |
 
     val query = Query.
       start(NodeById("n", n1.getId, n4.getId)).
-      matches(RelatedTo("n", "x", "rel", Seq(), Direction.OUTGOING, optional = false)).
+      matches(RelatedTo("n", "x", "rel", Seq(), Direction.OUTGOING)).
       where(Equals(Property(Identifier("n"), PropertyKey("animal")), Property(Identifier("x"), PropertyKey("animal")))).
       returns(ReturnItem(Identifier("n"), "n"), ReturnItem(Identifier("x"), "x"))
 
@@ -445,7 +447,7 @@ foreach(x in [1,2,3] |
 
     val query = Query.
       start(NodeById("a", refNode.getId)).
-      matches(RelatedTo("a", "b", "rel", Seq(), Direction.OUTGOING, false)).
+      matches(RelatedTo("a", "b", "rel", Seq(), Direction.OUTGOING)).
       aggregation(CountStar()).
       returns(ReturnItem(Identifier("a"), "a"), ReturnItem(CountStar(), "count(*)"))
 
@@ -574,7 +576,7 @@ foreach(x in [1,2,3] |
       start(NodeById("n", n1.getId, n2.getId, n3.getId, n4.getId)).
       aggregation(CountStar()).
       orderBy(
-      SortItem(CountStar(), false),
+      SortItem(CountStar(), ascending = false),
       SortItem(Property(Identifier("n"), PropertyKey("division")), ascending = true)).
       returns(ReturnItem(Property(Identifier("n"), PropertyKey("division")), "n.division"), ReturnItem(CountStar(), "count(*)"))
 
@@ -593,7 +595,7 @@ foreach(x in [1,2,3] |
 
     val query = Query.
       start(NodeById("n", 1)).
-      matches(RelatedTo("n", "x", "r", Seq(), Direction.OUTGOING, false)).
+      matches(RelatedTo("n", "x", "r", Seq(), Direction.OUTGOING)).
       where(Equals(RelationshipTypeFunction(Identifier("r")), Literal("KNOWS"))).
       returns(ReturnItem(Identifier("x"), "x"))
 
@@ -658,7 +660,7 @@ foreach(x in [1,2,3] |
 
     val query = Query.
       start(NodeById("n", 1)).
-      matches(RelatedTo("n", "x", "r", Seq(), Direction.OUTGOING, false)).
+      matches(RelatedTo("n", "x", "r", Seq(), Direction.OUTGOING)).
       where(Or(Equals(RelationshipTypeFunction(Identifier("r")), Literal("KNOWS")), Equals(RelationshipTypeFunction(Identifier("r")), Literal("HATES")))).
       returns(ReturnItem(Identifier("x"), "x"))
 
@@ -861,12 +863,8 @@ foreach(x in [1,2,3] |
     createNodes("A", "B")
     val r1 = relate("A" -> "KNOWS" -> "B")
 
-    val query = Query.
-      start(NodeById("a", 1), NodeById("b", 2)).
-      matches(ShortestPath("p", "a", "b", Seq(), Direction.BOTH, Some(15), false, true, None)).
-      returns(ReturnItem(Identifier("p"), "p"))
-
-    val result = execute(query).toList.head("p").asInstanceOf[Path]
+    val result = parseAndExecute("start a = node(1), b = node(2) match p = shortestPath(a-[*..15]-b) return p").
+      toList.head("p").asInstanceOf[Path]
 
     graph.inTx {
       val number_of_relationships_in_path = result.length()
@@ -881,13 +879,9 @@ foreach(x in [1,2,3] |
     createNodes("A", "B")
     relate("A" -> "KNOWS" -> "B")
 
-    val query = Query.
-      start(NodeById("a", 1), NodeById("b", 2)).
-      matches(ShortestPath("p", "a", "b", Seq(), Direction.BOTH, None, false, true, None)).
-      returns(ReturnItem(Identifier("p"), "p"))
-
     //Checking that we don't get an exception
-    execute(query).toList
+    val result = parseAndExecute("start a = node(1), b = node(2) match p = shortestPath(a-[*]-b) return p").
+      toList
   }
 
   @Test def shouldBeAbleToTakeParamsInDifferentTypes() {
@@ -931,7 +925,7 @@ foreach(x in [1,2,3] |
   @Test def shouldBeAbleToTakeParamsFromParsedStuff() {
     createNodes("A")
 
-    val query = new CypherParser().parse("start pA = node({a}) return pA")
+    val query = CypherParser().parse("start pA = node({a}) return pA")
     val result = execute(query, "a" -> Seq[Long](1))
 
     assertEquals(List(Map("pA" -> node("A"))), result.toList)
@@ -1588,11 +1582,18 @@ RETURN x0.name
     assert(List(Map("abs(-1)" -> 1)) === result.toList)
   }
 
-  @Test def shouldBeAbleToDoDistinctOnNull() {
-    val a = createNode()
+  @Test def shouldBeAbleToDoDistinctOnUnboundNode() {
+    createNode()
 
     val result = parseAndExecute("start a=node(1) match a-[?]->b return count(distinct b)")
     assert(List(Map("count(distinct b)" -> 0)) === result.toList)
+  }
+
+  @Test def shouldBeAbleToDoDistinctOnNull() {
+    createNode()
+
+    val result = parseAndExecute("start a=node(1) return count(distinct a.foo)")
+    assert(List(Map("count(distinct a.foo)" -> 0)) === result.toList)
   }
 
   @Test def exposesIssue198() {
@@ -1624,7 +1625,15 @@ RETURN x0.name
     })
   }
 
-  @Test def functions_should_return_null_if_they_get_null_in() {
+  @Test def functions_should_return_null_if_they_get_path_containing_unbound() {
+    createNode()
+
+    val result = parseAndExecute("start a=node(1) match p=a-[r?]->() return length(p), id(r), type(r), nodes(p), rels(p)").toList
+
+    assert(List(Map("length(p)" -> null, "id(r)" -> null, "type(r)" -> null, "nodes(p)" -> null, "rels(p)" -> null)) === result)
+  }
+
+  @Test def functions_should_return_null_if_they_get_path_containing_null() {
     createNode()
 
     val result = parseAndExecute("start a=node(1) match p=a-[r?]->() return length(p), id(r), type(r), nodes(p), rels(p)").toList
@@ -1998,12 +2007,14 @@ RETURN x0.name
 
   @Test
   def optional_expression_used_to_be_supported() {
-    val a = createNode()
-    val b = createNode()
-    val r = relate(a,b)
+    graph.inTx {
+      val a = createNode()
+      val b = createNode()
+      val r = relate(a, b)
 
-    val result = parseAndExecute("CYPHER 1.9 START a=node(1) match a-->b RETURN a-[?]->b").toList
-    assert(result === List(Map("a-[?]->b" -> List(PathImpl(a, r, b)))))
+      val result = parseAndExecute("CYPHER 1.9 START a=node(1) match a-->b RETURN a-[?]->b").toList
+      assert(result === List(Map("a-[?]->b" -> List(PathImpl(a, r, b)))))
+    }
   }
 
   @Test
@@ -2452,7 +2463,7 @@ RETURN x0.name
     relate(a, b2)
 
     // WHEN
-    val result = parseAndExecute("START a=node(1) MATCH a-->b:foo RETURN b")
+    val result = parseAndExecute(s"START a=node(${nodeId(a)}) MATCH a-[?]->(b:foo) RETURN b")
 
     // THEN
     assert(result.toList === List(Map("b" -> b1)))
@@ -2468,7 +2479,7 @@ RETURN x0.name
     relate(a2, b)
 
     // WHEN
-    val result = parseAndExecute( "START a=node(1,2), b=node(3) MATCH a:bar --> b:foo RETURN a")
+    val result = parseAndExecute( "START a=node(1,2), b=node(3) MATCH (a:bar) --> (b:foo) RETURN a")
 
     // THEN
     assert(result.toList === List(Map("a" -> a1)))
@@ -2500,7 +2511,7 @@ RETURN x0.name
     val propertyKeys = Seq("name")
 
     // WHEN
-    parseAndExecute(s"""CREATE INDEX ON :${labelName}(${propertyKeys.reduce(_ ++ "," ++ _)})""")
+    parseAndExecute(s"""CREATE INDEX ON :$labelName(${propertyKeys.reduce(_ ++ "," ++ _)})""")
 
     // THEN
     graph.inTx {
@@ -2516,10 +2527,11 @@ RETURN x0.name
     // GIVEN
     val labelName = "Person"
     val propertyKeys = Seq("name")
-    parseAndExecute(s"""CREATE INDEX ON :${labelName}(${propertyKeys.reduce(_ ++ "," ++ _)})""")
+    parseAndExecute(s"""CREATE INDEX ON :$labelName(${propertyKeys.reduce(_ ++ "," ++ _)})""")
 
     // WHEN
-    intercept[IndexAlreadyDefinedException](parseAndExecute(s"""CREATE INDEX ON :${labelName}(${propertyKeys.reduce(_ ++ "," ++ _)})"""))
+    val e = intercept[CypherExecutionException](parseAndExecute(s"""CREATE INDEX ON :$labelName(${propertyKeys.reduce(_ ++ "," ++ _)})"""))
+    assert(e.getCause.isInstanceOf[AlreadyIndexedException])
   }
 
   @Test def union_ftw() {
@@ -2640,7 +2652,7 @@ RETURN x0.name
     graph.createIndex("Person", "name")
 
     //WHEN
-    val result = parseAndExecute("MATCH n:Person-->() USING INDEX n:Person(name) WHERE n.name = 'Jacob' RETURN n")
+    val result = parseAndExecute("MATCH (n:Person)-->() USING INDEX n:Person(name) WHERE n.name = 'Jacob' RETURN n")
     println(result.executionPlanDescription())
 
     //THEN
@@ -2656,7 +2668,7 @@ RETURN x0.name
     relate(jake, createNode())
 
     //WHEN
-    val result = parseAndExecute("MATCH n:Person-->() WHERE n.name = 'Jacob' RETURN n")
+    val result = parseAndExecute("MATCH (n:Person)-->() WHERE n.name = 'Jacob' RETURN n")
 
     //THEN
     assert(result.toList === List(Map("n"->jake)))
@@ -2796,12 +2808,91 @@ RETURN x0.name
     val nodeIds = s"node(${nodes.map(_.getId).mkString(",")})"
 
     // when
-    val result = parseAndExecute(s"START src=${nodeIds}, dst=${nodeIds} MATCH src-[r:EDGE]-dst RETURN r")
+    val result = parseAndExecute(s"START src=$nodeIds, dst=$nodeIds MATCH src-[r:EDGE]-dst RETURN r")
 
     // then
     val relationships: List[Relationship] = result.columnAs[Relationship]("r").toList
 
     assert( 6 === relationships.size )
 
+  }
+
+  @Test
+  def allow_queries_with_only_return() {
+    val result = parseAndExecute("RETURN 'Andres'").toList
+
+    assert(result === List(Map("'Andres'"->"Andres")))
+  }
+
+  @Test
+  def id_in_where_leads_to_empty_result() {
+    //WHEN
+    val result = parseAndExecute("MATCH n WHERE id(n)=1337 RETURN n")
+
+    //THEN DOESN'T THROW EXCEPTION
+    assert(result.toList === List())
+  }
+
+  @Test
+  def merge_should_support_single_parameter() {
+    //WHEN
+    val result = parseAndExecute("MERGE (n:User {foo: {single_param}})", ("single_param", 42))
+
+    //THEN DOESN'T THROW EXCEPTION
+    assert(result.toList === List())
+  }
+
+  @Test
+  def merge_should_not_support_map_parameters_for_defining_properties() {
+    try {
+      parseAndExecute("MERGE (n:User {merge_map})", ("merge_map", Map("email" -> "test")))
+      fail()
+    } catch {
+      case x: PatternException => // expected
+      case _: Throwable => fail()
+    }
+  }
+
+  @Test
+  def should_handle_two_unconnected_patterns() {
+    // given a node with two related nodes
+    val a = createNode()
+    val b = createNode()
+    val c = createNode()
+    relate(a,b)
+    relate(a,c)
+
+    // when asked for a cartesian product of the same match twice
+    val result = parseAndExecute("match a-->b with a,b match c-->d return a,b,c,d")
+
+    // then we should find 2 x 2 = 4 result matches
+    assert(result.toSet === Set(
+      Map("a" -> a, "b" -> b, "c" -> a, "d" -> b),
+      Map("a" -> a, "b" -> b, "c" -> a, "d" -> c),
+      Map("a" -> a, "b" -> c, "c" -> a, "d" -> b),
+      Map("a" -> a, "b" -> c, "c" -> a, "d" -> c)))
+  }
+
+  @Test
+  def should_allow_distinct_followed_by_order_by() {
+    // given any database
+
+    // then shouldn't throw
+    val result = parseAndExecute("START x=node(0) RETURN DISTINCT x as otherName ORDER BY x.name ")
+  }
+
+  def should_not_hang() {
+    // given
+    createNode()
+    createNode()
+
+    // when
+    timeOutIn(2, TimeUnit.SECONDS) {
+      parseAndExecute("START a=node(0), b=node(1) " +
+        "MATCH x-->a, x-->b " +
+        "WHERE x.foo > 2 AND x.prop IN ['val'] " +
+        "RETURN x")
+    }
+    // then
   }
 }

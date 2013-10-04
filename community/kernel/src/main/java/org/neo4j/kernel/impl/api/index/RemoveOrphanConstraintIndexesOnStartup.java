@@ -21,12 +21,10 @@ package org.neo4j.kernel.impl.api.index;
 
 import java.util.Iterator;
 
-import org.neo4j.kernel.ThreadToStatementContextBridge;
-import org.neo4j.kernel.api.KernelTransaction;
-import org.neo4j.kernel.api.StatementOperationParts;
-import org.neo4j.kernel.api.operations.StatementState;
-import org.neo4j.kernel.impl.transaction.AbstractTransactionManager;
-import org.neo4j.kernel.impl.transaction.xaframework.ForceMode;
+import org.neo4j.kernel.api.Statement;
+import org.neo4j.kernel.api.Transactor;
+import org.neo4j.kernel.api.exceptions.KernelException;
+import org.neo4j.kernel.api.exceptions.TransactionalException;
 import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.kernel.logging.Logging;
 
@@ -37,15 +35,12 @@ import org.neo4j.kernel.logging.Logging;
  */
 public class RemoveOrphanConstraintIndexesOnStartup
 {
-    private final AbstractTransactionManager txManager;
     private final StringLogger log;
-    private final ThreadToStatementContextBridge ctxProvider;
+    private final Transactor transactor;
 
-    public RemoveOrphanConstraintIndexesOnStartup( AbstractTransactionManager txManager,
-            ThreadToStatementContextBridge ctxProvider, Logging logging )
+    public RemoveOrphanConstraintIndexesOnStartup( Transactor transactor, Logging logging )
     {
-        this.txManager = txManager;
-        this.ctxProvider = ctxProvider;
+        this.transactor = transactor;
         this.log = logging.getMessagesLog( getClass() );
     }
 
@@ -54,52 +49,26 @@ public class RemoveOrphanConstraintIndexesOnStartup
     {
         try
         {
-            txManager.begin( ForceMode.unforced );
-            boolean success = false;
-            KernelTransaction tx = null;
-            try
+            transactor.execute( new Transactor.Work<Void, KernelException>()
             {
-                tx = txManager.getKernelTransaction();
-                StatementOperationParts context = ctxProvider.getCtxForWriting();
-                StatementState state = tx.newStatementState();
-                try
+                @Override
+                public Void perform( Statement state )
+                        throws KernelException
                 {
-                    for ( Iterator<IndexDescriptor> indexes = context.schemaReadOperations().uniqueIndexesGetAll( state );
-                            indexes.hasNext(); )
+                    for ( Iterator<IndexDescriptor> indexes = state.readOperations().uniqueIndexesGetAll();
+                          indexes.hasNext(); )
                     {
                         IndexDescriptor index = indexes.next();
-                        if ( context.schemaReadOperations().indexGetOwningUniquenessConstraintId( state, index ) == null )
+                        if ( state.readOperations().indexGetOwningUniquenessConstraintId( index ) == null )
                         {
-                            context.schemaWriteOperations().uniqueIndexDrop( state, index );
+                            state.schemaWriteOperations().uniqueIndexDrop( index );
                         }
                     }
+                    return null;
                 }
-                finally
-                {
-                    state.close();
-                }
-                success = true;
-            }
-            finally
-            {
-                if ( tx != null )
-                {
-                    if ( success )
-                    {
-                        tx.commit();
-                    }
-                    else
-                    {
-                        tx.rollback();
-                    }
-                }
-                else
-                {
-                    txManager.rollback();
-                }
-            }
+            } );
         }
-        catch ( Throwable e )
+        catch ( KernelException | TransactionalException e )
         {
             log.error( "Failed to execute orphan index checking transaction.", e );
         }

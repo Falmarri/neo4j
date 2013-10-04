@@ -19,12 +19,17 @@
  */
 package org.neo4j.desktop.runtime;
 
-import java.io.File;
-import java.util.List;
+import java.net.BindException;
+import java.util.HashSet;
+import java.util.Set;
 
-import org.neo4j.desktop.config.Value;
+import org.neo4j.desktop.ui.DesktopModel;
 import org.neo4j.desktop.ui.MainWindow;
-import org.neo4j.server.Bootstrapper;
+import org.neo4j.desktop.ui.UnableToStartServerException;
+import org.neo4j.kernel.StoreLockException;
+import org.neo4j.server.AbstractNeoServer;
+import org.neo4j.server.CommunityNeoServer;
+import org.neo4j.server.ServerStartupException;
 
 /**
  * Lifecycle actions for the Neo4j server living inside this JVM. Typically reacts to button presses
@@ -32,40 +37,62 @@ import org.neo4j.server.Bootstrapper;
  */
 public class DatabaseActions
 {
-    private Bootstrapper server;
-    private final Value<List<String>> extensionPackages;
-    
-    public DatabaseActions( Value<List<String>> extensionPackages )
+    private final DesktopModel model;
+    private AbstractNeoServer server;
+
+    public DatabaseActions( DesktopModel model )
     {
-        this.extensionPackages = extensionPackages;
+        this.model = model;
     }
 
-    public void start( String path )
+    public void start() throws UnableToStartServerException
     {
         if ( isRunning() )
         {
-            throw new IllegalStateException( "Already started" );
+            throw new UnableToStartServerException( "Already started" );
         }
 
-        server = new DesktopBootstrapper( new File( path ),
-                getDatabaseConfigurationFile( path ), extensionPackages );
-        server.start();
+        server = new CommunityNeoServer( new DesktopConfigurator( model ) );
+        try
+        {
+            server.start();
+        }
+        catch ( ServerStartupException e )
+        {
+            server = null;
+            Set<Class> causes = extractCauseTypes( e );
+            if ( causes.contains( StoreLockException.class ) )
+            {
+                throw new UnableToStartServerException(
+                        "Unable to lock store. Are you running another Neo4j process against this database?" );
+            }
+            if ( causes.contains( BindException.class ) )
+            {
+                throw new UnableToStartServerException(
+                        "Unable to bind to port. Are you running another Neo4j process on this computer?" );
+            }
+            throw new UnableToStartServerException( e.getMessage() );
+        }
     }
-    
-    public File getDatabaseConfigurationFile( String path )
+
+    private Set<Class> extractCauseTypes( Throwable e )
     {
-        return new File( path, "neo4j.properties" );
+        Set<Class> types = new HashSet<Class>();
+        types.add( e.getClass() );
+        if ( e.getCause() != null )
+        {
+            types.addAll( extractCauseTypes( e.getCause() ) );
+        }
+        return types;
     }
 
     public void stop()
     {
-        if ( !isRunning() )
+        if ( isRunning() )
         {
-            throw new IllegalStateException( "Not started" );
+            server.stop();
+            server = null;
         }
-
-        server.stop();
-        server = null;
     }
     
     public void shutdown()
@@ -80,4 +107,5 @@ public class DatabaseActions
     {
         return server != null;
     }
+
 }

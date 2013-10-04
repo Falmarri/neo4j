@@ -19,7 +19,6 @@
  */
 package org.neo4j.kernel.api;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -27,8 +26,10 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.junit.After;
+import org.junit.Rule;
 import org.junit.Test;
+
+import org.neo4j.graphdb.ConstraintViolationException;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
@@ -49,22 +50,19 @@ import org.neo4j.kernel.ha.HighlyAvailableGraphDatabase;
 import org.neo4j.kernel.ha.UpdatePuller;
 import org.neo4j.kernel.impl.api.index.inmemory.InMemoryIndexProvider;
 import org.neo4j.test.DoubleLatch;
-import org.neo4j.test.TargetDirectory;
-import org.neo4j.test.ha.ClusterManager;
 import org.neo4j.test.ha.ClusterManager.ManagedCluster;
+import org.neo4j.test.ha.ClusterRule;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-import static org.neo4j.cluster.ClusterSettings.default_timeout;
+
 import static org.neo4j.graphdb.DynamicLabel.label;
 import static org.neo4j.helpers.collection.IteratorUtil.asSet;
 import static org.neo4j.helpers.collection.IteratorUtil.asUniqueSet;
 import static org.neo4j.helpers.collection.IteratorUtil.single;
-import static org.neo4j.helpers.collection.MapUtil.stringMap;
-import static org.neo4j.kernel.ha.HaSettings.tx_push_factor;
 import static org.neo4j.kernel.impl.api.index.SchemaIndexTestHelper.singleInstanceSchemaIndexProviderFactory;
 import static org.neo4j.test.ha.ClusterManager.clusterOfSize;
 import static org.neo4j.test.ha.ClusterManager.masterAvailable;
@@ -75,7 +73,7 @@ public class SchemaIndexHaIT
     public void creatingIndexOnMasterShouldHaveSlavesBuildItAsWell() throws Throwable
     {
         // GIVEN
-        ManagedCluster cluster = startCluster( clusterOfSize( 3 ) );
+        ManagedCluster cluster = clusterRule.startCluster();
         HighlyAvailableGraphDatabase master = cluster.getMaster();
         Map<Object, Node> data = createSomeData( master );
 
@@ -88,21 +86,22 @@ public class SchemaIndexHaIT
     }
     
     @Test
-    public void creatingIndexOnSlaveShouldHaveOtherSlavesAndMasterBuiltItAsWell() throws Throwable
+    public void creatingIndexOnSlaveIsNotAllowed() throws Throwable
     {
         // GIVEN
-        ManagedCluster cluster = startCluster( clusterOfSize( 3 ) );
-        HighlyAvailableGraphDatabase master = cluster.getMaster();
-        Map<Object, Node> data = createSomeData( master );
-        cluster.sync();
+        ManagedCluster cluster = clusterRule.startCluster();
         HighlyAvailableGraphDatabase slave = cluster.getAnySlave();
 
         // WHEN
-        IndexDefinition index = createIndex( slave );
-        cluster.sync();
-
-        // THEN
-        awaitIndexOnline( index, cluster, data );
+        try
+        {
+            createIndex( slave );
+            fail( "should have thrown exception" );
+        }
+        catch ( ConstraintViolationException e )
+        {
+            // expected
+        }
     }
     
     @Test
@@ -110,7 +109,7 @@ public class SchemaIndexHaIT
     {
         // GIVEN a cluster of 3
         ControlledGraphDatabaseFactory dbFactory = new ControlledGraphDatabaseFactory();
-        ManagedCluster cluster = startCluster( clusterOfSize( 3 ), dbFactory );
+        ManagedCluster cluster = clusterRule.startCluster( dbFactory );
         HighlyAvailableGraphDatabase firstMaster = cluster.getMaster();
 
         // where the master gets some data created as well as an index
@@ -136,54 +135,25 @@ public class SchemaIndexHaIT
         
         // THEN
         assertEquals( "Unexpected new master", aSlave, newMaster );
-        Transaction transaction = newMaster.beginTx();
-        IndexDefinition index;
-        try
+        try ( Transaction tx = newMaster.beginTx() )
         {
-            index = single( newMaster.schema().getIndexes() );
+            IndexDefinition index = single( newMaster.schema().getIndexes() );
+            awaitIndexOnline( index, newMaster, data );
+            tx.success();
         }
-        finally
-        {
-            transaction.finish();
-        }
-        awaitIndexOnline( index, newMaster, data );
     }
 
-    private final File storeDir = TargetDirectory.forTest( getClass() ).graphDbDir( true );
-    private ClusterManager clusterManager;
+    @Rule
+    public ClusterRule clusterRule = new ClusterRule( getClass(), clusterOfSize( 3 ) );
+
     private final String key = "key";
     private final Label label = label( "label" );
-    
-    private ManagedCluster startCluster( ClusterManager.Provider provider ) throws Throwable
-    {
-        return startCluster( provider, new HighlyAvailableGraphDatabaseFactory() );
-    }
-
-    private ManagedCluster startCluster( ClusterManager.Provider provider,
-            HighlyAvailableGraphDatabaseFactory dbFactory ) throws Throwable
-    {
-        clusterManager = new ClusterManager( provider, storeDir, stringMap(
-                default_timeout.name(), "1s", tx_push_factor.name(), "0" ),
-                new HashMap<Integer, Map<String,String>>(), dbFactory );
-        clusterManager.start();
-        ManagedCluster cluster = clusterManager.getDefaultCluster();
-        cluster.await( masterAvailable() );
-        return cluster;
-    }
-    
-    @After
-    public void after() throws Throwable
-    {
-        if ( clusterManager != null )
-            clusterManager.stop();
-    }
 
     private Map<Object, Node> createSomeData( GraphDatabaseService db )
     {
-        Map<Object, Node> result = new HashMap<Object, Node>();
-        Transaction tx = db.beginTx();
-        try
+        try ( Transaction tx = db.beginTx() )
         {
+            Map<Object, Node> result = new HashMap<>();
             for ( int i = 0; i < 10; i++ )
             {
                 Node node = db.createNode( label );
@@ -194,26 +164,25 @@ public class SchemaIndexHaIT
             tx.success();
             return result;
         }
-        finally
-        {
-            tx.finish();
-        }
     }
 
     private IndexDefinition createIndex( GraphDatabaseService db )
     {
-        Transaction tx = db.beginTx();
-        IndexDefinition index = db.schema().indexFor( label ).on( key ).create();
-        tx.success();
-        tx.finish();
-        return index;
+        try ( Transaction tx = db.beginTx() )
+        {
+            IndexDefinition index = db.schema().indexFor( label ).on( key ).create();
+            tx.success();
+            return index;
+        }
     }
 
     private static void awaitIndexOnline( IndexDefinition index, ManagedCluster cluster,
             Map<Object, Node> expectedDdata ) throws InterruptedException
     {
         for ( GraphDatabaseService db : cluster.getAllMembers() )
+        {
             awaitIndexOnline( index, db, expectedDdata );
+        }
     }
 
     private static IndexDefinition reHomedIndexDefinition( GraphDatabaseService db, IndexDefinition definition )
@@ -231,8 +200,7 @@ public class SchemaIndexHaIT
     private static void awaitIndexOnline( IndexDefinition requestedIndex, GraphDatabaseService db,
             Map<Object, Node> expectedData ) throws InterruptedException
     {
-        Transaction transaction = db.beginTx();
-        try
+        try ( Transaction tx = db.beginTx() )
         {
             IndexDefinition index = reHomedIndexDefinition( db, requestedIndex );
 
@@ -247,10 +215,7 @@ public class SchemaIndexHaIT
             }
 
             assertIndexContents( index, db, expectedData );
-        }
-        finally
-        {
-            transaction.finish();
+            tx.success();
         }
     }
 
@@ -315,7 +280,7 @@ public class SchemaIndexHaIT
         
         public ControlledSchemaIndexProvider()
         {
-            super( CONTROLLED_PROVIDER_DESCRIPTOR, 10 );
+            super( CONTROLLED_PROVIDER_DESCRIPTOR, 100 /*we want it to always win*/ );
         }
         
         @Override
@@ -345,15 +310,14 @@ public class SchemaIndexHaIT
 
     private static class ControlledGraphDatabaseFactory extends HighlyAvailableGraphDatabaseFactory
     {
-        final Map<GraphDatabaseService,ControlledSchemaIndexProvider> perDbIndexProvider =
-                new ConcurrentHashMap<GraphDatabaseService,ControlledSchemaIndexProvider>();
+        final Map<GraphDatabaseService,ControlledSchemaIndexProvider> perDbIndexProvider = new ConcurrentHashMap<>();
         
         @Override
         public GraphDatabaseBuilder newHighlyAvailableDatabaseBuilder( String path )
         {
             ControlledSchemaIndexProvider provider = new ControlledSchemaIndexProvider();
             KernelExtensionFactory<?> factory = singleInstanceSchemaIndexProviderFactory( "controlled", provider );
-            getCurrentState().setKernelExtensions( Arrays.<KernelExtensionFactory<?>>asList( factory ) );
+            getCurrentState().addKernelExtensions( Arrays.<KernelExtensionFactory<?>>asList( factory ) );
             return dbReferenceCapturingBuilder( perDbIndexProvider, provider,
                     super.newHighlyAvailableDatabaseBuilder( path ) );
         }

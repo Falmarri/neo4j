@@ -33,6 +33,7 @@ import org.neo4j.kernel.ha.com.RequestContextFactory;
 import org.neo4j.kernel.ha.com.master.Master;
 import org.neo4j.kernel.impl.core.GraphProperties;
 import org.neo4j.kernel.impl.core.IndexLock;
+import org.neo4j.kernel.impl.locking.IndexEntryLock;
 import org.neo4j.kernel.impl.transaction.AbstractTransactionManager;
 import org.neo4j.kernel.impl.transaction.IllegalResourceException;
 import org.neo4j.kernel.impl.transaction.LockManager;
@@ -91,7 +92,7 @@ public class SlaveLockManager implements LockManager
 
     private boolean getReadLockOnMaster( Object resource )
     {
-        Response<LockResult> response = null;
+        Response<LockResult> response;
         if ( resource instanceof Node )
         {
             makeSureTxHasBeenInitialized();
@@ -149,11 +150,12 @@ public class SlaveLockManager implements LockManager
 
     private boolean getWriteLockOnMaster( Object resource )
     {
-        Response<LockResult> response = null;
+        Response<LockResult> response;
         if ( resource instanceof Node )
         {
             makeSureTxHasBeenInitialized();
-            response = master.acquireNodeWriteLock( requestContextFactory.newRequestContext(), ((Node)resource).getId() );
+            response = master.acquireNodeWriteLock( requestContextFactory.newRequestContext(),
+                                                    ((Node) resource).getId() );
         }
         else if ( resource instanceof Relationship )
         {
@@ -165,6 +167,13 @@ public class SlaveLockManager implements LockManager
             makeSureTxHasBeenInitialized();
             response = master.acquireGraphWriteLock( requestContextFactory.newRequestContext() );
         }
+        else if ( resource instanceof IndexEntryLock )
+        {
+            makeSureTxHasBeenInitialized();
+            IndexEntryLock lock = (IndexEntryLock) resource;
+            response = master.acquireIndexEntryWriteLock( requestContextFactory.newRequestContext(),
+                                                          lock.labelId(), lock.propertyKeyId(), lock.propertyValue() );
+        }
         else if ( resource instanceof IndexLock )
         {
             makeSureTxHasBeenInitialized();
@@ -173,7 +182,7 @@ public class SlaveLockManager implements LockManager
         }
         else
         {
-            return true;
+            throw new IllegalArgumentException("Don't know how to take lock on resource: '" + resource + "'.");
         }
         
         return receiveLockResponse( response );

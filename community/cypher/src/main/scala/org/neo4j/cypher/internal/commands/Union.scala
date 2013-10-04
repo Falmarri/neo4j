@@ -21,4 +21,9 @@ package org.neo4j.cypher.internal.commands
 
 case class Union(queries: Seq[Query], queryString: QueryString = QueryString.empty, distinct: Boolean) extends AbstractQuery {
   def setQueryText(t: String): AbstractQuery = copy(queryString = QueryString(t))
+
+  override def toString = {
+    val union = "UNION" + (if (distinct) "" else "ALL") + "\n"
+    queries.mkString(union)
+  }
 }

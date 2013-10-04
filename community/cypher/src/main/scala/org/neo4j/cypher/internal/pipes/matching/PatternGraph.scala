@@ -27,6 +27,7 @@ class PatternGraph(val patternNodes: Map[String, PatternNode],
                    val boundElements: Seq[String]) {
   def nonEmpty: Boolean = !isEmpty
 
+  def identifiers = patternGraph.keys.toSeq
 
   def isEmpty: Boolean = patternNodes.isEmpty && patternRels.isEmpty
 
@@ -59,7 +60,7 @@ class PatternGraph(val patternNodes: Map[String, PatternNode],
   def extractGraphFromPaths(relationshipsNotInDoubleOptionalPaths: Iterable[PatternRelationship], boundPoints: Seq[String]): PatternGraph = {
     val oldNodes = relationshipsNotInDoubleOptionalPaths.flatMap(p => Seq(p.startNode, p.endNode)).toSeq.distinct
 
-    val newNodes = oldNodes.map(patternNode => patternNode.key -> new PatternNode(patternNode.key)).toMap
+    val newNodes = oldNodes.map(patternNode => patternNode.key -> new PatternNode(patternNode.key, patternNode.labels)).toMap
     val newRelationships = relationshipsNotInDoubleOptionalPaths.map {
       case pr: VariableLengthPatternRelationship => throw new Exception("apa")
       case pr: PatternRelationship               =>

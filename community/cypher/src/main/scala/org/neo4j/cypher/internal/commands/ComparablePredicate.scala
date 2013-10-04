@@ -32,7 +32,7 @@ abstract sealed class ComparablePredicate(left: Expression, right: Expression) e
     val l: Any = left(m)
     val r: Any = right(m)
 
-    val comparisonResult: Int = compare(l, r)
+    val comparisonResult: Int = compare(l, r)(state)
 
     compare(comparisonResult)
   }
@@ -62,10 +62,11 @@ case class Equals(a: Expression, b: Expression) extends Predicate with Comparer 
     val a1 = a(m)
     val b1 = b(m)
 
-    (a1, b1) match {
+    val result = (a1, b1) match {
       case (IsCollection(l), IsCollection(r)) => l == r
-      case _                              => a1 == b1
+      case _                                  => a1 == b1
     }
+    result
   }
 
   override def toString() = a.toString() + " == " + b.toString()

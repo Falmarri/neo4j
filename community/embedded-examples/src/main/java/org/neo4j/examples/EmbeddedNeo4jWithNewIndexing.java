@@ -46,8 +46,7 @@ public class EmbeddedNeo4jWithNewIndexing
         {
             // START SNIPPET: createIndex
             IndexDefinition indexDefinition;
-            Transaction tx = graphDb.beginTx();
-            try
+            try ( Transaction tx = graphDb.beginTx() )
             {
                 Schema schema = graphDb.schema();
                 indexDefinition = schema.indexFor( DynamicLabel.label( "User" ) )
@@ -55,34 +54,23 @@ public class EmbeddedNeo4jWithNewIndexing
                         .create();
                 tx.success();
             }
-            finally
-            {
-                tx.finish();
-            }
             // END SNIPPET: createIndex
             // START SNIPPET: wait
-            Transaction transaction = graphDb.beginTx();
-            try
+            try ( Transaction tx = graphDb.beginTx() )
             {
                 Schema schema = graphDb.schema();
                 schema.awaitIndexOnline( indexDefinition, 10, TimeUnit.SECONDS );
-            }
-            finally
-            {
-                transaction.finish();
             }
             // END SNIPPET: wait
         }
 
         {
             // START SNIPPET: addUsers
-            Transaction tx = graphDb.beginTx();
-            try
+            try ( Transaction tx = graphDb.beginTx() )
             {
                 Label label = DynamicLabel.label( "User" );
 
-                // Create some users and index their names with the new
-                // IndexingService
+                // Create some users
                 for ( int id = 0; id < 100; id++ )
                 {
                     Node userNode = graphDb.createNode( label );
@@ -90,10 +78,6 @@ public class EmbeddedNeo4jWithNewIndexing
                 }
                 System.out.println( "Users created" );
                 tx.success();
-            }
-            finally
-            {
-                tx.finish();
             }
             // END SNIPPET: addUsers
         }
@@ -103,8 +87,7 @@ public class EmbeddedNeo4jWithNewIndexing
             Label label = DynamicLabel.label( "User" );
             int idToFind = 45;
             String nameToFind = "user" + idToFind + "@neo4j.org";
-            Transaction transaction = graphDb.beginTx();
-            try
+            try ( Transaction tx = graphDb.beginTx() )
             {
                 ResourceIterator<Node> users = graphDb.findNodesByLabelAndProperty( label, "username", nameToFind )
                         .iterator();
@@ -119,10 +102,6 @@ public class EmbeddedNeo4jWithNewIndexing
                     System.out.println( "The username of user " + idToFind + " is " + node.getProperty( "username" ) );
                 }
             }
-            finally
-            {
-                transaction.finish();
-            }
             // END SNIPPET: findUsers
         }
 
@@ -131,30 +110,23 @@ public class EmbeddedNeo4jWithNewIndexing
             Label label = DynamicLabel.label( "User" );
             int idToFind = 45;
             String nameToFind = "user" + idToFind + "@neo4j.org";
-            Transaction transaction = graphDb.beginTx();
-            try
-            {
-                ResourceIterator<Node> users = graphDb
+            try ( Transaction tx = graphDb.beginTx();
+                  ResourceIterator<Node> users = graphDb
                         .findNodesByLabelAndProperty( label, "username", nameToFind )
-                        .iterator();
+                        .iterator() )
+            {
                 Node firstUserNode;
                 if ( users.hasNext() )
                 {
                     firstUserNode = users.next();
                 }
-                users.close();
-            }
-            finally
-            {
-                transaction.finish();
             }
             // END SNIPPET: resourceIterator
         }
 
         {
             // START SNIPPET: updateUsers
-            Transaction tx = graphDb.beginTx();
-            try
+            try ( Transaction tx = graphDb.beginTx() )
             {
                 Label label = DynamicLabel.label( "User" );
                 int idToFind = 45;
@@ -166,17 +138,12 @@ public class EmbeddedNeo4jWithNewIndexing
                 }
                 tx.success();
             }
-            finally
-            {
-                tx.finish();
-            }
             // END SNIPPET: updateUsers
         }
 
         {
             // START SNIPPET: deleteUsers
-            Transaction tx = graphDb.beginTx();
-            try
+            try ( Transaction tx = graphDb.beginTx() )
             {
                 Label label = DynamicLabel.label( "User" );
                 int idToFind = 46;
@@ -188,17 +155,12 @@ public class EmbeddedNeo4jWithNewIndexing
                 }
                 tx.success();
             }
-            finally
-            {
-                tx.finish();
-            }
             // END SNIPPET: deleteUsers
         }
 
         {
             // START SNIPPET: dropIndex
-            Transaction tx = graphDb.beginTx();
-            try
+            try ( Transaction tx = graphDb.beginTx() )
             {
                 Label label = DynamicLabel.label( "User" );
                 for ( IndexDefinition indexDefinition : graphDb.schema()
@@ -209,10 +171,6 @@ public class EmbeddedNeo4jWithNewIndexing
                 }
 
                 tx.success();
-            }
-            finally
-            {
-                tx.finish();
             }
             // END SNIPPET: dropIndex
         }

@@ -21,11 +21,15 @@ package org.neo4j.kernel.api.properties;
 
 import java.util.Arrays;
 
-class DoubleArrayProperty extends FullSizeProperty
+import static org.neo4j.kernel.impl.cache.SizeOfs.sizeOfArray;
+import static org.neo4j.kernel.impl.cache.SizeOfs.withObjectOverhead;
+import static org.neo4j.kernel.impl.cache.SizeOfs.withReference;
+
+class DoubleArrayProperty extends DefinedProperty
 {
     private final double[] value;
 
-    DoubleArrayProperty( long propertyKeyId, double[] value )
+    DoubleArrayProperty( int propertyKeyId, double[] value )
     {
         super( propertyKeyId );
         assert value != null;
@@ -35,15 +39,15 @@ class DoubleArrayProperty extends FullSizeProperty
     @Override
     public double[] value()
     {
-        return value;
+        return value.clone();
     }
 
     @Override
     public boolean valueEquals( Object value )
     {
-        if ( value instanceof double[])
+        if ( value instanceof double[] )
         {
-            return Arrays.equals(this.value, (double[])value);
+            return Arrays.equals( this.value, (double[]) value );
         }
         return valueCompare( this.value, value );
     }
@@ -56,8 +60,14 @@ class DoubleArrayProperty extends FullSizeProperty
     }
 
     @Override
-    boolean hasEqualValue( FullSizeProperty that )
+    boolean hasEqualValue( DefinedProperty that )
     {
         return Arrays.equals( this.value, ((DoubleArrayProperty)that).value );
+    }
+
+    @Override
+    public int sizeOfObjectInBytesIncludingOverhead()
+    {
+        return withObjectOverhead( withReference( sizeOfArray( value ) ) );
     }
 }

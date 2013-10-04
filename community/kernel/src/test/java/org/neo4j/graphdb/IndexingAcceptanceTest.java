@@ -26,11 +26,8 @@ import org.junit.Test;
 import org.neo4j.graphdb.schema.IndexDefinition;
 import org.neo4j.test.ImpermanentDatabaseRule;
 
-import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 import static org.neo4j.graphdb.Neo4jMatchers.containsOnly;
 import static org.neo4j.graphdb.Neo4jMatchers.createIndex;
 import static org.neo4j.graphdb.Neo4jMatchers.findNodesByLabelAndProperty;
@@ -39,67 +36,11 @@ import static org.neo4j.graphdb.Neo4jMatchers.inTx;
 import static org.neo4j.graphdb.Neo4jMatchers.isEmpty;
 import static org.neo4j.graphdb.Neo4jMatchers.waitForIndex;
 import static org.neo4j.helpers.collection.Iterables.count;
-import static org.neo4j.helpers.collection.IteratorUtil.asSet;
-import static org.neo4j.helpers.collection.IteratorUtil.emptySetOf;
+import static org.neo4j.helpers.collection.Iterables.single;
 import static org.neo4j.helpers.collection.MapUtil.map;
 
 public class IndexingAcceptanceTest
 {
-    @Test
-    public void shouldHandleAddingDataToAsWellAsDeletingIndexInTheSameTransaction() throws Exception
-    {
-        // GIVEN
-        GraphDatabaseService beansAPI = dbRule.getGraphDatabaseAPI();
-        IndexDefinition index = null;
-        String key = "key";
-        {
-            Transaction tx = beansAPI.beginTx();
-            try
-            {
-                Node node = beansAPI.createNode( MY_LABEL );
-                node.setProperty( key, "value" );
-                index = beansAPI.schema().indexFor( MY_LABEL ).on( key ).create();
-                tx.success();
-            }
-            finally
-            {
-                tx.finish();
-            }
-            waitForIndex( beansAPI, index );
-        }
-
-        // WHEN
-        Transaction tx = beansAPI.beginTx();
-        try
-        {
-            Node node = beansAPI.createNode( MY_LABEL );
-            node.setProperty( key, "other value" );
-            index.drop();
-            tx.success();
-        }
-        finally
-        {
-            tx.finish();
-        }
-
-        // THEN
-        tx = beansAPI.beginTx();
-        try
-        {
-            assertEquals( emptySetOf( IndexDefinition.class ), asSet( beansAPI.schema().getIndexes( MY_LABEL ) ) );
-            beansAPI.schema().getIndexState( index );
-            fail( "Should not succeed" );
-        }
-        catch ( NotFoundException e )
-        {
-            assertThat( e.getMessage(), containsString( MY_LABEL.name() ) );
-        }
-        finally
-        {
-            tx.finish();
-        }
-    }
-    
     /* This test is a bit interesting. It tests a case where we've got a property that sits in one
      * property block and the value is of a long type. So given that plus that there's an index for that
      * label/property, do an update that changes the long value into a value that requires two property blocks.
@@ -120,7 +61,6 @@ public class IndexingAcceptanceTest
         Node myNode = null;
         {
             Transaction tx = beansAPI.beginTx();
-            IndexDefinition indexDefinition;
             try
             {
                 myNode = beansAPI.createNode( MY_LABEL );
@@ -130,7 +70,20 @@ public class IndexingAcceptanceTest
                 // Use a small long here which will only occupy one property block
                 myNode.setProperty( "key", smallValue );
 
+                tx.success();
+            }
+            finally
+            {
+                tx.finish();
+            }
+        }
+        {
+            IndexDefinition indexDefinition;
+            Transaction tx = beansAPI.beginTx();
+            try
+            {
                 indexDefinition = beansAPI.schema().indexFor( MY_LABEL ).on( "key" ).create();
+
                 tx.success();
             }
             finally
@@ -168,7 +121,6 @@ public class IndexingAcceptanceTest
         long id;
         {
             Transaction tx = beansAPI.beginTx();
-            IndexDefinition indexDefinition;
             try
             {
                 Node myNode = beansAPI.createNode();
@@ -176,7 +128,20 @@ public class IndexingAcceptanceTest
                 myNode.setProperty( "key0", true );
                 myNode.setProperty( "key1", true );
 
+                tx.success();
+            }
+            finally
+            {
+                tx.finish();
+            }
+        }
+        {
+            IndexDefinition indexDefinition;
+            Transaction tx = beansAPI.beginTx();
+            try
+            {
                 indexDefinition = beansAPI.schema().indexFor( MY_LABEL ).on( "key2" ).create();
+
                 tx.success();
             }
             finally
@@ -320,6 +285,53 @@ public class IndexingAcceptanceTest
         // THEN
         assertThat( sizeBeforeDelete, equalTo(1l) );
         assertThat( sizeAfterDelete, equalTo(2l) );
+    }
+
+    @Test
+    public void shouldBeAbleToQuerySupportedPropertyTypes() throws Exception
+    {
+        // GIVEN
+        String property = "name";
+        GraphDatabaseService db = dbRule.getGraphDatabaseService();
+        createIndex( db, MY_LABEL, property );
+
+        // WHEN & THEN
+        assertCanCreateAndFind( db, MY_LABEL, property, "A String" );
+        assertCanCreateAndFind( db, MY_LABEL, property, true );
+        assertCanCreateAndFind( db, MY_LABEL, property, new Boolean(false) );
+        assertCanCreateAndFind( db, MY_LABEL, property, (short)12 );
+        assertCanCreateAndFind( db, MY_LABEL, property, (int)12 );
+        assertCanCreateAndFind( db, MY_LABEL, property, (long)12l );
+        assertCanCreateAndFind( db, MY_LABEL, property, (float)12. );
+        assertCanCreateAndFind( db, MY_LABEL, property, (double)12. );
+
+        assertCanCreateAndFind( db, MY_LABEL, property, new String[]{"A String"} );
+        assertCanCreateAndFind( db, MY_LABEL, property, new boolean[]{true} );
+        assertCanCreateAndFind( db, MY_LABEL, property, new Boolean[]{false} );
+        assertCanCreateAndFind( db, MY_LABEL, property, new short[]{12} );
+        assertCanCreateAndFind( db, MY_LABEL, property, new int[]{12} );
+        assertCanCreateAndFind( db, MY_LABEL, property, new long[]{12l} );
+        assertCanCreateAndFind( db, MY_LABEL, property, new float[]{(float)12.} );
+        assertCanCreateAndFind( db, MY_LABEL, property, new double[]{12.} );
+
+    }
+
+
+    private void assertCanCreateAndFind( GraphDatabaseService db, Label label, String propertyKey, Object value )
+    {
+        Node created = createNode( db, map( propertyKey, value ), label );
+        Transaction tx = db.beginTx();
+        try
+        {
+            Node found = single( db.findNodesByLabelAndProperty( label, propertyKey, value ) );
+            assertThat(found, equalTo(created));
+            found.delete();
+            tx.success();
+        }
+        finally
+        {
+            tx.finish();
+        }
     }
 
     public static final String LONG_STRING = "a long string that has to be stored in dynamic records";

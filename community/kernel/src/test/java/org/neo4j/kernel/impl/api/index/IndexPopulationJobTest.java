@@ -30,6 +30,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Matchers;
+
 import org.neo4j.graphdb.DynamicLabel;
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
@@ -38,15 +39,12 @@ import org.neo4j.helpers.Pair;
 import org.neo4j.helpers.collection.MapUtil;
 import org.neo4j.helpers.collection.Visitor;
 import org.neo4j.kernel.ThreadToStatementContextBridge;
-import org.neo4j.kernel.api.StatementOperations;
-import org.neo4j.kernel.api.exceptions.LabelNotFoundKernelException;
-import org.neo4j.kernel.api.exceptions.PropertyKeyNotFoundException;
+import org.neo4j.kernel.api.ReadOperations;
+import org.neo4j.kernel.api.Statement;
 import org.neo4j.kernel.api.index.IndexPopulator;
 import org.neo4j.kernel.api.index.InternalIndexState;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
-import org.neo4j.kernel.api.operations.StatementState;
 import org.neo4j.kernel.impl.api.KernelSchemaStateStore;
-import org.neo4j.kernel.impl.nioneo.store.NeoStore;
 import org.neo4j.kernel.impl.nioneo.xa.NeoStoreIndexStoreView;
 import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.kernel.impl.util.TestLogger;
@@ -57,13 +55,21 @@ import org.neo4j.test.OtherThreadExecutor;
 import org.neo4j.test.OtherThreadExecutor.WorkerCommand;
 import org.neo4j.test.TestGraphDatabaseFactory;
 
+import static java.lang.String.format;
 import static java.util.Arrays.asList;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyLong;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
+
 import static org.neo4j.helpers.collection.IteratorUtil.asSet;
 import static org.neo4j.helpers.collection.MapUtil.genericMap;
 import static org.neo4j.helpers.collection.MapUtil.map;
@@ -132,7 +138,6 @@ public class IndexPopulationJobTest
         verifyNoMoreInteractions( populator );
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     public void shouldIndexUpdatesWhenDoingThePopulation() throws Exception
     {
@@ -143,9 +148,9 @@ public class IndexPopulationJobTest
         long node3 = createNode( map( name, value3 ), FIRST );
         @SuppressWarnings("UnnecessaryLocalVariable")
         long changeNode = node1;
-        long propertyKeyId = getPropertyKeyForName( name );
+        int propertyKeyId = getPropertyKeyForName( name );
         NodeChangingWriter populator = new NodeChangingWriter( changeNode, propertyKeyId, value1, changedValue,
-                firstLabelId );
+                labelId );
         IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, new FlippableIndexProxy() );
         populator.setJob( job );
 
@@ -169,8 +174,8 @@ public class IndexPopulationJobTest
         long node1 = createNode( map( name, value1 ), FIRST );
         long node2 = createNode( map( name, value2 ), FIRST );
         long node3 = createNode( map( name, value3 ), FIRST );
-        long propertyKeyId = getPropertyKeyForName( name );
-        NodeDeletingWriter populator = new NodeDeletingWriter( node2, propertyKeyId, value2, firstLabelId );
+        int propertyKeyId = getPropertyKeyForName( name );
+        NodeDeletingWriter populator = new NodeDeletingWriter( node2, propertyKeyId, value2, labelId );
         IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, new FlippableIndexProxy() );
         populator.setJob( job );
 
@@ -200,7 +205,7 @@ public class IndexPopulationJobTest
         job.run();
 
         // THEN
-        assertThat( index.getState(), equalTo( InternalIndexState.FAILED ) );
+        assertThat(index.getState(), equalTo(InternalIndexState.FAILED));
     }
 
     @Test
@@ -219,7 +224,7 @@ public class IndexPopulationJobTest
         final IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, index, storeView,
                 StringLogger.DEV_NULL );
 
-        OtherThreadExecutor<Void> populationJobRunner = new OtherThreadExecutor<Void>(
+        OtherThreadExecutor<Void> populationJobRunner = new OtherThreadExecutor<>(
                 "Population job test runner", null );
         Future<Void> runFuture = populationJobRunner.executeDontWait( new WorkerCommand<Void, Void>()
         {
@@ -244,15 +249,13 @@ public class IndexPopulationJobTest
     }
 
     @Test
-    @SuppressWarnings("deprecation")
     public void shouldLogJobProgress() throws Exception
     {
         // Given
         createNode( map( name, "irrelephant" ), FIRST );
         TestLogger logger = new TestLogger();
         FlippableIndexProxy index = mock( FlippableIndexProxy.class );
-        NeoStoreIndexStoreView store = new NeoStoreIndexStoreView(
-                db.getXaDataSourceManager().getNeoStoreDataSource().getNeoStore() );
+        NeoStoreIndexStoreView store = newStoreView();
 
         IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, index, store, logger );
 
@@ -261,21 +264,19 @@ public class IndexPopulationJobTest
 
         // Then
         logger.assertExactly(
-                info( "Index population started for label id 0 on property id 0" ),
-                info( "Index population completed for label id 0 on property id 0, index is now online." )
+                info( "Index population started: [:FIRST(name)]" ),
+                info( "Index population completed. Index is now online: [:FIRST(name)]" )
         );
     }
 
     @Test
-    @SuppressWarnings("deprecation")
     public void shouldLogJobFailure() throws Exception
     {
         // Given
         createNode( map( name, "irrelephant" ), FIRST );
         TestLogger logger = new TestLogger();
         FlippableIndexProxy index = mock( FlippableIndexProxy.class );
-        NeoStoreIndexStoreView store = new NeoStoreIndexStoreView(
-                db.getXaDataSourceManager().getNeoStoreDataSource().getNeoStore() );
+        NeoStoreIndexStoreView store = newStoreView();
 
         IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, index, store, logger );
 
@@ -286,19 +287,38 @@ public class IndexPopulationJobTest
         job.run();
 
         // Then
-        logger.assertAtLeastOnce( error( "Failed to populate index.", failure ) );
+        logger.assertAtLeastOnce( error( "Failed to populate index: [:FIRST(name)]", failure ) );
     }
-    
+
+    @Test
+    public void shouldFlipToFailedUsingFailedIndexProxyFactory() throws Exception
+    {
+        // Given
+        FailedIndexProxyFactory failureDelegateFactory = mock( FailedIndexProxyFactory.class );
+        IndexPopulationJob job =
+            newIndexPopulationJob( FIRST, name, failureDelegateFactory, populator,
+                    new FlippableIndexProxy(), newStoreView(), new TestLogger() );
+
+
+        IllegalStateException failure = new IllegalStateException( "not successful" );
+        doThrow( failure ).when( populator ).close( true );
+
+        // When
+        job.run();
+
+        // Then
+        verify( failureDelegateFactory ).create( any( Throwable.class ) );
+    }
+
     @Test
     public void shouldCloseAndFailOnFailure() throws Exception
     {
         createNode( map( name, "irrelephant" ), FIRST );
         TestLogger logger = new TestLogger();
         FlippableIndexProxy index = mock( FlippableIndexProxy.class );
-        NeoStoreIndexStoreView store = new NeoStoreIndexStoreView(
-                db.getXaDataSourceManager().getNeoStoreDataSource().getNeoStore() );
+        NeoStoreIndexStoreView store = newStoreView();
 
-        IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, index, store, logger);
+        IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, index, store, logger );
 
         String failureMessage = "not successful";
         IllegalStateException failure = new IllegalStateException( failureMessage );
@@ -330,18 +350,17 @@ public class IndexPopulationJobTest
 
     private class NodeChangingWriter extends IndexPopulator.Adapter
     {
-        private final Set<Pair<Long, Object>> added = new HashSet<Pair<Long, Object>>();
+        private final Set<Pair<Long, Object>> added = new HashSet<>();
         private IndexPopulationJob job;
-        private final long changedNode;
+        private final long nodeToChange;
         private final Object newValue;
         private final Object previousValue;
-        private final long propertyKeyId;
-        private final long label;
+        private final int label, propertyKeyId;
 
-        public NodeChangingWriter( long changedNode, long propertyKeyId, Object previousValue, Object newValue,
-                                   long label )
+        public NodeChangingWriter( long nodeToChange, int propertyKeyId, Object previousValue, Object newValue,
+                                   int label )
         {
-            this.changedNode = changedNode;
+            this.nodeToChange = nodeToChange;
             this.propertyKeyId = propertyKeyId;
             this.previousValue = previousValue;
             this.newValue = newValue;
@@ -354,7 +373,7 @@ public class IndexPopulationJobTest
             if ( nodeId == 2 )
             {
                 long[] labels = new long[]{label};
-                job.update( asList( NodePropertyUpdate.change( changedNode, propertyKeyId, previousValue, labels,
+                job.update( asList( NodePropertyUpdate.change( nodeToChange, propertyKeyId, previousValue, labels,
                         newValue, labels ) ) );
             }
             added.add( Pair.of( nodeId, propertyValue ) );
@@ -367,9 +386,11 @@ public class IndexPopulationJobTest
             {
                 switch ( update.getUpdateMode() )
                 {
-                    case ADDED:
-                    case CHANGED:
-                        added.add( Pair.of( update.getNodeId(), update.getValueAfter() ) );
+                case ADDED: case CHANGED:
+                    added.add( Pair.of( update.getNodeId(), update.getValueAfter() ) );
+                    break;
+                default:
+                    throw new IllegalArgumentException( update.getUpdateMode().name() );
                 }
             }
 
@@ -383,15 +404,15 @@ public class IndexPopulationJobTest
 
     private class NodeDeletingWriter extends IndexPopulator.Adapter
     {
-        private final Map<Long, Object> added = new HashMap<Long, Object>();
-        private final Map<Long, Object> removed = new HashMap<Long, Object>();
+        private final Map<Long, Object> added = new HashMap<>();
+        private final Map<Long, Object> removed = new HashMap<>();
         private final long nodeToDelete;
         private IndexPopulationJob job;
-        private final long propertyKeyId;
+        private final int propertyKeyId;
         private final Object valueToDelete;
-        private final long label;
+        private final int label;
 
-        public NodeDeletingWriter( long nodeToDelete, long propertyKeyId, Object valueToDelete, long label )
+        public NodeDeletingWriter( long nodeToDelete, int propertyKeyId, Object valueToDelete, int label )
         {
             this.nodeToDelete = nodeToDelete;
             this.propertyKeyId = propertyKeyId;
@@ -422,11 +443,14 @@ public class IndexPopulationJobTest
             {
                 switch ( update.getUpdateMode() )
                 {
-                    case ADDED:
-                    case CHANGED:
-                        added.put( update.getNodeId(), update.getValueAfter() );
-                    case REMOVED:
-                        removed.put( update.getNodeId(), update.getValueBefore() );
+                case ADDED: case CHANGED:
+                    added.put( update.getNodeId(), update.getValueAfter() );
+                    break;
+                case REMOVED:
+                    removed.put( update.getNodeId(), update.getValueBefore() );
+                    break;
+                default:
+                    throw new IllegalArgumentException( update.getUpdateMode().name() );
                 }
             }
 
@@ -434,13 +458,16 @@ public class IndexPopulationJobTest
     }
 
     private ImpermanentGraphDatabase db;
-    private final Label FIRST = DynamicLabel.label( "FIRST" ), SECOND = DynamicLabel.label( "SECOND" );
+
+    private final Label FIRST = DynamicLabel.label( "FIRST" );
+    private final Label SECOND = DynamicLabel.label( "SECOND" );
+
     private final String name = "name", age = "age";
     private ThreadToStatementContextBridge ctxProvider;
     private IndexPopulator populator;
     private KernelSchemaStateStore stateHolder;
 
-    private long firstLabelId;
+    private int labelId;
 
     @Before
     public void before() throws Exception
@@ -451,11 +478,11 @@ public class IndexPopulationJobTest
         stateHolder = new KernelSchemaStateStore();
 
         Transaction tx = db.beginTx();
-        StatementOperations ctxForWriting = ctxProvider.getCtxForWriting().asStatementOperations();
-        StatementState state = ctxProvider.statementForReading();
-        firstLabelId = ctxForWriting.labelGetOrCreateForName( state, FIRST.name() );
-        ctxForWriting.labelGetOrCreateForName( state, SECOND.name() );
-        state.close();
+        Statement statement = ctxProvider.statement();
+        labelId = statement.schemaWriteOperations().labelGetOrCreateForName( FIRST.name() );
+
+        statement.schemaWriteOperations().labelGetOrCreateForName( SECOND.name() );
+        statement.close();
         tx.success();
         tx.finish();
     }
@@ -466,46 +493,49 @@ public class IndexPopulationJobTest
         db.shutdown();
     }
 
-    @SuppressWarnings("deprecation")
     private IndexPopulationJob newIndexPopulationJob( Label label, String propertyKey, IndexPopulator populator,
                                                       FlippableIndexProxy flipper )
-            throws LabelNotFoundKernelException, PropertyKeyNotFoundException
     {
-        NeoStore neoStore = db.getXaDataSourceManager().getNeoStoreDataSource().getNeoStore();
-        return newIndexPopulationJob( label, propertyKey, populator, flipper, new NeoStoreIndexStoreView( neoStore ),
+        return newIndexPopulationJob( label, propertyKey, populator, flipper, newStoreView(),
                 StringLogger.DEV_NULL );
     }
 
-    private IndexPopulationJob newIndexPopulationJob( Label label, String propertyKey, IndexPopulator populator,
+    private IndexPopulationJob newIndexPopulationJob( Label label, String propertyKey,
+                                                      IndexPopulator populator,
                                                       FlippableIndexProxy flipper, IndexStoreView storeView,
                                                       StringLogger logger )
-            throws LabelNotFoundKernelException, PropertyKeyNotFoundException
+    {
+        return newIndexPopulationJob( label, propertyKey,
+                mock( FailedIndexProxyFactory.class ), populator, flipper, storeView, logger );
+    }
+
+    private IndexPopulationJob newIndexPopulationJob( Label label, String propertyKey,
+                                                      FailedIndexProxyFactory failureDelegateFactory,
+                                                      IndexPopulator populator,
+                                                      FlippableIndexProxy flipper, IndexStoreView storeView,
+                                                      StringLogger logger )
     {
         IndexDescriptor descriptor;
-        Transaction tx = db.beginTx();
-        try
+        try ( Transaction tx = db.beginTx() )
         {
-            StatementOperations ctx = ctxProvider.getCtxForWriting().asStatementOperations();
-            StatementState state = ctxProvider.statementForReading();
-            descriptor = new IndexDescriptor( ctx.labelGetForName( state, label.name() ),
-                    ctx.propertyKeyGetForName( state, propertyKey ) );
+            ReadOperations statement = ctxProvider.statement().readOperations();
+            descriptor = new IndexDescriptor( statement.labelGetForName( label.name() ),
+                    statement.propertyKeyGetForName( propertyKey ) );
             tx.success();
-        }
-        finally
-        {
-            tx.finish();
         }
 
         flipper.setFlipTarget( mock( IndexProxyFactory.class ) );
-        return
-                new IndexPopulationJob( descriptor, PROVIDER_DESCRIPTOR, populator, flipper, storeView,
-                        stateHolder, new SingleLoggingService( logger ) );
+        return new IndexPopulationJob(
+                descriptor, PROVIDER_DESCRIPTOR,
+                format( ":%s(%s)", label.name(), propertyKey ),
+                failureDelegateFactory,
+                populator, flipper, storeView,
+                stateHolder, new SingleLoggingService( logger ) );
     }
 
     private long createNode( Map<String, Object> properties, Label... labels )
     {
-        Transaction tx = db.beginTx();
-        try
+        try ( Transaction tx = db.beginTx() )
         {
             Node node = db.createNode( labels );
             for ( Map.Entry<String, Object> property : properties.entrySet() )
@@ -515,26 +545,22 @@ public class IndexPopulationJobTest
             tx.success();
             return node.getId();
         }
-        finally
+    }
+
+    private int getPropertyKeyForName( String name )
+    {
+        try ( Transaction tx = db.beginTx() )
         {
-            tx.finish();
+            int result = ctxProvider.statement().readOperations().propertyKeyGetForName( name );
+            tx.success();
+            return result;
         }
     }
 
-    private long getPropertyKeyForName( String name ) throws PropertyKeyNotFoundException
+    @SuppressWarnings( "deprecation" )
+    private NeoStoreIndexStoreView newStoreView()
     {
-        Long result;
-        Transaction tx = db.beginTx();
-        try
-        {
-            StatementOperations context = ctxProvider.getCtxForWriting().asStatementOperations();
-            result = context.propertyKeyGetForName( ctxProvider.statementForWriting(), name );
-            tx.success();
-        }
-        finally
-        {
-            tx.finish();
-        }
-        return result;
+        return new NeoStoreIndexStoreView(
+                db.getXaDataSourceManager().getNeoStoreDataSource().getNeoStore() );
     }
 }

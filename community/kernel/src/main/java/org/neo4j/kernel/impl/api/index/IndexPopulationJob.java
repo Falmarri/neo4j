@@ -38,6 +38,7 @@ import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.kernel.logging.Logging;
 
 import static java.lang.String.format;
+import static java.lang.Thread.currentThread;
 
 import static org.neo4j.helpers.FutureAdapter.latchGuardedValue;
 import static org.neo4j.helpers.ValueGetter.NO_VALUE;
@@ -47,17 +48,19 @@ import static org.neo4j.kernel.impl.api.index.IndexPopulationFailure.failure;
 /**
  * Represents one job of initially populating an index over existing data in the database.
  * Scans the store directly.
- * 
+ *
  * @author Mattias Persson
  */
 public class IndexPopulationJob implements Runnable
 {
     private final IndexStoreView storeView;
+    private final String indexUserDescription;
 
     // NOTE: unbounded queue expected here
-    private final Queue<NodePropertyUpdate> queue = new ConcurrentLinkedQueue<NodePropertyUpdate>();
+    private final Queue<NodePropertyUpdate> queue = new ConcurrentLinkedQueue<>();
 
     private final IndexDescriptor descriptor;
+    private final FailedIndexProxyFactory failureDelegate;
     private final IndexPopulator populator;
     private final FlippableIndexProxy flipper;
     private final UpdateableSchemaState updateableSchemaState;
@@ -68,10 +71,12 @@ public class IndexPopulationJob implements Runnable
     private volatile boolean cancelled;
     private final SchemaIndexProvider.Descriptor providerDescriptor;
 
-    public IndexPopulationJob( IndexDescriptor descriptor, SchemaIndexProvider.Descriptor providerDescriptor,
-                               IndexPopulator populator, FlippableIndexProxy flipper,
-                               IndexStoreView storeView, UpdateableSchemaState updateableSchemaState,
-                               Logging logging )
+    public IndexPopulationJob(IndexDescriptor descriptor, SchemaIndexProvider.Descriptor providerDescriptor,
+                              String indexUserDescription,
+                              FailedIndexProxyFactory failureDelegateFactory,
+                              IndexPopulator populator, FlippableIndexProxy flipper,
+                              IndexStoreView storeView, UpdateableSchemaState updateableSchemaState,
+                              Logging logging)
     {
         this.descriptor = descriptor;
         this.providerDescriptor = providerDescriptor;
@@ -79,102 +84,108 @@ public class IndexPopulationJob implements Runnable
         this.flipper = flipper;
         this.storeView = storeView;
         this.updateableSchemaState = updateableSchemaState;
+        this.indexUserDescription = indexUserDescription;
+        this.failureDelegate = failureDelegateFactory;
         this.log = logging.getMessagesLog( getClass() );
     }
-    
+
     @Override
     public void run()
     {
+        String oldThreadName = currentThread().getName();
+        currentThread().setName( format( "Index populator on %s [runs on: %s]", indexUserDescription, oldThreadName ) );
         boolean success = false;
         Throwable failureCause = null;
         try
         {
-            log.info( format( "Index population started for label id %d on property id %d",
-                    descriptor.getLabelId(), descriptor.getPropertyKeyId() ) );
-            log.flush();
-            populator.create();
-
-            indexAllNodes();
-            if ( cancelled )
-                // We remain in POPULATING state
-                return;
-
-            Callable<Void> duringFlip = new Callable<Void>()
-            {
-                @Override
-                public Void call() throws Exception
-                {
-                    populateFromQueueIfAvailable( Long.MAX_VALUE );
-                    populator.close( true );
-                    updateableSchemaState.clear();
-                    return null;
-                }
-            };
-
-            flipper.flip( duringFlip, new FailedIndexProxyFactory()
-            {
-                @Override
-                public IndexProxy create( Throwable failure )
-                {
-                    return new FailedIndexProxy( descriptor, providerDescriptor, populator, failure( failure ) );
-                }
-            } );
-            success = true;
-            log.info( format( "Index population completed for label id %d on property id %d, index is now online.",
-                    descriptor.getLabelId(), descriptor.getPropertyKeyId() ) );
-            log.flush();
-        }
-        catch ( Throwable t )
-        {
-            if ( t instanceof IndexPopulationFailedKernelException )
-            {
-                Throwable cause = t.getCause();
-                if ( cause instanceof IndexEntryConflictException )
-                {
-                    t = cause;
-                }
-            }
-            failureCause = t;
-            
-            // Index conflicts are expected (for unique indexes) so we don't need to log them.
-            if ( !(t instanceof IndexEntryConflictException) /*TODO: && this is a unique index...*/ )
-            {
-                log.error( "Failed to populate index.", t );
-                log.flush();
-            }
-            
-            // The flipper will have already flipped to a failed index context here, but
-            // it will not include the cause of failure, so we do another flip to a failed
-            // context that does.
-    
-            // The reason for having the flipper transition to the failed index context in the first
-            // place is that we would otherwise introduce a race condition where updates could come
-            // in to the old context, if something failed in the job we send to the flipper.
-            flipper.flipTo( new FailedIndexProxy( descriptor, providerDescriptor, populator, failure( t ) ) );
-        }
-        finally
-        {
             try
             {
-                if ( !success )
-                {
-                    if ( failureCause != null )
-                    {
-                        populator.markAsFailed( failure( failureCause ).asString() );
-                    }
-                    
-                    populator.close( false );
-                }
-            }
-            catch ( Throwable e )
-            {
-                log.warn( "Unable to close failed populator", e );
+                log.info( format("Index population started: [%s]", indexUserDescription) );
                 log.flush();
+                populator.create();
+
+                indexAllNodes();
+                if ( cancelled )
+                {
+                    // We remain in POPULATING state
+                    return;
+                }
+
+                Callable<Void> duringFlip = new Callable<Void>()
+                {
+                    @Override
+                    public Void call() throws Exception
+                    {
+                        populateFromQueueIfAvailable( Long.MAX_VALUE );
+                        populator.close( true );
+                        updateableSchemaState.clear();
+                        return null;
+                    }
+                };
+
+                flipper.flip( duringFlip, failureDelegate );
+                success = true;
+                log.info( format("Index population completed. Index is now online: [%s]", indexUserDescription) );
+                log.flush();
+            }
+            catch ( Throwable t )
+            {
+                // If the cause of index population failure is a conflict in a (unique) index, the conflict is the
+                // failure
+                if ( t instanceof IndexPopulationFailedKernelException )
+                {
+                    Throwable cause = t.getCause();
+                    if ( cause instanceof IndexEntryConflictException )
+                    {
+                        t = cause;
+                    }
+                }
+
+                // Index conflicts are expected (for unique indexes) so we don't need to log them.
+                if ( !(t instanceof IndexEntryConflictException) /*TODO: && this is a unique index...*/ )
+                {
+                    log.error( format("Failed to populate index: [%s]", indexUserDescription), t );
+                    log.flush();
+                }
+
+                // Set failure cause to be stored persistently
+                failureCause = t;
+
+                // The flipper will have already flipped to a failed index context here, but
+                // it will not include the cause of failure, so we do another flip to a failed
+                // context that does.
+
+                // The reason for having the flipper transition to the failed index context in the first
+                // place is that we would otherwise introduce a race condition where updates could come
+                // in to the old context, if something failed in the job we send to the flipper.
+                flipper.flipTo( new FailedIndexProxy( descriptor, providerDescriptor, indexUserDescription,
+                                                      populator, failure( t ) ) );
             }
             finally
             {
-                doneSignal.countDown();
+                try
+                {
+                    if ( !success )
+                    {
+                        if ( failureCause != null )
+                        {
+                            populator.markAsFailed( failure( failureCause ).asString() );
+                        }
+
+                        populator.close( false );
+                    }
+                }
+                catch ( Throwable e )
+                {
+                    log.error( format("Unable to close failed populator for index: [%s]", indexUserDescription), e );
+                    log.flush();
+                }
             }
+        }
+        finally
+        {
+            doneSignal.countDown();
+            currentThread().setName( oldThreadName );
         }
     }
 
@@ -193,7 +204,7 @@ public class IndexPopulationJob implements Runnable
                 }
                 catch ( Exception conflict )
                 {
-                    throw new IndexPopulationFailedKernelException( descriptor, conflict );
+                    throw new IndexPopulationFailedKernelException( descriptor, indexUserDescription, conflict );
                 }
                 return false;
             }
@@ -201,7 +212,8 @@ public class IndexPopulationJob implements Runnable
         storeScan.run();
     }
 
-    private void populateFromQueueIfAvailable( final long highestIndexedNodeId ) throws IndexEntryConflictException, IOException
+    private void populateFromQueueIfAvailable( final long highestIndexedNodeId )
+            throws IndexEntryConflictException, IOException
     {
         if ( !queue.isEmpty() )
         {
@@ -226,24 +238,26 @@ public class IndexPopulationJob implements Runnable
             cancelled = true;
             storeScan.stop();
         }
-        
+
         return latchGuardedValue( NO_VALUE, doneSignal );
     }
 
     /**
-     * A transaction happened that produced the given updates. Let this job incorporate its data
-     * into, feeding it to the {@link IndexPopulator}.
+     * A transaction happened that produced the given updates. Let this job incorporate its data,
+     * feeding it to the {@link IndexPopulator}.
      */
     public void update( Iterable<NodePropertyUpdate> updates )
     {
         for ( NodePropertyUpdate update : updates )
+        {
             queue.add( update );
+        }
     }
-    
+
     @Override
     public String toString()
     {
-        return getClass().getSimpleName() + "[populator:" + populator + ",descriptor:" + descriptor + "]";
+        return getClass().getSimpleName() + "[populator:" + populator + ", descriptor:" + descriptor + "]";
     }
 
     public void awaitCompletion() throws InterruptedException

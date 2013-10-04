@@ -1,5 +1,56 @@
 For Release Notes, see http://neo4j.org/release-notes#neo4j-${project.version}
 
+2.0.0-M06
+---------
+o Windows desktop GUI added
+
+Cypher:
+  o Parenthesis around nodes are now mandatory if a label is used on the node
+
+2.0.0-M05
+---------
+Kernel:
+  o BREAKING CHANGE: GraphDatabaseSettings now only exposes Setting, deprecated settings classes have been removed.
+  o Fixed problems with array properties being updated multiple times in a single transaction
+  o Adds label store as an index
+  o Transaction now implements AutoClosable
+  o Distinguish between data and schema transactions
+  o Unique constraint validation for new data
+
+Cypher:
+  o Promote the experimental parser to the default
+  o Added literal maps
+  o Makes RETURN only queries valid
+  o Labels on optional nodes no longer stop the whole MATCH
+    clause from returning results. 
+  o Updated NOT precedence
+  o Added collection slice and collection index
+  o Added list comprehension documentation
+
+ Shell:
+  o Adds support for RETURN only Cypher queries
+ 
+2.0.0-M04
+---------
+Kernel:
+  o BREAKING CHANGE: Require Java 7
+  o BREAKING CHANGE: Transactions are now required for all operations throughout Java Core API,
+    read operations as well as write operations
+  o Define proper equality for indexing of array properties
+  o BREAKING CHANGE: Equality for indexing of number properties compares numbers independent of underlying primitive Java type
+
+Cypher:
+  o Fixes #844 - Label predicate do not work on optional nodes that are null
+  o Fixes #897 - Cypher start doesnt allow combining multiple starting points with start node sets
+  o BREAKING CHANGE: Removes "?", "!" syntax for accessing properties. Missing properties are now treated as null
+  o Introduced a new experimental and fast PEG parser
+  o BREAKING CHANGE: Escaped identifiers in the RETURN clause are kept as the user entered them
+  o BREAKING CHANGE: No longer possible to use expressions and params to identify nodes in patterns
+  o BREAKING CHANGE: Use "|" in favor of ":" in FOREACH, EXTRACT and REDUCE to avoid disambiguity with label syntax
+
+Server:
+  o Added support for extracting and returning the graph structure from the result of a Cypher query executed via the transactional endpoint
+
 2.0.0-M03
 ---------
 Kernel:
@@ -36,6 +87,33 @@ o BREAKING CHANGE: The BatchInserter and the BatchGraphDatabase are not binary c
 o Added support for labels across all APIs: Cypher, Core Java and REST
 o Added support for the new label-based indexes across all APIs: Cypher, Core Java and REST
 o Improvements to shell, including import/export of small graphs via cypher statements
+
+1.9.4 (2013-09-19)
+------------------
+Lucene index:
+o Fixed issue where querying an index for "*:*" while having removed entities
+  from it in the same transaction might result in exceptions.
+
+1.9.3 (2013-08-30)
+------------------
+Logging in console is now consistent across modules and more informative
+
+Kernel:
+o Remove hard dependency on Logback
+o Introduction of logical_log_rotation_threshold to control log rotation.
+o Autoconfigurator can handle cases where physical memory is less than the configured JVM heap
+o Fixes index out of bounds errors when iterating over relationships
+o Fixes race in persistent window pool which might lead to inconsistent data
+
+Cypher:
+o Fixes problems with extra columns showing up in some conditions
+
+Server:
+o Reintroduces, deprecated, the Configurator.getThirdpartyJaxRsClasses. Fixes, among other things, the authentication-extension
+o Server now properly returns the version when asked through REST
+
+Index:
+o Stop keeping norms in Lucene indexes, saving space and memory
 
 1.9.2 (2013-07-16)
 ------------------
@@ -98,7 +176,7 @@ Lucene Index:
 o Lucene upgraded to 3.6.2
 
 Server:
-o Introduces new slash screen containing a guide to Neo4j. Several small aesthetic improvements
+o Introduces new splash screen containing a guide to Neo4j. Several small aesthetic improvements
 
 Cypher:
 o Fixed #578 - problem with profiling queries that use LIMIT

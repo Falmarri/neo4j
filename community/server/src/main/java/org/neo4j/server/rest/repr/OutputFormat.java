@@ -165,7 +165,7 @@ public class OutputFormat
                 {
                     if ( e instanceof NodeNotFoundException || e instanceof RelationshipNotFoundException )
                     {
-                        new WebApplicationException( notFound( e ) );
+                        throw new WebApplicationException( notFound( e ) );
                     }
                     if ( e instanceof BadInputException )
                     {
@@ -179,6 +179,11 @@ public class OutputFormat
                 }
             }
         };
+    }
+
+    public static void write( Representation representation, RepresentationFormat format, URI baseUri )
+    {
+        representation.serialize( format, baseUri, null );
     }
 
     private byte[] toBytes( String entity, boolean mustFail )

@@ -22,10 +22,9 @@ package org.neo4j.server.rest.transactional;
 import javax.transaction.SystemException;
 import javax.transaction.Transaction;
 
-import org.neo4j.kernel.api.StatementOperationParts;
 import org.neo4j.kernel.api.KernelTransaction;
+import org.neo4j.kernel.api.Statement;
 import org.neo4j.kernel.api.exceptions.TransactionFailureException;
-import org.neo4j.kernel.api.operations.StatementState;
 import org.neo4j.kernel.impl.transaction.TxManager;
 
 class TransitionalTxManagementKernelTransaction implements KernelTransaction
@@ -42,21 +41,9 @@ class TransitionalTxManagementKernelTransaction implements KernelTransaction
     }
 
     @Override
-    public StatementOperationParts newStatementOperations()
+    public Statement acquireStatement()
     {
-        return ctx.newStatementOperations();
-    }
-    
-    @Override
-    public StatementState newStatementState()
-    {
-        return ctx.newStatementState();
-    }
-
-    @Override
-    public void prepare()
-    {
-        throw new UnsupportedOperationException();
+        return ctx.acquireStatement();
     }
 
     @Override

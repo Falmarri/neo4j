@@ -21,11 +21,15 @@ package org.neo4j.kernel.api.properties;
 
 import java.util.Arrays;
 
-class ShortArrayProperty extends FullSizeProperty
+import static org.neo4j.kernel.impl.cache.SizeOfs.sizeOfArray;
+import static org.neo4j.kernel.impl.cache.SizeOfs.withObjectOverhead;
+import static org.neo4j.kernel.impl.cache.SizeOfs.withReference;
+
+class ShortArrayProperty extends DefinedProperty
 {
     private final short[] value;
 
-    ShortArrayProperty( long propertyKeyId, short[] value )
+    ShortArrayProperty( int propertyKeyId, short[] value )
     {
         super( propertyKeyId );
         assert value != null;
@@ -35,15 +39,15 @@ class ShortArrayProperty extends FullSizeProperty
     @Override
     public short[] value()
     {
-        return value;
+        return value.clone();
     }
 
     @Override
     public boolean valueEquals( Object value )
     {
-        if ( value instanceof short[])
+        if ( value instanceof short[] )
         {
-            return Arrays.equals(this.value, (short[])value);
+            return Arrays.equals( this.value, (short[]) value );
         }
         return valueCompare( value, this.value );
     }
@@ -55,8 +59,14 @@ class ShortArrayProperty extends FullSizeProperty
     }
 
     @Override
-    boolean hasEqualValue( FullSizeProperty that )
+    boolean hasEqualValue( DefinedProperty that )
     {
         return Arrays.equals( this.value, ((ShortArrayProperty)that).value );
+    }
+
+    @Override
+    public int sizeOfObjectInBytesIncludingOverhead()
+    {
+        return withObjectOverhead( withReference( sizeOfArray( value ) ) );
     }
 }

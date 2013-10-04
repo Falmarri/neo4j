@@ -32,31 +32,38 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Transaction;
+import org.neo4j.graphdb.schema.IndexDefinition;
 import org.neo4j.graphdb.schema.Schema;
 import org.neo4j.kernel.GraphDatabaseAPI;
 import org.neo4j.kernel.ThreadToStatementContextBridge;
-import org.neo4j.kernel.api.StatementOperationParts;
-import org.neo4j.kernel.api.exceptions.LabelNotFoundKernelException;
-import org.neo4j.kernel.api.exceptions.PropertyKeyNotFoundException;
+import org.neo4j.kernel.api.Statement;
 import org.neo4j.kernel.api.index.IndexAccessor;
 import org.neo4j.kernel.api.index.IndexConfiguration;
 import org.neo4j.kernel.api.index.IndexPopulator;
 import org.neo4j.kernel.api.index.InternalIndexState;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
-import org.neo4j.kernel.api.operations.StatementState;
 import org.neo4j.kernel.extension.KernelExtensionFactory;
+import org.neo4j.kernel.impl.transaction.XaDataSourceManager;
 import org.neo4j.test.EphemeralFileSystemRule;
 import org.neo4j.test.TestGraphDatabaseFactory;
 
 import static java.util.concurrent.Executors.newSingleThreadExecutor;
-import static org.junit.Assert.*;
+import static java.util.concurrent.TimeUnit.SECONDS;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThat;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyLong;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import static org.neo4j.graphdb.DynamicLabel.label;
 import static org.neo4j.graphdb.Neo4jMatchers.getIndexes;
 import static org.neo4j.graphdb.Neo4jMatchers.hasSize;
@@ -67,8 +74,6 @@ import static org.neo4j.kernel.impl.api.index.SchemaIndexTestHelper.singleInstan
 
 public class IndexRecoveryIT
 {
-    private final Label myLabel = label( "MyLabel" );
-
     @Test
     public void shouldBeAbleToRecoverInTheMiddleOfPopulatingAnIndex() throws Exception
     {
@@ -76,7 +81,8 @@ public class IndexRecoveryIT
         startDb();
 
         CountDownLatch latch = new CountDownLatch( 1 );
-        when( mockedIndexProvider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) ).thenReturn( indexPopulatorWithControlledCompletionTiming( latch ) );
+        when( mockedIndexProvider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) )
+                .thenReturn( indexPopulatorWithControlledCompletionTiming( latch ) );
         createIndex( myLabel );
 
         // And Given
@@ -87,7 +93,8 @@ public class IndexRecoveryIT
         // When
         when( mockedIndexProvider.getInitialState( anyLong() ) ).thenReturn( InternalIndexState.POPULATING );
         latch = new CountDownLatch( 1 );
-        when( mockedIndexProvider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) ).thenReturn( indexPopulatorWithControlledCompletionTiming( latch ) );
+        when( mockedIndexProvider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) )
+                .thenReturn( indexPopulatorWithControlledCompletionTiming( latch ) );
         startDb();
 
         // Then
@@ -105,7 +112,8 @@ public class IndexRecoveryIT
         startDb();
 
         CountDownLatch latch = new CountDownLatch( 1 );
-        when( mockedIndexProvider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) ).thenReturn( indexPopulatorWithControlledCompletionTiming( latch ) );
+        when( mockedIndexProvider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) )
+                .thenReturn( indexPopulatorWithControlledCompletionTiming( latch ) );
         createIndex( myLabel );
         rotateLogs();
 
@@ -114,7 +122,8 @@ public class IndexRecoveryIT
         latch.countDown();
         killFuture.get();
         latch = new CountDownLatch( 1 );
-        when( mockedIndexProvider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) ).thenReturn( indexPopulatorWithControlledCompletionTiming( latch ) );
+        when( mockedIndexProvider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) )
+                .thenReturn( indexPopulatorWithControlledCompletionTiming( latch ) );
         when( mockedIndexProvider.getInitialState( anyLong() ) ).thenReturn( InternalIndexState.POPULATING );
 
         // When
@@ -134,14 +143,19 @@ public class IndexRecoveryIT
         // Given
         startDb();
 
-        createIndex( myLabel );
+        when( mockedIndexProvider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) )
+                .thenReturn( mock( IndexPopulator.class ) );
+        when( mockedIndexProvider.getOnlineAccessor( anyLong(), any( IndexConfiguration.class ) ) )
+                .thenReturn( mock( IndexAccessor.class ) );
+        createIndexAndAwaitPopulation( myLabel );
         Set<NodePropertyUpdate> expectedUpdates = createSomeBananas( myLabel );
 
         // And Given
         killDb();
         when( mockedIndexProvider.getInitialState( anyLong() ) ).thenReturn( InternalIndexState.ONLINE );
         GatheringIndexWriter writer = new GatheringIndexWriter();
-        when( mockedIndexProvider.getOnlineAccessor( anyLong(), any( IndexConfiguration.class ) ) ).thenReturn( writer );
+        when( mockedIndexProvider.getOnlineAccessor( anyLong(), any( IndexConfiguration.class ) ) )
+                .thenReturn( writer );
 
         // When
         startDb();
@@ -150,21 +164,26 @@ public class IndexRecoveryIT
         assertThat( getIndexes( db, myLabel ), inTx( db, hasSize( 1 ) ) );
         assertThat( getIndexes( db, myLabel ), inTx( db, haveState( db, Schema.IndexState.ONLINE ) ) );
         verify( mockedIndexProvider, times( 1 ) ).getPopulator( anyLong(), any( IndexConfiguration.class ) );
-        verify( mockedIndexProvider, times( 1 ) ).getOnlineAccessor( anyLong(), any( IndexConfiguration.class ) );
-        assertEquals( expectedUpdates, writer.updates );
+        int onlineAccessorInvocationCount = 2; // once when we create the index, and once when we restart the db
+        verify( mockedIndexProvider, times( onlineAccessorInvocationCount ) )
+                .getOnlineAccessor( anyLong(), any( IndexConfiguration.class ) );
+        assertEquals( expectedUpdates, writer.recoveredUpdates );
     }
 
     @Test
     public void shouldKeepFailedIndexesAsFailedAfterRestart() throws Exception
     {
         // Given
+        when( mockedIndexProvider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) )
+                .thenReturn( mock( IndexPopulator.class ) );
+        when( mockedIndexProvider.getOnlineAccessor( anyLong(), any( IndexConfiguration.class ) ) )
+                .thenReturn( mock( IndexAccessor.class ) );
         startDb();
         createIndex( myLabel );
 
         // And Given
         killDb();
         when( mockedIndexProvider.getInitialState( anyLong() ) ).thenReturn( InternalIndexState.FAILED );
-        when( mockedIndexProvider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) ).thenReturn( mock(IndexPopulator.class) );
 
         // When
         startDb();
@@ -182,21 +201,27 @@ public class IndexRecoveryIT
             singleInstanceSchemaIndexProviderFactory( TestSchemaIndexProviderDescriptor.PROVIDER_DESCRIPTOR.getKey(),
                     mockedIndexProvider );
     private final String key = "number_of_bananas_owned";
+    private final Label myLabel = label( "MyLabel" );
 
     @Before
     public void setUp()
     {
-        when( mockedIndexProvider.getProviderDescriptor() ).thenReturn( TestSchemaIndexProviderDescriptor.PROVIDER_DESCRIPTOR );
+        when( mockedIndexProvider.getProviderDescriptor() )
+                .thenReturn( TestSchemaIndexProviderDescriptor.PROVIDER_DESCRIPTOR );
+        when( mockedIndexProvider.compareTo( any( SchemaIndexProvider.class ) ) )
+                .thenReturn( 1 ); // always pretend to have highest priority
     }
 
     private void startDb()
     {
         if ( db != null )
+        {
             db.shutdown();
+        }
 
         TestGraphDatabaseFactory factory = new TestGraphDatabaseFactory();
         factory.setFileSystem( fs.get() );
-        factory.setKernelExtensions( Arrays.<KernelExtensionFactory<?>>asList( mockedIndexProviderFactory ) );
+        factory.addKernelExtensions( Arrays.<KernelExtensionFactory<?>>asList( mockedIndexProviderFactory ) );
         db = (GraphDatabaseAPI) factory.newImpermanentDatabase();
     }
 
@@ -236,54 +261,63 @@ public class IndexRecoveryIT
     public void after()
     {
         if ( db != null )
+        {
             db.shutdown();
+        }
     }
 
-    @SuppressWarnings("deprecation")
     private void rotateLogs()
     {
-        db.getXaDataSourceManager().rotateLogicalLogs();
+        db.getDependencyResolver().resolveDependency( XaDataSourceManager.class ).rotateLogicalLogs();
     }
 
-    private void createIndex( Label label )
+    private void createIndexAndAwaitPopulation( Label label )
     {
-        Transaction tx = db.beginTx();
-        db.schema().indexFor( label ).on( key ).create();
-        tx.success();
-        tx.finish();
+        IndexDefinition index = createIndex( label );
+        try ( Transaction tx = db.beginTx() )
+        {
+            db.schema().awaitIndexOnline( index, 10, SECONDS );
+            tx.success();
+        }
+    }
+
+    private IndexDefinition createIndex( Label label )
+    {
+        try ( Transaction tx = db.beginTx() )
+        {
+            IndexDefinition index = db.schema().indexFor( label ).on( key ).create();
+            tx.success();
+            return index;
+        }
     }
 
     private Set<NodePropertyUpdate> createSomeBananas( Label label )
-            throws PropertyKeyNotFoundException, LabelNotFoundKernelException
     {
-        Set<NodePropertyUpdate> updates = new HashSet<NodePropertyUpdate>();
-        Transaction tx = db.beginTx();
-        try
+        Set<NodePropertyUpdate> updates = new HashSet<>();
+        try ( Transaction tx = db.beginTx() )
         {
             ThreadToStatementContextBridge ctxProvider = db.getDependencyResolver().resolveDependency(
                     ThreadToStatementContextBridge.class );
-            StatementOperationParts context = ctxProvider.getCtxForWriting();
-            StatementState state = ctxProvider.statementForReading();
-            for ( int number : new int[] {4, 10} )
+            try ( Statement statement = ctxProvider.statement() )
             {
-                Node node = db.createNode( label );
-                node.setProperty( key, number );
-                updates.add( NodePropertyUpdate.add( node.getId(), context.keyReadOperations().propertyKeyGetForName( state, key ), number,
-                        new long[] {context.keyReadOperations().labelGetForName( state, label.name() )} ) );
+                for ( int number : new int[] {4, 10} )
+                {
+                    Node node = db.createNode( label );
+                    node.setProperty( key, number );
+                    updates.add( NodePropertyUpdate.add( node.getId(),
+                            statement.readOperations().propertyKeyGetForName( key ), number,
+                            new long[]{statement.readOperations().labelGetForName( label.name() )} ) );
+                }
             }
-            state.close();
             tx.success();
             return updates;
-        }
-        finally
-        {
-            tx.finish();
         }
     }
 
     private static class GatheringIndexWriter extends IndexAccessor.Adapter
     {
-        private final Set<NodePropertyUpdate> updates = new HashSet<NodePropertyUpdate>();
+        private final Set<NodePropertyUpdate> updates = new HashSet<>();
+        private final Set<NodePropertyUpdate> recoveredUpdates = new HashSet<>();
 
         @Override
         public void updateAndCommit( Iterable<NodePropertyUpdate> updates )
@@ -294,7 +328,7 @@ public class IndexRecoveryIT
         @Override
         public void recover( Iterable<NodePropertyUpdate> updates ) throws IOException
         {
-            this.updates.addAll( asCollection( updates ) );
+            this.recoveredUpdates.addAll( asCollection( updates ) );
         }
     }
 
@@ -313,7 +347,7 @@ public class IndexRecoveryIT
                 {
                     // fall through and return early
                 }
-                throw new RuntimeException();
+                throw new RuntimeException( "this is expected" );
             }
         };
     }

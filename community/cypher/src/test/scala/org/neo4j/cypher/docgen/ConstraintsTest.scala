@@ -31,7 +31,7 @@ class ConstraintsTest extends DocumentingTestBase {
   @Test def create_unique_constraint() {
     testQuery(
       title = "Create uniqueness constraint",
-      text = "To create a constraint that makes sure that your database will never contain more than one node with a specific" +
+      text = "To create a constraint that makes sure that your database will never contain more than one node with a specific " +
         "label and one property value, use the +IS+ +UNIQUE+ syntax.",
       queryText = "CREATE CONSTRAINT ON (book:Book) ASSERT book.isbn IS UNIQUE",
       returns = "",
@@ -60,12 +60,11 @@ class ConstraintsTest extends DocumentingTestBase {
   }
 
   private def getConstraintIterator(labelName: String, propName: String): Iterator[UniquenessConstraint] = {
-    val statementCtx = db.statementContextForReading
-    val state = db.stateForReading
+    val statement = db.statement
 
-    val prop = statementCtx.keyReadOperations.propertyKeyGetForName(state, propName)
-    val label = statementCtx.keyReadOperations.labelGetForName(state, labelName)
+    val prop = statement.readOperations().propertyKeyGetForName(propName)
+    val label = statement.readOperations().labelGetForName(labelName)
 
-    statementCtx.schemaReadOperations.constraintsGetForLabelAndPropertyKey(state, label, prop).asScala
+    statement.readOperations().constraintsGetForLabelAndPropertyKey(label, prop).asScala
   }
 }

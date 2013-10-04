@@ -340,6 +340,70 @@ public class TransactionFunctionalTest extends AbstractRestFunctionalTestBase
         assertEquals( "labels", asSet( "Foo", "Bar" ), labels );
     }
 
+    @Test
+    public void should_serialize_collect_correctly() throws Exception
+    {
+        // given
+        http.POST( "/db/data/transaction/commit", singleStatement( "CREATE (n:Foo)" ) );
+
+        // when
+        Response response = http.POST( "/db/data/transaction/commit", quotedJson(
+                "{ 'statements': [ { 'statement': 'MATCH (n:Foo) RETURN COLLECT(n)' } ] }" ) );
+
+        // then
+        assertThat( response.status(), equalTo( 200 ) );
+
+        JsonNode jsonResponse = response.jsonContent();
+        JsonNode data = jsonResponse.get( "results" ).get(0);
+        assertThat( data.get( "columns" ).get( 0 ).asText(), equalTo( "COLLECT(n)" ) );
+        assertThat( data.get( "data" ).get(0).get( "row" ).size(), equalTo(1));
+        assertThat( data.get( "data" ).get( 0 ).get( "row" ).get( 0 ).get( 0 ).size(), equalTo( 0 ) );
+
+        assertThat( jsonResponse.get( "errors" ).size(), equalTo( 0 ) );
+    }
+
+    @Test
+    public void shouldSerializeMapsCorrectlyInRowsFormat() throws Exception
+    {
+        Response response = http.POST( "/db/data/transaction/commit", quotedJson(
+                "{ 'statements': [ { 'statement': 'RETURN {one:{two:[true, {three: 42}]}}' } ] }" ) );
+
+        // then
+        assertThat( response.status(), equalTo( 200 ) );
+
+        JsonNode jsonResponse = response.jsonContent();
+        JsonNode data = jsonResponse.get( "results" ).get(0);
+        JsonNode row = data.get( "data" ).get( 0 ).get( "row" );
+        assertThat( row.size(), equalTo(1));
+        JsonNode firstCell = row.get( 0 );
+        assertThat( firstCell.get( "one" ).get( "two" ).size(), is( 2 ));
+        assertThat( firstCell.get( "one" ).get( "two" ).get( 0 ).asBoolean(), is( true ) );
+        assertThat( firstCell.get( "one" ).get( "two" ).get( 1 ).get( "three" ).asInt(), is( 42 ));
+
+        assertThat(  jsonResponse.get( "errors" ).size(), equalTo(0));
+    }
+
+    @Test
+    public void shouldSerializeMapsCorrectlyInRestFormat() throws Exception
+    {
+        Response response = http.POST( "/db/data/transaction/commit", quotedJson( "{ 'statements': [ { 'statement': " +
+                "'RETURN {one:{two:[true, {three: 42}]}}', 'resultDataContents':['rest'] } ] }" ) );
+
+        // then
+        assertThat( response.status(), equalTo( 200 ) );
+
+        JsonNode jsonResponse = response.jsonContent();
+        JsonNode data = jsonResponse.get( "results" ).get( 0 );
+        JsonNode rest = data.get( "data" ).get( 0 ).get( "rest" );
+        assertThat( rest.size(), equalTo( 1 ) );
+        JsonNode firstCell = rest.get( 0 );
+        assertThat( firstCell.get( "one" ).get( "two" ).size(), is( 2 ) );
+        assertThat( firstCell.get( "one" ).get( "two" ).get( 0 ).asBoolean(), is( true ) );
+        assertThat( firstCell.get( "one" ).get( "two" ).get( 1 ).get( "three" ).asInt(), is( 42 ) );
+
+        assertThat( jsonResponse.get( "errors" ).size(), equalTo( 0 ) );
+    }
+
     private HTTP.RawPayload singleStatement( String statement )
     {
         return rawPayload( "{\"statements\":[{\"statement\":\"" + statement + "\"}]}" );
@@ -372,11 +436,6 @@ public class TransactionFunctionalTest extends AbstractRestFunctionalTestBase
         assertErrorCodes( response.<Map<String, Object>>content(), expectedErrors );
     }
 
-    private void assertErrorMessages( Response response, String... expectedMessages )
-    {
-        assertErrorMessages( response.<Map<String, Object>>content(), expectedMessages );
-    }
-
     @SuppressWarnings("unchecked")
     private void assertErrorCodes( Map<String, Object> response, StatusCode... expectedErrors )
     {
@@ -395,29 +454,10 @@ public class TransactionFunctionalTest extends AbstractRestFunctionalTestBase
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private void assertErrorMessages( Map<String, Object> response, String... expectedMessages )
-    {
-        Iterator<Map<String, Object>> errors = ((List<Map<String, Object>>) response.get( "errors" )).iterator();
-        Iterator<String> expected = iterator( expectedMessages );
-
-        while ( expected.hasNext() )
-        {
-            assertTrue( errors.hasNext() );
-            assertThat( (String) errors.next().get( "message" ), equalTo( expected.next() ) );
-        }
-        if ( errors.hasNext() )
-        {
-            Map<String, Object> error = errors.next();
-            fail( "Expected no more errors, but got " + error.get( "message" ) + " - '" + error.get( "message" ) + "'." );
-        }
-    }
-
     @SuppressWarnings("WhileLoopReplaceableByForEach")
     private long countNodes()
     {
-        Transaction transaction = graphdb().beginTx();
-        try
+        try ( Transaction transaction = graphdb().beginTx() )
         {
             long count = 0;
             Iterator<Node> allNodes = GlobalGraphOperations.at( graphdb() ).getAllNodes().iterator();
@@ -427,10 +467,6 @@ public class TransactionFunctionalTest extends AbstractRestFunctionalTestBase
                 count++;
             }
             return count;
-        }
-        finally
-        {
-            transaction.finish();
         }
     }
 
