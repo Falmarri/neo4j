@@ -19,12 +19,22 @@
  */
 package org.neo4j.kernel.api.index;
 
+import java.io.Closeable;
+import java.io.File;
 import java.io.IOException;
+import java.util.Iterator;
+
+import org.neo4j.graphdb.ResourceIterator;
+import org.neo4j.kernel.api.direct.BoundedIterable;
+import org.neo4j.kernel.impl.api.index.IndexUpdateMode;
+import org.neo4j.kernel.impl.api.index.SwallowingIndexUpdater;
+
+import static org.neo4j.helpers.collection.IteratorUtil.emptyIterator;
 
 /**
  * Used for online operation of an index.
  */
-public interface IndexAccessor
+public interface IndexAccessor extends Closeable
 {
     /**
      * Deletes this index as well as closes all used external resources.
@@ -35,19 +45,15 @@ public interface IndexAccessor
     void drop() throws IOException;
 
     /**
-     * Apply a set of changes to this index.
+     * Return an updater for applying a set of changes to this index.
      * Updates must be visible in {@link #newReader() readers} created after this update.
-     */
-    void updateAndCommit( Iterable<NodePropertyUpdate> updates ) throws IOException, IndexEntryConflictException;
-
-    /**
-     * Apply a set of changes to this index. This method will be called instead of
-     * {@link #updateAndCommit(Iterable)} during recovery of the database when starting up after
-     * a crash or similar. Updates given here may have already been applied to this index, so
+     *
+     * This is called with IndexUpdateMode.RECOVERY when starting up after
+     * a crash or similar. Updates given then may have already been applied to this index, so
      * additional checks must be in place so that data doesn't get duplicated, but is idempotent.
      */
-    void recover( Iterable<NodePropertyUpdate> updates ) throws IOException;
-    
+    IndexUpdater newUpdater( IndexUpdateMode mode );
+
     /**
      * Forces this index to disk. Called at certain points from within Neo4j for example when
      * rotating the logical log. After completion of this call there cannot be any essential state that
@@ -71,6 +77,15 @@ public interface IndexAccessor
      */
     IndexReader newReader();
 
+    BoundedIterable<Long> newAllEntriesReader();
+
+    /**
+     * Should return a full listing of all files needed by this index accessor to work with the index. The files
+     * need to remain available until the resource iterator returned here is closed. This is used to duplicate created
+     * indexes across clusters, among other things.
+     */
+    ResourceIterator<File> snapshotFiles() throws IOException;
+
     class Adapter implements IndexAccessor
     {
         @Override
@@ -79,14 +94,9 @@ public interface IndexAccessor
         }
 
         @Override
-        public void updateAndCommit( Iterable<NodePropertyUpdate> updates ) throws IndexEntryConflictException,
-                IOException
+        public IndexUpdater newUpdater( IndexUpdateMode mode )
         {
-        }
-        
-        @Override
-        public void recover( Iterable<NodePropertyUpdate> updates ) throws IOException
-        {
+            return SwallowingIndexUpdater.INSTANCE;
         }
 
         @Override
@@ -103,6 +113,34 @@ public interface IndexAccessor
         public IndexReader newReader()
         {
             return IndexReader.EMPTY;
+        }
+
+        @Override
+        public BoundedIterable<Long> newAllEntriesReader()
+        {
+            return new BoundedIterable<Long>()
+            {
+                @Override
+                public long maxCount()
+                {
+                    return 0;
+                }
+
+                @Override public void close() throws IOException
+                {
+                }
+
+                @Override public Iterator<Long> iterator()
+                {
+                    return emptyIterator();
+                }
+            };
+        }
+
+        @Override
+        public ResourceIterator<File> snapshotFiles()
+        {
+            return emptyIterator();
         }
     }
 }

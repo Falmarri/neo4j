@@ -34,15 +34,17 @@ import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.kernel.GraphDatabaseAPI;
-import org.neo4j.kernel.ThreadToStatementContextBridge;
 import org.neo4j.kernel.api.DataWriteOperations;
 import org.neo4j.kernel.api.ReadOperations;
 import org.neo4j.kernel.api.index.IndexAccessor;
 import org.neo4j.kernel.api.index.IndexConfiguration;
+import org.neo4j.kernel.api.index.IndexEntryConflictException;
 import org.neo4j.kernel.api.index.IndexPopulator;
+import org.neo4j.kernel.api.index.IndexUpdater;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
 import org.neo4j.kernel.extension.KernelExtensionFactory;
+import org.neo4j.kernel.impl.coreapi.ThreadToStatementContextBridge;
 import org.neo4j.test.EphemeralFileSystemRule;
 import org.neo4j.test.TestGraphDatabaseFactory;
 
@@ -55,7 +57,6 @@ import static org.mockito.Mockito.when;
 
 import static org.neo4j.graphdb.DynamicLabel.label;
 import static org.neo4j.graphdb.Neo4jMatchers.createIndex;
-import static org.neo4j.helpers.collection.IteratorUtil.asCollection;
 import static org.neo4j.helpers.collection.IteratorUtil.asSet;
 import static org.neo4j.helpers.collection.MapUtil.map;
 import static org.neo4j.kernel.impl.api.index.SchemaIndexTestHelper.singleInstanceSchemaIndexProviderFactory;
@@ -80,10 +81,10 @@ public class IndexCRUDIT
         // Then, for now, this should trigger two NodePropertyUpdates
         try ( Transaction tx = db.beginTx() )
         {
-            DataWriteOperations statement = ctxProvider.statement().dataWriteOperations();
+            DataWriteOperations statement = ctxProvider.instance().dataWriteOperations();
             int propertyKey1 = statement.propertyKeyGetForName( indexProperty );
             long[] labels = new long[]{statement.labelGetForName( myLabel.name() )};
-            assertThat( writer.updates, equalTo( asSet(
+            assertThat( writer.updatesCommitted, equalTo( asSet(
                     NodePropertyUpdate.add( node.getId(), propertyKey1, value1, labels ) ) ) );
             tx.success();
         }
@@ -107,7 +108,7 @@ public class IndexCRUDIT
         Node node = createNode( map( indexProperty, value, otherProperty, otherValue ) );
 
         // THEN
-        assertThat( writer.updates.size(), equalTo( 0 ) );
+        assertThat( writer.updatesCommitted.size(), equalTo( 0 ) );
 
         // AND WHEN
         try ( Transaction tx = db.beginTx() )
@@ -119,16 +120,16 @@ public class IndexCRUDIT
         // THEN
         try ( Transaction tx = db.beginTx() )
         {
-            DataWriteOperations statement = ctxProvider.statement().dataWriteOperations();
+            DataWriteOperations statement = ctxProvider.instance().dataWriteOperations();
             int propertyKey1 = statement.propertyKeyGetForName( indexProperty );
             long[] labels = new long[]{statement.labelGetForName( myLabel.name() )};
-            assertThat( writer.updates, equalTo( asSet(
+            assertThat( writer.updatesCommitted, equalTo( asSet(
                     NodePropertyUpdate.add( node.getId(), propertyKey1, value, labels ) ) ) );
             tx.success();
         }
     }
 
-    private GraphDatabaseAPI db;
+    @SuppressWarnings("deprecation") private GraphDatabaseAPI db;
     @Rule public EphemeralFileSystemRule fs = new EphemeralFileSystemRule();
     private final SchemaIndexProvider mockedIndexProvider = mock( SchemaIndexProvider.class );
     private final KernelExtensionFactory<?> mockedIndexProviderFactory =
@@ -150,6 +151,7 @@ public class IndexCRUDIT
         }
     }
 
+    @SuppressWarnings("deprecation")
     @Before
     public void before() throws Exception
     {
@@ -178,7 +180,7 @@ public class IndexCRUDIT
 
     private class GatheringIndexWriter extends IndexAccessor.Adapter implements IndexPopulator
     {
-        private final Set<NodePropertyUpdate> updates = new HashSet<>();
+        private final Set<NodePropertyUpdate> updatesCommitted = new HashSet<>();
         private final String propertyKey;
 
         public GatheringIndexWriter( String propertyKey )
@@ -194,22 +196,38 @@ public class IndexCRUDIT
         @Override
         public void add( long nodeId, Object propertyValue )
         {
-            ReadOperations statement = ctxProvider.statement().readOperations();
-            updates.add( NodePropertyUpdate.add(
+            ReadOperations statement = ctxProvider.instance().readOperations();
+            updatesCommitted.add( NodePropertyUpdate.add(
                     nodeId, statement.propertyKeyGetForName( propertyKey ),
                     propertyValue, new long[]{statement.labelGetForName( myLabel.name() )} ) );
         }
 
         @Override
-        public void update( Iterable<NodePropertyUpdate> updates )
+        public IndexUpdater newPopulatingUpdater() throws IOException
         {
-            this.updates.addAll( asCollection( updates ) );
+            return newUpdater( IndexUpdateMode.ONLINE );
         }
 
         @Override
-        public void updateAndCommit( Iterable<NodePropertyUpdate> updates )
+        public IndexUpdater newUpdater( final IndexUpdateMode mode )
         {
-            this.updates.addAll( asCollection( updates ) );
+            return new CollectingIndexUpdater()
+            {
+                @Override
+                public void close() throws IOException, IndexEntryConflictException
+                {
+                    if ( IndexUpdateMode.ONLINE == mode )
+                    {
+                        updatesCommitted.addAll( updates );
+                    }
+                }
+
+                @Override
+                public void remove( Iterable<Long> nodeIds ) throws IOException
+                {
+                    throw new UnsupportedOperationException( "not expected" );
+                }
+            };
         }
 
         @Override

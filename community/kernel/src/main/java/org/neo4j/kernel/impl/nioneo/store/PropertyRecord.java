@@ -131,6 +131,12 @@ public class PropertyRecord extends Abstract64BitRecord
         blockRecords.add( block );
     }
 
+    public void setPropertyBlock( PropertyBlock block )
+    {
+        removePropertyBlock( block.getKeyIndexId() );
+        addPropertyBlock( block );
+    }
+
     public PropertyBlock getPropertyBlock( int keyIndex )
     {
         for ( PropertyBlock block : blockRecords )
@@ -204,7 +210,7 @@ public class PropertyRecord extends Abstract64BitRecord
     {
         prevProp = prev;
     }
-    
+
     @Override
     public PropertyRecord clone()
     {

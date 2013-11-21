@@ -23,13 +23,13 @@ import java.util.List;
 import java.util.Map;
 
 import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.index.IndexIterable;
-import org.neo4j.graphdb.index.IndexProvider;
 import org.neo4j.kernel.EmbeddedGraphDatabase;
 import org.neo4j.kernel.EmbeddedReadOnlyGraphDatabase;
 import org.neo4j.kernel.extension.KernelExtensionFactory;
 import org.neo4j.kernel.impl.cache.CacheProvider;
 import org.neo4j.kernel.impl.transaction.xaframework.TransactionInterceptorProvider;
+
+import static java.util.Arrays.asList;
 
 import static org.neo4j.graphdb.factory.GraphDatabaseSettings.read_only;
 import static org.neo4j.helpers.Settings.TRUE;
@@ -74,6 +74,7 @@ public class GraphDatabaseFactory
         final GraphDatabaseFactoryState state = getStateCopy();
         return new GraphDatabaseBuilder( new GraphDatabaseBuilder.DatabaseCreator()
         {
+            @SuppressWarnings("deprecation")
             @Override
             public GraphDatabaseService newDatabase( Map<String, String> config )
             {
@@ -82,7 +83,6 @@ public class GraphDatabaseFactory
                 if ( TRUE.equalsIgnoreCase( config.get( read_only.name() ) ) )
                 {
                     return new EmbeddedReadOnlyGraphDatabase( path, config,
-                            state.getIndexProviders(),
                             state.getKernelExtension(),
                             state.getCacheProviders(),
                             state.getTransactionInterceptorProviders() );
@@ -90,24 +90,12 @@ public class GraphDatabaseFactory
                 else
                 {
                     return new EmbeddedGraphDatabase( path, config,
-                            state.getIndexProviders(),
                             state.getKernelExtension(),
                             state.getCacheProviders(),
                             state.getTransactionInterceptorProviders() );
                 }
             }
         } );
-    }
-
-    public Iterable<IndexProvider> getIndexProviders()
-    {
-        return getCurrentState().getIndexProviders();
-    }
-
-    public GraphDatabaseFactory setIndexProviders( IndexIterable indexIterable )
-    {
-        getCurrentState().setIndexProviders( indexIterable );
-        return this;
     }
 
     public Iterable<KernelExtensionFactory<?>> getKernelExtension()
@@ -119,6 +107,13 @@ public class GraphDatabaseFactory
     {
         getCurrentState().addKernelExtensions( newKernelExtensions );
         return this;
+    }
+
+    @SuppressWarnings( { "rawtypes", "unchecked" } )
+    public GraphDatabaseFactory addKernelExtension( KernelExtensionFactory<?> newKernelExtension )
+    {
+        List extensions = asList(newKernelExtension );
+        return addKernelExtensions( extensions );
     }
 
     public GraphDatabaseFactory setKernelExtensions( Iterable<KernelExtensionFactory<?>> newKernelExtensions )

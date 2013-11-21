@@ -19,6 +19,10 @@
  */
 package org.neo4j.cluster.protocol.cluster;
 
+import static org.neo4j.helpers.Predicates.in;
+import static org.neo4j.helpers.Predicates.not;
+import static org.neo4j.helpers.collection.Iterables.filter;
+
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -55,7 +59,7 @@ public class ClusterContext
     private Executor executor;
     private Logging logging;
     private List<ClusterMessage.ConfigurationRequestState> discoveredInstances = new ArrayList<ClusterMessage.ConfigurationRequestState>();
-    private String joiningClusterName;
+    private String joiningClusterName; // for debugging
     private Iterable<URI> joiningInstances;
     URI boundAt;
     private boolean joinDenied;
@@ -96,7 +100,7 @@ public class ClusterContext
     // Implementation
     public void created( String name )
     {
-        configuration = new ClusterConfiguration( name, Collections.singleton( boundAt ) );
+        configuration = new ClusterConfiguration( name, logging.getMessagesLog( ClusterConfiguration.class ), Collections.singleton( boundAt ) );
         joined();
     }
 
@@ -218,11 +222,6 @@ public class ClusterContext
         return me.equals( server );
     }
 
-    public boolean isElectedAs( String roleName )
-    {
-        return me.equals( configuration.getElected( roleName ) );
-    }
-
     public boolean isInCluster()
     {
         return Iterables.count( configuration.getMemberURIs() ) != 0;
@@ -232,11 +231,6 @@ public class ClusterContext
     {
         return joiningInstances;
     }
-
-//    public VersionMapper getVersionMapper()
-//    {
-//        return versionMapper;
-//    }
 
     public ObjectOutputStreamFactory getObjectOutputStreamFactory() {
         return objectOutputStreamFactory;
@@ -285,5 +279,10 @@ public class ClusterContext
     public boolean hasJoinBeenDenied()
     {
         return joinDenied;
+    }
+
+    public Iterable<InstanceId> getOtherInstances()
+    {
+        return filter( not( in( me ) ), configuration.getMemberIds() );
     }
 }

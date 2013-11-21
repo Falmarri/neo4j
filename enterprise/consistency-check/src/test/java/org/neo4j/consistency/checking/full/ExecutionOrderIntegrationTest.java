@@ -32,6 +32,8 @@ import org.mockito.stubbing.Answer;
 
 import org.neo4j.consistency.ConsistencyCheckSettings;
 import org.neo4j.consistency.checking.CheckDecorator;
+import org.neo4j.consistency.checking.CheckerEngine;
+import org.neo4j.consistency.checking.GraphStoreFixture;
 import org.neo4j.consistency.checking.PrimitiveRecordCheck;
 import org.neo4j.consistency.checking.RecordCheck;
 import org.neo4j.consistency.report.ConsistencyReport;
@@ -58,7 +60,6 @@ import org.neo4j.kernel.impl.nioneo.store.PropertyRecord;
 import org.neo4j.kernel.impl.nioneo.store.RelationshipRecord;
 import org.neo4j.kernel.impl.nioneo.store.RelationshipTypeTokenRecord;
 import org.neo4j.kernel.impl.nioneo.store.StoreAccess;
-import org.neo4j.test.GraphStoreFixture;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
@@ -79,17 +80,12 @@ public class ExecutionOrderIntegrationTest
         protected void generateInitialData( GraphDatabaseService graphDb )
         {
             // TODO: create bigger sample graph here
-            org.neo4j.graphdb.Transaction tx = graphDb.beginTx();
-            try
+            try ( org.neo4j.graphdb.Transaction tx = graphDb.beginTx() )
             {
                 Node node1 = set( graphDb.createNode() );
                 Node node2 = set( graphDb.createNode(), property( "key", "value" ) );
                 node1.createRelationshipTo( node2, DynamicRelationshipType.withName( "C" ) );
                 tx.success();
-            }
-            finally
-            {
-                tx.finish();
             }
         }
     };
@@ -99,7 +95,7 @@ public class ExecutionOrderIntegrationTest
     public void shouldRunSameChecksInMultiPassAsInSingleSingleThreadedPass() throws Exception
     {
         // given
-        StoreAccess store = fixture.storeAccess();
+        StoreAccess store = fixture.directStoreAccess().nativeStores();
         DiffRecordAccess access = FullCheck.recordAccess( store );
 
         FullCheck singlePass = new FullCheck( config( TaskExecutionOrder.SINGLE_THREADED ),
@@ -114,10 +110,11 @@ public class ExecutionOrderIntegrationTest
         InvocationLog multiPassChecks = new InvocationLog();
 
         // when
-        singlePass.execute( store, new LogDecorator( singlePassChecks ), access,
-                new InconsistencyReport( logger, singlePassSummary ) );
-        multiPass.execute( store, new LogDecorator( multiPassChecks ), access,
-                new InconsistencyReport( logger, multiPassSummary ) );
+        singlePass.execute( fixture.directStoreAccess(), new LogDecorator( singlePassChecks ), access, new InconsistencyReport( logger,
+                singlePassSummary ) );
+
+        multiPass.execute( fixture.directStoreAccess(), new LogDecorator( multiPassChecks ), access, new InconsistencyReport( logger,
+                multiPassSummary ) );
 
         // then
         verifyZeroInteractions( logger );
@@ -193,27 +190,31 @@ public class ExecutionOrderIntegrationTest
             Map<String, Throwable> extras = new HashMap<>( multiPassChecks );
             missing.keySet().removeAll( multiPassChecks.keySet() );
             extras.keySet().removeAll( singlePassChecks.keySet() );
+
+            StringBuilder headers = new StringBuilder("\n");
             StringWriter diff = new StringWriter();
             PrintWriter writer = new PrintWriter( diff );
             if ( !missing.isEmpty() )
             {
                 writer.append( "These expected checks were missing:\n" );
-                for ( Throwable check : missing.values() )
+                for ( Map.Entry<String, Throwable> check : missing.entrySet() )
                 {
                     writer.append( "  " );
-                    check.printStackTrace( writer );
+                    headers.append( "Missing: " ).append( check.getKey() ).append( "\n" );
+                    check.getValue().printStackTrace( writer );
                 }
             }
             if ( !extras.isEmpty() )
             {
                 writer.append( "These extra checks were not expected:\n" );
-                for ( Throwable check : extras.values() )
+                for ( Map.Entry<String, Throwable> check : extras.entrySet() )
                 {
                     writer.append( "  " );
-                    check.printStackTrace( writer );
+                    headers.append( "Unexpected: " ).append( check.getKey() ).append( "\n" );
+                    check.getValue().printStackTrace( writer );
                 }
             }
-            fail( diff.toString() );
+            fail( headers.toString() + diff.toString() );
         }
     }
 
@@ -226,7 +227,7 @@ public class ExecutionOrderIntegrationTest
             this.log = log;
         }
 
-        <REC extends AbstractBaseRecord, REP extends ConsistencyReport<REC, REP>> RecordCheck<REC, REP> logging(
+        <REC extends AbstractBaseRecord, REP extends ConsistencyReport> RecordCheck<REC, REP> logging(
                 RecordCheck<REC, REP> checker )
         {
             return new LoggingChecker<>( checker, log );
@@ -282,9 +283,16 @@ public class ExecutionOrderIntegrationTest
         {
             return logging( checker );
         }
+
+        @Override
+        public RecordCheck<NodeRecord, ConsistencyReport.LabelsMatchReport> decorateLabelMatchChecker(
+                RecordCheck<NodeRecord, ConsistencyReport.LabelsMatchReport> checker )
+        {
+            return logging( checker );
+        }
     }
 
-    private static class LoggingChecker<REC extends AbstractBaseRecord, REP extends ConsistencyReport<REC, REP>>
+    private static class LoggingChecker<REC extends AbstractBaseRecord, REP extends ConsistencyReport>
             implements RecordCheck<REC, REP>
     {
         private final RecordCheck<REC, REP> checker;
@@ -297,15 +305,16 @@ public class ExecutionOrderIntegrationTest
         }
 
         @Override
-        public void check( REC record, REP report, RecordAccess records )
+        public void check( REC record, CheckerEngine<REC, REP> engine, RecordAccess records )
         {
-            checker.check( record, report, new ComparativeLogging( (DiffRecordAccess) records, log ) );
+            checker.check( record, engine, new ComparativeLogging( (DiffRecordAccess) records, log ) );
         }
 
         @Override
-        public void checkChange( REC oldRecord, REC newRecord, REP report, DiffRecordAccess records )
+        public void checkChange( REC oldRecord, REC newRecord, CheckerEngine<REC, REP> engine,
+                                 DiffRecordAccess records )
         {
-            checker.checkChange( oldRecord, newRecord, report, new ComparativeLogging( records, log ) );
+            checker.checkChange( oldRecord, newRecord, engine, new ComparativeLogging( records, log ) );
         }
     }
 

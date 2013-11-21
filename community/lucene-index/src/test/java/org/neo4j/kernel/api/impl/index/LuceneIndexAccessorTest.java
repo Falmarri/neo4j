@@ -20,18 +20,20 @@
 package org.neo4j.kernel.api.impl.index;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.List;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-
+import org.neo4j.kernel.api.index.IndexEntryConflictException;
 import org.neo4j.kernel.api.index.IndexReader;
+import org.neo4j.kernel.api.index.IndexUpdater;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
+import org.neo4j.kernel.impl.api.index.IndexUpdateMode;
 
 import static java.util.Arrays.asList;
-
-import static org.junit.Assert.assertEquals;
-
+import static org.junit.Assert.*;
 import static org.neo4j.helpers.collection.IteratorUtil.asSet;
 import static org.neo4j.helpers.collection.IteratorUtil.asUniqueSet;
 import static org.neo4j.helpers.collection.IteratorUtil.emptySetOf;
@@ -44,24 +46,24 @@ public class LuceneIndexAccessorTest
     public void indexReaderShouldHonorRepeatableReads() throws Exception
     {
         // GIVEN
-        accessor.updateAndCommit( asList( add( nodeId, value ) ) );
+        updateAndCommit( asList( add( nodeId, value ) ) );
         IndexReader reader = accessor.newReader();
 
         // WHEN
-        accessor.updateAndCommit( asList( remove( nodeId, value ) ) );
+        updateAndCommit( asList( remove( nodeId, value ) ) );
 
         // THEN
         assertEquals( asSet( nodeId ), asUniqueSet( reader.lookup( value ) ) );
         reader.close();
     }
-    
+
     @Test
     public void multipleIndexReadersFromDifferentPointsInTimeCanSeeDifferentResults() throws Exception
     {
         // WHEN
-        accessor.updateAndCommit( asList( add( nodeId, value ) ) );
+        updateAndCommit( asList( add( nodeId, value ) ) );
         IndexReader firstReader = accessor.newReader();
-        accessor.updateAndCommit( asList( add( nodeId2, value ) ) );
+        updateAndCommit( asList( add( nodeId2, value ) ) );
         IndexReader secondReader = accessor.newReader();
 
         // THEN
@@ -75,7 +77,7 @@ public class LuceneIndexAccessorTest
     public void canAddNewData() throws Exception
     {
         // WHEN
-        accessor.updateAndCommit( asList(
+        updateAndCommit( asList(
                 add( nodeId, value ),
                 add( nodeId2, value2 ) ) );
         IndexReader reader = accessor.newReader();
@@ -89,10 +91,10 @@ public class LuceneIndexAccessorTest
     public void canChangeExistingData() throws Exception
     {
         // GIVEN
-        accessor.updateAndCommit( asList( add( nodeId, value ) ) );
+        updateAndCommit( asList( add( nodeId, value ) ) );
 
         // WHEN
-        accessor.updateAndCommit( asList( change( nodeId, value, value2 ) ) );
+        updateAndCommit( asList( change( nodeId, value, value2 ) ) );
         IndexReader reader = accessor.newReader();
 
         // THEN
@@ -105,19 +107,19 @@ public class LuceneIndexAccessorTest
     public void canRemoveExistingData() throws Exception
     {
         // GIVEN
-        accessor.updateAndCommit( asList(
+        updateAndCommit( asList(
                 add( nodeId, value ),
                 add( nodeId2, value ) ) );
 
         // WHEN
-        accessor.updateAndCommit( asList( remove( nodeId, value ) ) );
+        updateAndCommit( asList( remove( nodeId, value ) ) );
         IndexReader reader = accessor.newReader();
 
         // THEN
         assertEquals( asSet( nodeId2 ), asUniqueSet( reader.lookup( value ) ) );
         reader.close();
     }
-    
+
     private final long nodeId = 1, nodeId2 = 2;
     private final Object value = "value", value2 = 40;
     private final LuceneDocumentStructure documentLogic = new LuceneDocumentStructure();
@@ -152,5 +154,17 @@ public class LuceneIndexAccessorTest
     private NodePropertyUpdate change( long nodeId, Object valueBefore, Object valueAfter )
     {
         return NodePropertyUpdate.change( nodeId, 0, valueBefore, new long[0], valueAfter, new long[0] );
+    }
+
+    private void updateAndCommit( List<NodePropertyUpdate> nodePropertyUpdates )
+            throws IOException, IndexEntryConflictException
+    {
+        try ( IndexUpdater updater = accessor.newUpdater( IndexUpdateMode.ONLINE ) )
+        {
+            for ( NodePropertyUpdate update : nodePropertyUpdates )
+            {
+                updater.process( update );
+            }
+        }
     }
 }

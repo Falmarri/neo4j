@@ -24,7 +24,7 @@ import java.util.Set;
 
 import org.neo4j.graphdb.event.TransactionData;
 import org.neo4j.kernel.api.properties.DefinedProperty;
-import org.neo4j.kernel.impl.transaction.TxHook;
+import org.neo4j.kernel.impl.transaction.RemoteTxHook;
 import org.neo4j.kernel.impl.transaction.xaframework.TxIdGenerator;
 import org.neo4j.kernel.impl.util.ArrayMap;
 import org.neo4j.kernel.impl.util.RelIdArray;
@@ -39,6 +39,8 @@ import org.neo4j.kernel.impl.util.RelIdArray;
  * </ul>
  * @author Mattias
  *
+ * This is slowly being replaced / merged with the new KernelTransaction transaction state,
+ * {@link org.neo4j.kernel.impl.api.state.TxState}, please avoid adding more functionality to this class.
  */
 public interface TransactionState
 {
@@ -88,7 +90,7 @@ public interface TransactionState
 
     boolean hasChanges();
 
-    TxHook getTxHook();
+    RemoteTxHook getTxHook();
 
     TxIdGenerator getTxIdGenerator();
 

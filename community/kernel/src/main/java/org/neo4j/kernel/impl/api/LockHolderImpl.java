@@ -53,6 +53,9 @@ public class LockHolderImpl implements LockHolder
     public LockHolderImpl( LockManager lockManager, Transaction tx, NodeManager nodeManager )
     {
         this.lockManager = lockManager;
+
+        // Once we have moved all locking into the kernel, we should refactor the locking to not use the CoreAPI
+        // transaction to track who is locking stuff.
         this.tx = tx;
 
         // TODO Not happy about the NodeManager dependency. It's needed a.t.m. for making
@@ -117,20 +120,70 @@ public class LockHolderImpl implements LockHolder
     }
 
     @Override
-    public void acquireIndexEntryReadLock( int labelId, int propertyKeyId, String propertyValue )
-    {
-        IndexEntryLock resource = new IndexEntryLock( labelId, propertyKeyId, propertyValue );
-        lockManager.getReadLock( resource, tx );
-        locks.add( new LockReleaseCallback( LockType.READ, resource ) );
-    }
-
-    @Override
     public void acquireIndexEntryWriteLock( int labelId, int propertyKeyId, String propertyValue )
     {
         IndexEntryLock resource = new IndexEntryLock( labelId, propertyKeyId, propertyValue );
         lockManager.getWriteLock( resource, tx );
         locks.add( new LockReleaseCallback( LockType.WRITE, resource ) );
     }
+
+    @Override
+    public ReleasableLock getReleasableIndexEntryReadLock( int labelId, int propertyKeyId, String propertyValue )
+    {
+        IndexEntryLock resource = new IndexEntryLock( labelId, propertyKeyId, propertyValue );
+        lockManager.getReadLock( resource, tx );
+        return new RegisteringReleasableLock( new LockReleaseCallback( LockType.READ, resource ) );
+    }
+
+    @Override
+    public ReleasableLock getReleasableIndexEntryWriteLock( int labelId, int propertyKeyId, String propertyValue )
+    {
+        IndexEntryLock resource = new IndexEntryLock( labelId, propertyKeyId, propertyValue );
+        lockManager.getWriteLock( resource, tx );
+        return new RegisteringReleasableLock( new LockReleaseCallback( LockType.WRITE, resource ) );
+    }
+
+    private class RegisteringReleasableLock implements ReleasableLock
+    {
+        private LockReleaseCallback callback;
+
+        private RegisteringReleasableLock( LockReleaseCallback callback )
+        {
+            this.callback = callback;
+        }
+
+        @Override
+        public void release()
+        {
+            if ( callback == null )
+            {
+                throw new IllegalStateException();
+            }
+            callback.release();
+            callback = null;
+        }
+
+        @Override
+        public void registerWithTransaction()
+        {
+            if ( callback == null )
+            {
+                throw new IllegalStateException();
+            }
+            locks.add( callback );
+            callback = null;
+        }
+
+        @Override
+        public void close()
+        {
+            if ( callback != null )
+            {
+                registerWithTransaction();
+            }
+        }
+    }
+
 
     @Override
     public void releaseLocks() throws ReleaseLocksFailedKernelException
@@ -247,13 +300,6 @@ public class LockHolderImpl implements LockHolder
 
         @Override
         public Iterable<String> getPropertyKeys()
-        {
-            throw unsupportedOperation();
-        }
-
-        @Override
-        @Deprecated
-        public Iterable<Object> getPropertyValues()
         {
             throw unsupportedOperation();
         }
@@ -473,8 +519,8 @@ public class LockHolderImpl implements LockHolder
         @Override
         public boolean equals( Object o )
         {
-            return o instanceof GraphProperties &&
-                    this.getNodeManager().equals( ((GraphProperties) o).getNodeManager() );
+            return o instanceof GraphProperties
+                    && this.getNodeManager().equals( ((GraphProperties) o).getNodeManager() );
         }
     }
 }

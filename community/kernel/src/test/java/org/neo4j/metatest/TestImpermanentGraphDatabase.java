@@ -22,21 +22,24 @@ package org.neo4j.metatest;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-
+import org.neo4j.graphdb.DynamicRelationshipType;
+import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.helpers.collection.IteratorUtil;
 import org.neo4j.test.ImpermanentGraphDatabase;
 import org.neo4j.tooling.GlobalGraphOperations;
 
-import static org.junit.Assert.assertEquals;
+import static org.hamcrest.Matchers.is;
+import static org.junit.Assert.*;
+
+import static org.neo4j.test.GraphDatabaseServiceCleaner.cleanDatabaseContent;
 
 public class TestImpermanentGraphDatabase
 {
     private ImpermanentGraphDatabase db;
 
     @Before
-    @SuppressWarnings("deprecation")
-    public void Given()
+    public void createDb()
     {
         db = new ImpermanentGraphDatabase();
     }
@@ -52,45 +55,57 @@ public class TestImpermanentGraphDatabase
     {
         createNode();
 
-        assertEquals( "Expected one new node, plus reference node", 2, nodeCount() );
+        assertEquals( "Expected one new node", 1, nodeCount() );
     }
 
     @Test
-    public void should_keep_reference_node()
-    {
-        createNode();
-        assertEquals( "Expected one new node, plus reference node", 2, nodeCount() );
-        db.cleanContent( true );
-        assertEquals( "reference node", 1, nodeCount() );
-        db.cleanContent( false );
-        assertEquals( "reference node", 0, nodeCount() );
-    }
-
-    @Test
-    @SuppressWarnings("deprecation")
     public void data_should_not_survive_shutdown()
     {
         createNode();
         db.shutdown();
 
-        db = new ImpermanentGraphDatabase();
+        createDb();
 
-        assertEquals( "Should not see anything but the default reference node.", 1, nodeCount() );
+        assertEquals( "Should not see anything.", 0, nodeCount() );
+    }
+
+    @Test
+    public void should_remove_all_data()
+    {
+        try ( Transaction tx = db.beginTx() )
+        {
+            DynamicRelationshipType relationshipType = DynamicRelationshipType.withName("R");
+
+            Node n1 = db.createNode();
+            Node n2 = db.createNode();
+            Node n3 = db.createNode();
+
+            n1.createRelationshipTo(n2, relationshipType);
+            n2.createRelationshipTo(n1, relationshipType);
+            n3.createRelationshipTo(n1, relationshipType);
+
+            tx.success();
+        }
+
+        cleanDatabaseContent( db );
+
+        assertThat( nodeCount(), is( 0 ) );
     }
 
     private int nodeCount()
     {
         Transaction transaction = db.beginTx();
         int count = IteratorUtil.count( GlobalGraphOperations.at( db ).getAllNodes() );
-        transaction.finish();
+        transaction.close();
         return count;
     }
 
     private void createNode()
     {
-        Transaction tx = db.beginTx();
-        db.createNode();
-        tx.success();
-        tx.finish();
+        try ( Transaction tx = db.beginTx() )
+        {
+            db.createNode();
+            tx.success();
+        }
     }
 }

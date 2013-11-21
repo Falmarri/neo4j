@@ -19,6 +19,7 @@
  */
 package org.neo4j.kernel.impl.api.index;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -38,14 +39,17 @@ import org.neo4j.graphdb.Transaction;
 import org.neo4j.helpers.Pair;
 import org.neo4j.helpers.collection.MapUtil;
 import org.neo4j.helpers.collection.Visitor;
-import org.neo4j.kernel.ThreadToStatementContextBridge;
 import org.neo4j.kernel.api.ReadOperations;
 import org.neo4j.kernel.api.Statement;
+import org.neo4j.kernel.api.index.IndexEntryConflictException;
 import org.neo4j.kernel.api.index.IndexPopulator;
+import org.neo4j.kernel.api.index.IndexUpdater;
 import org.neo4j.kernel.api.index.InternalIndexState;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
 import org.neo4j.kernel.impl.api.KernelSchemaStateStore;
+import org.neo4j.kernel.impl.coreapi.ThreadToStatementContextBridge;
 import org.neo4j.kernel.impl.nioneo.xa.NeoStoreIndexStoreView;
+import org.neo4j.kernel.impl.transaction.XaDataSourceManager;
 import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.kernel.impl.util.TestLogger;
 import org.neo4j.kernel.logging.SingleLoggingService;
@@ -56,7 +60,6 @@ import org.neo4j.test.OtherThreadExecutor.WorkerCommand;
 import org.neo4j.test.TestGraphDatabaseFactory;
 
 import static java.lang.String.format;
-import static java.util.Arrays.asList;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.IsEqual.equalTo;
@@ -73,6 +76,8 @@ import static org.mockito.Mockito.when;
 import static org.neo4j.helpers.collection.IteratorUtil.asSet;
 import static org.neo4j.helpers.collection.MapUtil.genericMap;
 import static org.neo4j.helpers.collection.MapUtil.map;
+import static org.neo4j.kernel.api.index.NodePropertyUpdate.change;
+import static org.neo4j.kernel.api.index.NodePropertyUpdate.remove;
 import static org.neo4j.kernel.impl.api.index.TestSchemaIndexProviderDescriptor.PROVIDER_DESCRIPTOR;
 import static org.neo4j.kernel.impl.util.TestLogger.LogCall.error;
 import static org.neo4j.kernel.impl.util.TestLogger.LogCall.info;
@@ -373,27 +378,42 @@ public class IndexPopulationJobTest
             if ( nodeId == 2 )
             {
                 long[] labels = new long[]{label};
-                job.update( asList( NodePropertyUpdate.change( nodeToChange, propertyKeyId, previousValue, labels,
-                        newValue, labels ) ) );
+                job.update( change( nodeToChange, propertyKeyId, previousValue, labels, newValue, labels ) );
             }
             added.add( Pair.of( nodeId, propertyValue ) );
         }
 
         @Override
-        public void update( Iterable<NodePropertyUpdate> updates )
+        public IndexUpdater newPopulatingUpdater()
         {
-            for ( NodePropertyUpdate update : updates )
+            return new IndexUpdater()
             {
-                switch ( update.getUpdateMode() )
+                @Override
+                public void process( NodePropertyUpdate update ) throws IOException, IndexEntryConflictException
                 {
-                case ADDED: case CHANGED:
-                    added.add( Pair.of( update.getNodeId(), update.getValueAfter() ) );
-                    break;
-                default:
-                    throw new IllegalArgumentException( update.getUpdateMode().name() );
+                    switch ( update.getUpdateMode() )
+                    {
+                        case ADDED:
+                        case CHANGED:
+                            added.add( Pair.of( update.getNodeId(), update.getValueAfter() ) );
+                            break;
+                        default:
+                            throw new IllegalArgumentException( update.getUpdateMode().name() );
+                    }
                 }
-            }
 
+
+                @Override
+                public void close() throws IOException, IndexEntryConflictException
+                {
+                }
+
+                @Override
+                public void remove( Iterable<Long> nodeIds )
+                {
+                    throw new UnsupportedOperationException( "not expected" );
+                }
+            };
         }
 
         public void setJob( IndexPopulationJob job )
@@ -428,32 +448,46 @@ public class IndexPopulationJobTest
         @Override
         public void add( long nodeId, Object propertyValue )
         {
-            if ( nodeId == 3 )
+            if ( nodeId == 2 )
             {
-                job.update( asList( NodePropertyUpdate.remove( nodeToDelete, propertyKeyId, valueToDelete,
-                        new long[]{label} ) ) );
+                job.update( remove( nodeToDelete, propertyKeyId, valueToDelete, new long[] { label } ) );
             }
             added.put( nodeId, propertyValue );
         }
 
         @Override
-        public void update( Iterable<NodePropertyUpdate> updates )
+        public IndexUpdater newPopulatingUpdater()
         {
-            for ( NodePropertyUpdate update : updates )
+            return new IndexUpdater()
             {
-                switch ( update.getUpdateMode() )
+                @Override
+                public void process( NodePropertyUpdate update ) throws IOException, IndexEntryConflictException
                 {
-                case ADDED: case CHANGED:
-                    added.put( update.getNodeId(), update.getValueAfter() );
-                    break;
-                case REMOVED:
-                    removed.put( update.getNodeId(), update.getValueBefore() );
-                    break;
-                default:
-                    throw new IllegalArgumentException( update.getUpdateMode().name() );
+                    switch ( update.getUpdateMode() )
+                    {
+                        case ADDED:
+                        case CHANGED:
+                            added.put( update.getNodeId(), update.getValueAfter() );
+                        break;
+                        case REMOVED:
+                            removed.put( update.getNodeId(), update.getValueBefore() );
+                            break;
+                        default:
+                            throw new IllegalArgumentException( update.getUpdateMode().name() );
+                    }
                 }
-            }
 
+                @Override
+                public void close() throws IOException, IndexEntryConflictException
+                {
+                }
+
+                @Override
+                public void remove( Iterable<Long> nodeIds )
+                {
+                    throw new UnsupportedOperationException( "not expected" );
+                }
+            };
         }
     }
 
@@ -477,14 +511,15 @@ public class IndexPopulationJobTest
         populator = mock( IndexPopulator.class );
         stateHolder = new KernelSchemaStateStore();
 
-        Transaction tx = db.beginTx();
-        Statement statement = ctxProvider.statement();
-        labelId = statement.schemaWriteOperations().labelGetOrCreateForName( FIRST.name() );
+        try ( Transaction tx = db.beginTx() )
+        {
+            Statement statement = ctxProvider.instance();
+            labelId = statement.schemaWriteOperations().labelGetOrCreateForName( FIRST.name() );
 
-        statement.schemaWriteOperations().labelGetOrCreateForName( SECOND.name() );
-        statement.close();
-        tx.success();
-        tx.finish();
+            statement.schemaWriteOperations().labelGetOrCreateForName( SECOND.name() );
+            statement.close();
+            tx.success();
+        }
     }
 
     @After
@@ -518,7 +553,7 @@ public class IndexPopulationJobTest
         IndexDescriptor descriptor;
         try ( Transaction tx = db.beginTx() )
         {
-            ReadOperations statement = ctxProvider.statement().readOperations();
+            ReadOperations statement = ctxProvider.instance().readOperations();
             descriptor = new IndexDescriptor( statement.labelGetForName( label.name() ),
                     statement.propertyKeyGetForName( propertyKey ) );
             tx.success();
@@ -551,16 +586,16 @@ public class IndexPopulationJobTest
     {
         try ( Transaction tx = db.beginTx() )
         {
-            int result = ctxProvider.statement().readOperations().propertyKeyGetForName( name );
+            int result = ctxProvider.instance().readOperations().propertyKeyGetForName( name );
             tx.success();
             return result;
         }
     }
 
-    @SuppressWarnings( "deprecation" )
     private NeoStoreIndexStoreView newStoreView()
     {
         return new NeoStoreIndexStoreView(
-                db.getXaDataSourceManager().getNeoStoreDataSource().getNeoStore() );
+                db.getDependencyResolver().resolveDependency( XaDataSourceManager.class )
+                        .getNeoStoreDataSource().getNeoStore() );
     }
 }

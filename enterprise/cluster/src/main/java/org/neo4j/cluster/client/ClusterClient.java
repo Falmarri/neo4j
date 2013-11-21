@@ -270,7 +270,7 @@ public class ClusterClient extends LifecycleAdapter
 
         MultiPaxosServerFactory protocolServerFactory = new MultiPaxosServerFactory(
                 new ClusterConfiguration( config
-                .getClusterName() ), logging );
+                .getClusterName(), logging.getMessagesLog( ClusterConfiguration.class ) ), logging );
 
         InMemoryAcceptorInstanceStore acceptorInstanceStore = new InMemoryAcceptorInstanceStore();
 
@@ -283,12 +283,6 @@ public class ClusterClient extends LifecycleAdapter
             {
                 return config.getAddress();
             }
-
-            @Override
-            public int defaultPort()
-            {
-                return 5001;
-            }
         }, logging );
 
         NetworkSender sender = new NetworkSender(new NetworkSender.Configuration()
@@ -297,6 +291,12 @@ public class ClusterClient extends LifecycleAdapter
             public int defaultPort()
             {
                 return 5001;
+            }
+
+            @Override
+            public int port()
+            {
+                return config.getAddress().getPort();
             }
         }, receiver, logging);
 
@@ -315,11 +315,17 @@ public class ClusterClient extends LifecycleAdapter
 
         receiver.addNetworkChannelsListener( new NetworkReceiver.NetworkChannelsListener()
         {
+            volatile private StateTransitionLogger logger = null;
+
             @Override
             public void listeningAt( URI me )
             {
                 server.listeningAt( me );
-                server.addStateTransitionListener( new StateTransitionLogger( logging ) );
+                if (logger == null)
+                {
+                    logger = new StateTransitionLogger( logging );
+                    server.addStateTransitionListener( logger );
+                }
             }
 
             @Override

@@ -26,8 +26,8 @@ import java.util.List;
 
 import org.neo4j.graphdb.DependencyResolver.SelectionStrategy;
 import org.neo4j.helpers.collection.PrefetchingIterator;
-import org.neo4j.kernel.api.scan.LabelScanStore;
-import org.neo4j.kernel.api.scan.NodeLabelUpdate;
+import org.neo4j.kernel.api.labelscan.LabelScanStore;
+import org.neo4j.kernel.api.labelscan.NodeLabelUpdate;
 import org.neo4j.kernel.extension.KernelExtensionFactory;
 import org.neo4j.kernel.extension.KernelExtensions;
 import org.neo4j.kernel.impl.api.AbstractPrimitiveLongIterator;
@@ -61,25 +61,25 @@ import static org.neo4j.kernel.extension.KernelExtensionUtil.servicesClassPathEn
 public class LabelScanStoreProvider extends LifecycleAdapter implements Comparable<LabelScanStoreProvider>
 {
     /**
-     * SelectionStrategy for {@link KernelExtensions kernel extensions loading} where the one with
-     * highest {@link #kernelExtensionPriority() priority} will be selected. If there are no such stores
-     * then an {@link IllegalStateException} will be thrown.
+     * SelectionStrategy for {@link KernelExtensions kernel extensions loading} where the one with highest
+     * {@link #priority} will be selected. If there are no such stores  then an {@link IllegalStateException} will be
+     * thrown.
      */
-    public static SelectionStrategy<LabelScanStoreProvider> HIGHEST_PRIORITIZED =
-            new SelectionStrategy<LabelScanStoreProvider>()
+    public static SelectionStrategy HIGHEST_PRIORITIZED =
+            new SelectionStrategy()
     {
         @Override
-        public LabelScanStoreProvider select( Class<LabelScanStoreProvider> type, Iterable<LabelScanStoreProvider> candidates )
+        public <T> T select( Class<T> type, Iterable<T> candidates )
                 throws IllegalArgumentException
         {
-            List<LabelScanStoreProvider> all = addToCollection( candidates, new ArrayList<LabelScanStoreProvider>() );
+            List<Comparable> all = (List<Comparable>) addToCollection( candidates, new ArrayList<T>() );
             if ( all.isEmpty() )
             {
                 throw new IllegalArgumentException( "No label scan store provider " +
                         LabelScanStoreProvider.class.getName() + " found. " + servicesClassPathEntryInformation() );
             }
             Collections.sort( all );
-            return all.get( all.size()-1 );
+            return (T) all.get( all.size()-1 );
         }
     };
 

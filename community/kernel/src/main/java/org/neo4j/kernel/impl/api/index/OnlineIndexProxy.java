@@ -19,15 +19,16 @@
  */
 package org.neo4j.kernel.impl.api.index;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.concurrent.Future;
 
+import org.neo4j.graphdb.ResourceIterator;
 import org.neo4j.kernel.api.exceptions.index.IndexPopulationFailedKernelException;
 import org.neo4j.kernel.api.index.IndexAccessor;
-import org.neo4j.kernel.api.index.IndexEntryConflictException;
 import org.neo4j.kernel.api.index.IndexReader;
+import org.neo4j.kernel.api.index.IndexUpdater;
 import org.neo4j.kernel.api.index.InternalIndexState;
-import org.neo4j.kernel.api.index.NodePropertyUpdate;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
 
 import static org.neo4j.helpers.FutureAdapter.VOID;
@@ -52,23 +53,11 @@ public class OnlineIndexProxy implements IndexProxy
     }
 
     @Override
-    public void update( Iterable<NodePropertyUpdate> updates ) throws IOException
+    public IndexUpdater newUpdater( final IndexUpdateMode mode )
     {
-        try
-        {
-            accessor.updateAndCommit( updates );
-        }
-        catch ( IndexEntryConflictException e )
-        {
-            throw e.notAllowed( descriptor );
-        }
+        return accessor.newUpdater( mode );
     }
-    
-    @Override
-    public void recover( Iterable<NodePropertyUpdate> updates ) throws IOException
-    {
-        accessor.recover( updates );
-    }
+
 
     @Override
     public Future<Void> drop() throws IOException
@@ -136,6 +125,12 @@ public class OnlineIndexProxy implements IndexProxy
     public IndexPopulationFailure getPopulationFailure() throws IllegalStateException
     {
         throw new IllegalStateException( this + " is ONLINE" );
+    }
+
+    @Override
+    public ResourceIterator<File> snapshotFiles() throws IOException
+    {
+        return accessor.snapshotFiles();
     }
 
     @Override

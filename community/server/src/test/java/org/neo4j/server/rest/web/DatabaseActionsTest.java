@@ -302,7 +302,7 @@ public class DatabaseActionsTest
         long nodeId = createNode( map( "emptyArray", new int[]{} ) );
 
         // When
-        actions.setNodeProperty( nodeId, "emptyArray", new ArrayList<Object>() );
+        actions.setNodeProperty( nodeId, "emptyArray", new ArrayList<>() );
 
         // Then
         Transaction transaction = graph.beginTx();
@@ -637,7 +637,7 @@ public class DatabaseActionsTest
     public void shouldBeAbleToSetRelationshipProperties() throws Exception
     {
         long relationshipId = graphdbHelper.createRelationship( "KNOWS" );
-        Map<String, Object> properties = new HashMap<String, Object>();
+        Map<String, Object> properties = new HashMap<>();
         properties.put( "foo", "bar" );
         properties.put( "number", 10 );
         actions.setAllRelationshipProperties( relationshipId, properties );
@@ -756,15 +756,6 @@ public class DatabaseActionsTest
         assertEquals( Arrays.asList( nodeId ), graphdbHelper.queryIndexedNodes( indexName, key, "spaces" ) );
         assertEquals( Arrays.asList( nodeId ), graphdbHelper.queryIndexedNodes( indexName, key, "*spaces*" ) );
         assertTrue( graphdbHelper.getIndexedNodes( indexName, key, "nohit" ).isEmpty() );
-    }
-
-    // TODO remove once reference node is gone
-    @Test
-    public void shouldBeAbleToGetReferenceNode() throws Exception
-    {
-        @SuppressWarnings("deprecation"/*even if reference node is deprecated, we still need to test it*/)
-        NodeRepresentation rep = actions.getReferenceNode();
-        assertNotNull( actions.getNode( rep.getId() ) );
     }
 
     @Test
@@ -1462,7 +1453,7 @@ public class DatabaseActionsTest
         assertEquals( 1, serialized.size() );
         Map<?, ?> definition = (Map<?, ?>) serialized.get( 0 );
         assertEquals( labelName, definition.get( "label" ) );
-        assertEquals( asList( propertyKey ), definition.get( "property-keys" ) );
+        assertEquals( asList( propertyKey ), definition.get( "property_keys" ) );
     }
 
     @Test
@@ -1479,7 +1470,7 @@ public class DatabaseActionsTest
         try
         {
             Iterable<ConstraintDefinition> defs = graphdbHelper.getPropertyUniquenessConstraints( labelName, propertyKey );
-            assertEquals( asSet( propertyKey ), asSet( single( defs ).asUniquenessConstraint().getPropertyKeys() ) );
+            assertEquals( asSet( propertyKey ), asSet( single( defs ).getPropertyKeys() ) );
             tx.success();
         }
         finally
@@ -1527,7 +1518,7 @@ public class DatabaseActionsTest
         assertEquals( 1, serialized.size() );
         Map<?, ?> definition = (Map<?, ?>) serialized.get( 0 );
         assertEquals( labelName, definition.get( "label" ) );
-        assertEquals( asList( propertyKey ), definition.get( "property-keys" ) );
+        assertEquals( asList( propertyKey ), definition.get( "property_keys" ) );
         assertEquals( "UNIQUENESS", definition.get( "type" ) );
     }
 }

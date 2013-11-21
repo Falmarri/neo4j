@@ -19,10 +19,6 @@
  */
 package org.neo4j.consistency.checking;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-
 import org.neo4j.consistency.report.ConsistencyReport;
 import org.neo4j.consistency.store.DiffRecordAccess;
 import org.neo4j.consistency.store.RecordAccess;
@@ -30,18 +26,13 @@ import org.neo4j.consistency.store.RecordReference;
 import org.neo4j.kernel.impl.nioneo.store.DynamicRecord;
 import org.neo4j.kernel.impl.nioneo.store.LabelTokenRecord;
 import org.neo4j.kernel.impl.nioneo.store.NodeRecord;
-import org.neo4j.kernel.impl.nioneo.store.PropertyType;
 import org.neo4j.kernel.impl.nioneo.store.Record;
 import org.neo4j.kernel.impl.nioneo.store.RelationshipRecord;
 import org.neo4j.kernel.impl.nioneo.store.labels.DynamicNodeLabels;
 import org.neo4j.kernel.impl.nioneo.store.labels.NodeLabels;
 import org.neo4j.kernel.impl.nioneo.store.labels.NodeLabelsField;
 
-import static java.util.Arrays.copyOfRange;
 import static java.util.Arrays.sort;
-
-import static org.neo4j.kernel.impl.nioneo.store.AbstractDynamicStore.readFullByteArrayFromHeavyRecords;
-import static org.neo4j.kernel.impl.nioneo.store.DynamicArrayStore.getRightArray;
 
 class NodeRecordCheck extends PrimitiveRecordCheck<NodeRecord, ConsistencyReport.NodeConsistencyReport>
 {
@@ -56,29 +47,31 @@ class NodeRecordCheck extends PrimitiveRecordCheck<NodeRecord, ConsistencyReport
         NEXT_REL
         {
             @Override
-            public void checkConsistency( NodeRecord node, ConsistencyReport.NodeConsistencyReport report,
+            public void checkConsistency( NodeRecord node,
+                                          CheckerEngine<NodeRecord, ConsistencyReport.NodeConsistencyReport> engine,
                                           RecordAccess records )
             {
                 if ( !Record.NO_NEXT_RELATIONSHIP.is( node.getNextRel() ) )
                 {
-                    report.forReference( records.relationship( node.getNextRel() ), this );
+                    engine.comparativeCheck( records.relationship( node.getNextRel() ), this );
                 }
             }
 
             @Override
             public void checkReference( NodeRecord node, RelationshipRecord relationship,
-                                        ConsistencyReport.NodeConsistencyReport report, RecordAccess records )
+                                        CheckerEngine<NodeRecord, ConsistencyReport.NodeConsistencyReport> engine,
+                                        RecordAccess records )
             {
                 if ( !relationship.inUse() )
                 {
-                    report.relationshipNotInUse( relationship );
+                    engine.report().relationshipNotInUse( relationship );
                 }
                 else
                 {
                     NodeField selectedField = NodeField.select( relationship, node );
                     if ( selectedField == null )
                     {
-                        report.relationshipForOtherNode( relationship );
+                        engine.report().relationshipForOtherNode( relationship );
                     }
                     else
                     {
@@ -95,7 +88,7 @@ class NodeRecordCheck extends PrimitiveRecordCheck<NodeRecord, ConsistencyReport
                         {
                             if ( !Record.NO_NEXT_RELATIONSHIP.is( field.prev( relationship ) ) )
                             {
-                                field.notFirstInChain( report, relationship );
+                                field.notFirstInChain( engine.report(), relationship );
                             }
                         }
                     }
@@ -104,7 +97,7 @@ class NodeRecordCheck extends PrimitiveRecordCheck<NodeRecord, ConsistencyReport
 
             @Override
             public void checkChange( NodeRecord oldRecord, NodeRecord newRecord,
-                                     ConsistencyReport.NodeConsistencyReport report,
+                                     CheckerEngine<NodeRecord, ConsistencyReport.NodeConsistencyReport> engine,
                                      DiffRecordAccess records )
             {
                 if ( !newRecord.inUse() || valueFrom( oldRecord ) != valueFrom( newRecord ) )
@@ -112,7 +105,7 @@ class NodeRecordCheck extends PrimitiveRecordCheck<NodeRecord, ConsistencyReport
                     if ( !Record.NO_NEXT_RELATIONSHIP.is( valueFrom( oldRecord ) )
                          && records.changedRelationship( valueFrom( oldRecord ) ) == null )
                     {
-                        report.relationshipNotUpdated();
+                        engine.report().relationshipNotUpdated();
                     }
                 }
             }
@@ -131,7 +124,8 @@ class NodeRecordCheck extends PrimitiveRecordCheck<NodeRecord, ConsistencyReport
         LABELS
         {
             @Override
-            public void checkConsistency( NodeRecord node, ConsistencyReport.NodeConsistencyReport report,
+            public void checkConsistency( NodeRecord node,
+                                          CheckerEngine<NodeRecord, ConsistencyReport.NodeConsistencyReport> engine,
                                           RecordAccess records )
             {
                 NodeLabels nodeLabels = NodeLabelsField.parseLabelsField( node );
@@ -140,44 +134,48 @@ class NodeRecordCheck extends PrimitiveRecordCheck<NodeRecord, ConsistencyReport
                     DynamicNodeLabels dynamicNodeLabels = (DynamicNodeLabels) nodeLabels;
                     long firstRecordId = dynamicNodeLabels.getFirstDynamicRecordId();
                     RecordReference<DynamicRecord> firstRecordReference = records.nodeLabels( firstRecordId );
-                    report.forReference( firstRecordReference, new NodeLabelsComparativeRecordChecker() );
+                    engine.comparativeCheck( firstRecordReference,
+                            new LabelChainWalker<NodeRecord, ConsistencyReport.NodeConsistencyReport>(
+                                    new NodeLabelsComparativeRecordChecker() ) );
                 }
                 else
                 {
-                    validateLabelIds( nodeLabels.get( null ), report, records );
+                    validateLabelIds( nodeLabels.get( null ), engine, records );
                 }
             }
 
-            private void validateLabelIds( long[] labelIds, ConsistencyReport.NodeConsistencyReport report,
+            private void validateLabelIds( long[] labelIds,
+                                           CheckerEngine<NodeRecord, ConsistencyReport.NodeConsistencyReport> engine,
                                            RecordAccess records )
             {
                 for ( long labelId : labelIds )
                 {
-                    report.forReference( records.label( (int) labelId ), this );
+                    engine.comparativeCheck( records.label( (int) labelId ), this );
                 }
                 sort( labelIds );
                 for ( int i = 1; i < labelIds.length; i++ )
                 {
                     if ( labelIds[i - 1] == labelIds[i] )
                     {
-                        report.labelDuplicate( labelIds[i] );
+                        engine.report().labelDuplicate( labelIds[i] );
                     }
                 }
             }
 
             @Override
             public void checkReference( NodeRecord node, LabelTokenRecord labelTokenRecord,
-                                        ConsistencyReport.NodeConsistencyReport report, RecordAccess records )
+                                        CheckerEngine<NodeRecord, ConsistencyReport.NodeConsistencyReport> engine,
+                                        RecordAccess records )
             {
                 if ( !labelTokenRecord.inUse() )
                 {
-                    report.labelNotInUse( labelTokenRecord );
+                    engine.report().labelNotInUse( labelTokenRecord );
                 }
             }
 
             @Override
             public void checkChange( NodeRecord oldRecord, NodeRecord newRecord,
-                                     ConsistencyReport.NodeConsistencyReport report,
+                                     CheckerEngine<NodeRecord, ConsistencyReport.NodeConsistencyReport> engine,
                                      DiffRecordAccess records )
             {
                 // nothing to check: no back references from labels to nodes
@@ -190,58 +188,26 @@ class NodeRecordCheck extends PrimitiveRecordCheck<NodeRecord, ConsistencyReport
             }
 
             class NodeLabelsComparativeRecordChecker implements
-                    ComparativeRecordChecker<NodeRecord, DynamicRecord, ConsistencyReport.NodeConsistencyReport>
+                    LabelChainWalker.Validator<NodeRecord, ConsistencyReport.NodeConsistencyReport>
             {
-                private HashMap<Long, DynamicRecord> recordIds = new HashMap<>();
-                private List<DynamicRecord> recordList = new ArrayList<>();
-                private boolean allInUse = true;
-
                 @Override
-                public void checkReference( NodeRecord record, DynamicRecord dynamicRecord,
-                                            ConsistencyReport.NodeConsistencyReport report, RecordAccess records )
+                public void onRecordNotInUse( DynamicRecord dynamicRecord, CheckerEngine<NodeRecord,
+                        ConsistencyReport.NodeConsistencyReport> engine )
                 {
-                    recordIds.put( dynamicRecord.getId(), dynamicRecord );
-
-                    if ( dynamicRecord.inUse() )
-                    {
-                        if ( allInUse )
-                        {
-                            recordList.add( dynamicRecord );
-                        }
-                    }
-                    else
-                    {
-                        allInUse = false;
-                        report.dynamicLabelRecordNotInUse( dynamicRecord );
-                    }
-
-                    long nextBlock = dynamicRecord.getNextBlock();
-                    if ( Record.NO_NEXT_BLOCK.is( nextBlock ) )
-                    {
-                        if ( allInUse )
-                        {
-                            // only validate label ids if all dynamic records seen were in use
-                            validateLabelIds( labelIds( recordList ), report, records );
-                        }
-                    }
-                    else
-                    {
-                        if ( recordIds.containsKey( nextBlock ) )
-                        {
-                            report.dynamicRecordChainCycle( recordIds.get( nextBlock ) );
-                        }
-                        else
-                        {
-                            report.forReference( records.nodeLabels( nextBlock ), this );
-                        }
-                    }
+                    engine.report().dynamicLabelRecordNotInUse( dynamicRecord );
                 }
 
-                private long[] labelIds( List<DynamicRecord> recordList )
+                @Override
+                public void onRecordChainCycle( DynamicRecord record, CheckerEngine<NodeRecord, ConsistencyReport
+                        .NodeConsistencyReport> engine )
                 {
-                    long[] idArray =
-                        (long[]) getRightArray( readFullByteArrayFromHeavyRecords( recordList, PropertyType.ARRAY ) );
-                    return copyOfRange( idArray, 1, idArray.length );
+                    engine.report().dynamicRecordChainCycle( record );
+                }
+
+                @Override
+                public void onWellFormedChain( long[] labelIds, CheckerEngine<NodeRecord, ConsistencyReport.NodeConsistencyReport> engine, RecordAccess records )
+                {
+                    validateLabelIds( labelIds, engine, records );
                 }
             }
         }

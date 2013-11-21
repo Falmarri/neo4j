@@ -3,14 +3,14 @@
   <parent>
     <groupId>org.neo4j</groupId>
     <artifactId>parent</artifactId>
-    <version>2.0.0-M06</version>
+    <version>2.0.0-RC1</version>
     <relativePath>../..</relativePath>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.neo4j</groupId>
   <artifactId>neo4j-ha</artifactId>
   <name>Neo4j - High Availability</name>
-  <version>2.0.0-M06</version>
+  <version>2.0.0-RC1</version>
   <description>This component provides the means to set up a cluster of Neo4j instances that act together
     as a cluster, providing Master-Slave replication and other features.
   </description>
@@ -20,6 +20,7 @@
   <properties>
     <bundle.namespace>org.neo4j.kernel.ha</bundle.namespace>
     <short-name>ha</short-name>
+    <version-package>kernel.ha.impl</version-package>
     <docs.url>http://docs.neo4j.org/chunked/${project.version}/ha.html</docs.url>
   </properties>
 
@@ -141,10 +142,6 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
-      <groupId>org.apache.zookeeper</groupId>
-      <artifactId>zookeeper</artifactId>
-    </dependency>
-    <dependency>
       <groupId>log4j</groupId>
       <artifactId>log4j</artifactId>
     </dependency>
@@ -189,12 +186,17 @@
         </exclusion>
       </exclusions>
     </dependency>
+    <dependency>
+      <groupId>commons-codec</groupId>
+      <artifactId>commons-codec</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <distributionManagement>
     <site>
       <id>neo4j-site</id>
-      <url>scpexe://static.neo4j.org/var/www/components.neo4j.org/${project.artifactId}/${project.version}</url>
+      <url>scpexe://docs.neo4j.org/data/www/doc/components.neo4j.org/${project.artifactId}/${project.version}</url>
     </site>
   </distributionManagement>
 

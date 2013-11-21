@@ -32,7 +32,7 @@ import org.neo4j.graphdb.ResourceIterator;
 import org.neo4j.helpers.Function;
 import org.neo4j.helpers.FunctionFromPrimitiveLong;
 import org.neo4j.kernel.GraphDatabaseAPI;
-import org.neo4j.kernel.ThreadToStatementContextBridge;
+import org.neo4j.kernel.impl.coreapi.ThreadToStatementContextBridge;
 import org.neo4j.kernel.api.Statement;
 import org.neo4j.kernel.api.operations.KeyReadOperations;
 import org.neo4j.kernel.impl.api.PrimitiveLongIterator;
@@ -122,7 +122,6 @@ public class GlobalGraphOperations
     public Iterable<RelationshipType> getAllRelationshipTypes()
     {
         assertInTransaction();
-        statementCtxProvider.assertInTransaction();
         return nodeManager.getRelationshipTypes();
     }
 
@@ -144,7 +143,7 @@ public class GlobalGraphOperations
             @Override
             public ResourceIterator<Label> iterator()
             {
-                Statement statement = statementCtxProvider.statement();
+                Statement statement = statementCtxProvider.instance();
                 return cleanupService.resourceIterator( map( new Function<Token, Label>()
                 {
 
@@ -176,7 +175,7 @@ public class GlobalGraphOperations
             @Override
             public ResourceIterator<String> iterator()
             {
-                Statement statement = statementCtxProvider.statement();
+                Statement statement = statementCtxProvider.instance();
                 return cleanupService.resourceIterator( map( new Function<Token, String>() {
 
                     @Override
@@ -213,7 +212,7 @@ public class GlobalGraphOperations
 
     private ResourceIterator<Node> allNodesWithLabel( String label )
     {
-        Statement statement = statementCtxProvider.statement();
+        Statement statement = statementCtxProvider.instance();
 
         int labelId = statement.readOperations().labelGetForName( label );
         if ( labelId == KeyReadOperations.NO_SUCH_LABEL )

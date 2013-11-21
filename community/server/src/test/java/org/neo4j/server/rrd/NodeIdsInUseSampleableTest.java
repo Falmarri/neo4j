@@ -22,12 +22,10 @@ package org.neo4j.server.rrd;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-
+import org.neo4j.graphdb.DependencyResolver;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.kernel.AbstractGraphDatabase;
 import org.neo4j.kernel.GraphDatabaseAPI;
-import org.neo4j.server.database.Database;
-import org.neo4j.server.database.WrappingDatabase;
+import org.neo4j.kernel.impl.core.NodeManager;
 import org.neo4j.server.rrd.sampler.NodeIdsInUseSampleable;
 import org.neo4j.test.TestGraphDatabaseFactory;
 
@@ -37,14 +35,13 @@ import static org.hamcrest.core.Is.is;
 
 public class NodeIdsInUseSampleableTest
 {
-    public Database db;
+    public GraphDatabaseAPI db;
     public NodeIdsInUseSampleable sampleable;
 
     @Test
     public void emptyDbHasZeroNodesInUse()
     {
-        // Reference node is always created in empty dbs
-        assertThat( sampleable.getValue(), is( 1d ) );
+        assertThat( sampleable.getValue(), is( 0d ) );
     }
 
     @Test
@@ -52,7 +49,7 @@ public class NodeIdsInUseSampleableTest
     {
         double oldValue = sampleable.getValue();
 
-        createNode( db.getGraph() );
+        createNode( db );
 
         assertThat( sampleable.getValue(), greaterThan( oldValue ) );
     }
@@ -68,13 +65,14 @@ public class NodeIdsInUseSampleableTest
     @Before
     public void setUp() throws Exception
     {
-        db = new WrappingDatabase( (AbstractGraphDatabase) new TestGraphDatabaseFactory().newImpermanentDatabase() );
-        sampleable = new NodeIdsInUseSampleable( db.getGraph().getNodeManager() );
+        db = (GraphDatabaseAPI) new TestGraphDatabaseFactory().newImpermanentDatabase();
+        DependencyResolver dependencyResolver = db.getDependencyResolver();
+        sampleable = new NodeIdsInUseSampleable( dependencyResolver.resolveDependency( NodeManager.class ) );
     }
 
     @After
     public void shutdown() throws Throwable
     {
-        db.getGraph().shutdown();
+        db.shutdown();
     }
 }

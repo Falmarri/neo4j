@@ -19,11 +19,12 @@
  */
 package org.neo4j.kernel.impl.api.index.inmemory;
 
+import org.neo4j.kernel.api.direct.BoundedIterable;
 import org.neo4j.kernel.api.index.ArrayEncoder;
 import org.neo4j.kernel.api.index.IndexReader;
 import org.neo4j.kernel.impl.api.PrimitiveLongIterator;
 
-abstract class InMemoryIndexImplementation implements IndexReader
+abstract class InMemoryIndexImplementation implements IndexReader, BoundedIterable<Long>
 {
     abstract void clear();
 
@@ -48,6 +49,8 @@ abstract class InMemoryIndexImplementation implements IndexReader
     abstract void doAdd( Object propertyValue, long nodeId, boolean applyIdempotently );
 
     abstract void doRemove( Object propertyValue, long nodeId );
+
+    abstract void remove( long nodeId );
 
     @Override
     public void close()
@@ -106,4 +109,6 @@ abstract class InMemoryIndexImplementation implements IndexReader
             return arrayValue != null ? arrayValue.hashCode() : 0;
         }
     }
+
+    abstract InMemoryIndexImplementation snapshot();
 }

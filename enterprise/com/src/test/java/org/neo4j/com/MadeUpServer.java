@@ -23,6 +23,7 @@ import java.io.IOException;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
+
 import org.neo4j.helpers.HostnamePort;
 import org.neo4j.kernel.logging.DevNullLoggingService;
 

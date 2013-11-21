@@ -20,16 +20,20 @@
 package org.neo4j.server;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import javax.servlet.Filter;
 
 import org.apache.commons.configuration.Configuration;
 
 import org.neo4j.cypher.javacompat.ExecutionEngine;
 import org.neo4j.graphdb.DependencyResolver;
+import org.neo4j.graphdb.factory.GraphDatabaseSettings;
 import org.neo4j.helpers.Clock;
+import org.neo4j.kernel.guard.Guard;
 import org.neo4j.kernel.impl.transaction.xaframework.ForceMode;
 import org.neo4j.kernel.impl.util.JobScheduler;
 import org.neo4j.kernel.impl.util.StringLogger;
@@ -43,6 +47,8 @@ import org.neo4j.server.database.Database;
 import org.neo4j.server.database.DatabaseProvider;
 import org.neo4j.server.database.GraphDatabaseServiceProvider;
 import org.neo4j.server.database.InjectableProvider;
+import org.neo4j.server.database.RrdDbWrapper;
+import org.neo4j.server.guard.GuardingRequestFilter;
 import org.neo4j.server.logging.Logger;
 import org.neo4j.server.modules.RESTApiModule;
 import org.neo4j.server.modules.ServerModule;
@@ -61,6 +67,7 @@ import org.neo4j.server.rest.transactional.TransactionRegistry;
 import org.neo4j.server.rest.transactional.TransitionalPeriodTransactionMessContainer;
 import org.neo4j.server.rest.web.DatabaseActions;
 import org.neo4j.server.rrd.RrdDbProvider;
+import org.neo4j.server.rrd.RrdFactory;
 import org.neo4j.server.security.KeyStoreFactory;
 import org.neo4j.server.security.KeyStoreInformation;
 import org.neo4j.server.security.SslCertificateFactory;
@@ -70,6 +77,7 @@ import org.neo4j.server.web.WebServer;
 import org.neo4j.server.web.WebServerProvider;
 
 import static java.lang.Math.round;
+import static java.lang.String.format;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -97,11 +105,13 @@ public abstract class AbstractNeoServer implements NeoServer
     private final SimpleUriBuilder uriBuilder = new SimpleUriBuilder();
     private InterruptThreadTimer interruptStartupTimer;
     private DatabaseActions databaseActions;
+
+    private RoundRobinJobScheduler rrdDbScheduler = new RoundRobinJobScheduler();
+    private RrdDbWrapper rrdDbWrapper;
+
     private TransactionFacade transactionFacade;
     private TransactionHandleRegistry transactionRegistry;
     private Logging logging;
-    private static final boolean SUCCESS = true;
-    private static final boolean FAILURE = ! SUCCESS;
 
     protected abstract PreFlightTasks createPreflightTasks();
 
@@ -111,7 +121,6 @@ public abstract class AbstractNeoServer implements NeoServer
 
     protected abstract WebServer createWebServer();
 
-    @Override
     public void init()
     {
         this.preflight = createPreflightTasks();
@@ -147,6 +156,10 @@ public abstract class AbstractNeoServer implements NeoServer
                 diagnosticsLog.info( "--- SERVER STARTED START ---" );
     
                 databaseActions = createDatabaseActions();
+
+                // TODO: RrdDb is not needed once we remove the old webadmin
+                rrdDbWrapper = new RrdFactory( configurator.configuration() )
+                        .createRrdDbAndSampler( database, new RoundRobinJobScheduler() );
     
                 transactionFacade = createTransactionalActions();
     
@@ -177,6 +190,9 @@ public abstract class AbstractNeoServer implements NeoServer
 
             if ( interruptStartupTimer.wasTriggered() )
             {
+                // Make sure we don't leak rrd db files
+                stopRrdDb();
+
                 // If the database has been started, attempt to cleanly shut it down to avoid unclean shutdowns.
                 if(database.isRunning())
                 {
@@ -190,7 +206,7 @@ public abstract class AbstractNeoServer implements NeoServer
                         1 );
             }
 
-            throw new ServerStartupException( String.format( "Starting Neo4j Server failed: %s", t.getMessage() ), t );
+            throw new ServerStartupException( format( "Starting Neo4j Server failed: %s", t.getMessage() ), t );
         }
     }
 
@@ -251,6 +267,7 @@ public abstract class AbstractNeoServer implements NeoServer
         InterruptThreadTimer stopStartupTimer;
         if ( startupTimeout > 0 )
         {
+            //noinspection deprecation
             log.info( "Setting startup timeout to: " + startupTimeout + "ms based on " + getConfiguration().getInt(
                     Configurator.STARTUP_TIMEOUT, -1 ) );
             stopStartupTimer = InterruptThreadTimer.createTimer(
@@ -266,8 +283,6 @@ public abstract class AbstractNeoServer implements NeoServer
 
     /**
      * Use this method to register server modules from subclasses
-     *
-     * @param module
      */
     protected final void registerModule( ServerModule module )
     {
@@ -293,7 +308,8 @@ public abstract class AbstractNeoServer implements NeoServer
             }
             catch ( Exception e )
             {
-                log.error( e );
+                //noinspection deprecation
+                log.error( "Unable to stop module.", e );
             }
         }
     }
@@ -330,7 +346,8 @@ public abstract class AbstractNeoServer implements NeoServer
         int sslPort = getHttpsPort();
         boolean sslEnabled = getHttpsEnabled();
 
-        log.info( "Starting HTTP on port :%s with %d threads available", webServerPort, maxThreads );
+        //noinspection deprecation
+        log.info( format( "Starting HTTP on port :%s with %d threads available", webServerPort, maxThreads ));
         webServer.setPort( webServerPort );
         webServer.setAddress( webServerAddr );
         webServer.setMaxThreads( maxThreads );
@@ -344,7 +361,8 @@ public abstract class AbstractNeoServer implements NeoServer
 
         if ( sslEnabled )
         {
-            log.info( "Enabling HTTPS on port :%s", sslPort );
+            //noinspection deprecation
+            log.info( format( "Enabling HTTPS on port :%s", sslPort ) );
             webServer.setHttpsCertificateInformation( initHttpsKeyStore() );
         }
     }
@@ -366,35 +384,57 @@ public abstract class AbstractNeoServer implements NeoServer
     {
         try
         {
-            if ( httpLoggingProperlyConfigured() )
-            {
-                webServer.setHttpLoggingConfiguration(
-                        new File( getConfiguration().getProperty( Configurator.HTTP_LOG_CONFIG_LOCATION ).toString()
-                        ) );
-            }
+            setUpHttpLogging();
+
+            setUpTimeoutFilter();
 
             webServer.start();
-
-            Integer limit = getConfiguration().getInteger( Configurator.WEBSERVER_LIMIT_EXECUTION_TIME_PROPERTY_KEY,
-                    null );
-            if ( limit != null )
-            {
-                webServer.addExecutionLimitFilter( limit, database.getGraph().getGuard() );
-            }
 
             if ( logger != null )
             {
                 logger.logMessage( "Server started on: " + baseUri() );
             }
-            log.info( "Remote interface ready and available at [%s]", baseUri() );
+            //noinspection deprecation
+            log.info( format( "Remote interface ready and available at [%s]", baseUri() ) );
         }
         catch ( RuntimeException e )
         {
-            log.error( "Failed to start Neo Server on port [%d], reason [%s]", getWebServerPort(), e.getMessage() );
+            //noinspection deprecation
+            log.error( format( "Failed to start Neo Server on port [%d], reason [%s]",
+                    getWebServerPort(), e.getMessage() ) );
             throw e;
         }
     }
 
+    private void setUpHttpLogging()
+    {
+        if ( !httpLoggingProperlyConfigured() )
+        {
+            return;
+        }
+        String logLocation = getConfiguration().getString( Configurator.HTTP_LOG_CONFIG_LOCATION );
+        webServer.setHttpLoggingConfiguration( new File( logLocation ) );
+    }
+
+    private void setUpTimeoutFilter()
+    {
+        if ( !getConfiguration().containsKey( Configurator.WEBSERVER_LIMIT_EXECUTION_TIME_PROPERTY_KEY ) )
+        {
+            return;
+        }
+        //noinspection deprecation
+        Guard guard = resolveDependency( Guard.class );
+        if ( guard == null )
+        {
+            throw new RuntimeException( format("Inconsistent configuration. In order to use %s, you must set %s.",
+                    Configurator.WEBSERVER_LIMIT_EXECUTION_TIME_PROPERTY_KEY,
+                    GraphDatabaseSettings.execution_guard_enabled.name()) );
+        }
+
+        Filter filter = new GuardingRequestFilter( guard,
+                getConfiguration().getInt( Configurator.WEBSERVER_LIMIT_EXECUTION_TIME_PROPERTY_KEY ) );
+        webServer.addFilter( filter, "/*" );
+    }
 
     private boolean httpLoggingProperlyConfigured()
     {
@@ -463,6 +503,7 @@ public abstract class AbstractNeoServer implements NeoServer
 
         if ( !certificatePath.exists() )
         {
+            //noinspection deprecation
             log.info( "No SSL certificate found, generating a self-signed certificate.." );
             SslCertificateFactory certFactory = new SslCertificateFactory();
             certFactory.createSelfSignedCertificate( certificatePath, privateKeyPath, getWebServerAddress() );
@@ -477,38 +518,35 @@ public abstract class AbstractNeoServer implements NeoServer
     {
         try
         {
-            stopServerOnly();
+            stopWebServer();
+            stopModules();
+
+            stopRrdDb();
+
+            //noinspection deprecation
+            log.info( "Successfully shutdown Neo4j Server." );
+
             stopDatabase();
+            //noinspection deprecation
             log.info( "Successfully shutdown database." );
         }
         catch ( Exception e )
         {
+            //noinspection deprecation
             log.warn( "Failed to cleanly shutdown database." );
         }
     }
 
-    /**
-     * Stops everything but the database.
-     * <p/>
-     * This is deprecated. If you would like to disconnect the database
-     * life cycle from server control, then use {@link WrappingNeoServer}.
-     * <p/>
-     * To stop the server, please use {@link #stop()}.
-     * <p/>
-     * This will be removed in 1.10
-     */
-    @Deprecated
-    public void stopServerOnly()
+    private void stopRrdDb()
     {
         try
         {
-            stopWebServer();
-            stopModules();
-            log.info( "Successfully shutdown Neo4j Server." );
-        }
-        catch ( Exception e )
+            if( rrdDbScheduler != null) rrdDbScheduler.stopJobs();
+            if( rrdDbWrapper != null )  rrdDbWrapper.close();
+        } catch(IOException e)
         {
-            log.warn( "Failed to cleanly shutdown Neo4j Server." );
+            // If we fail on shutdown, we can't really recover from it. Log the issue and carry on.
+            log.error( "Unable to cleanly shut down statistics database.", e );
         }
     }
 
@@ -584,7 +622,7 @@ public abstract class AbstractNeoServer implements NeoServer
 
     protected Collection<InjectableProvider<?>> createDefaultInjectables()
     {
-        Collection<InjectableProvider<?>> singletons = new ArrayList<InjectableProvider<?>>();
+        Collection<InjectableProvider<?>> singletons = new ArrayList<>();
 
         Database database = getDatabase();
 
@@ -594,7 +632,7 @@ public abstract class AbstractNeoServer implements NeoServer
         singletons.add( new NeoServerProvider( this ) );
         singletons.add( new ConfigurationProvider( getConfiguration() ) );
 
-        singletons.add( new RrdDbProvider( database ) );
+        singletons.add( new RrdDbProvider( rrdDbWrapper ) );
 
         singletons.add( new WebServerProvider( getWebServer() ) );
 
@@ -649,14 +687,17 @@ public abstract class AbstractNeoServer implements NeoServer
         {
             if ( type.equals( Database.class ) )
             {
+                //noinspection unchecked
                 return (T) database;
             }
             else if ( type.equals( PreFlightTasks.class ) )
             {
+                //noinspection unchecked
                 return (T) preflight;
             }
             else if ( type.equals( InterruptThreadTimer.class ) )
             {
+                //noinspection unchecked
                 return (T) interruptStartupTimer;
             }
 
@@ -669,7 +710,7 @@ public abstract class AbstractNeoServer implements NeoServer
         }
 
         @Override
-        public <T> T resolveDependency( Class<T> type, SelectionStrategy<T> selector )
+        public <T> T resolveDependency( Class<T> type, SelectionStrategy selector )
         {
             return selector.select( type, option( resolveKnownSingleDependency( type ) ) );
         }

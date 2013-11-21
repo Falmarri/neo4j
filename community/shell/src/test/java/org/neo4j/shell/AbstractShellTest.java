@@ -19,15 +19,6 @@
  */
 package org.neo4j.shell;
 
-import static java.lang.Integer.parseInt;
-import static java.util.regex.Pattern.compile;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-import static org.neo4j.graphdb.DynamicRelationshipType.withName;
-import static org.neo4j.helpers.collection.IteratorUtil.asCollection;
-import static org.neo4j.shell.ShellLobby.NO_INITIAL_SESSION;
-import static org.neo4j.shell.ShellLobby.remoteLocation;
-
 import java.io.Serializable;
 import java.rmi.RemoteException;
 import java.util.Collections;
@@ -37,19 +28,28 @@ import java.util.regex.Pattern;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
+
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.NotFoundException;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.RelationshipType;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.kernel.GraphDatabaseAPI;
-import org.neo4j.shell.impl.SimpleAppServer;
 import org.neo4j.shell.impl.CollectingOutput;
 import org.neo4j.shell.impl.RemoteClient;
 import org.neo4j.shell.impl.SameJvmClient;
+import org.neo4j.shell.impl.SimpleAppServer;
 import org.neo4j.shell.kernel.GraphDatabaseShellServer;
 import org.neo4j.test.EphemeralFileSystemRule;
 import org.neo4j.test.TestGraphDatabaseFactory;
+
+import static java.lang.Integer.parseInt;
+import static java.util.regex.Pattern.compile;
+import static org.junit.Assert.*;
+import static org.neo4j.graphdb.DynamicRelationshipType.withName;
+import static org.neo4j.helpers.collection.IteratorUtil.asCollection;
+import static org.neo4j.shell.ShellLobby.NO_INITIAL_SESSION;
+import static org.neo4j.shell.ShellLobby.remoteLocation;
 
 public abstract class AbstractShellTest
 {
@@ -58,7 +58,9 @@ public abstract class AbstractShellTest
     private ShellClient shellClient;
     private Integer remotelyAvailableOnPort;
     protected static final RelationshipType RELATIONSHIP_TYPE = withName( "TYPE" );
-    @Rule public EphemeralFileSystemRule fs = new EphemeralFileSystemRule();
+
+    @Rule
+    public EphemeralFileSystemRule fs = new EphemeralFileSystemRule();
 
     private Transaction tx;
 
@@ -94,6 +96,10 @@ public abstract class AbstractShellTest
     @After
     public void doAfter() throws Exception
     {
+        if ( tx != null )
+        {
+            finishTx( false );
+        }
         shellClient.shutdown();
         shellServer.shutdown();
         db.shutdown();
@@ -117,7 +123,7 @@ public abstract class AbstractShellTest
     
     protected ShellClient newRemoteClient( Map<String, Serializable> initialSession ) throws Exception
     {
-        return new RemoteClient( initialSession, remoteLocation( remotelyAvailableOnPort.intValue() ),
+        return new RemoteClient( initialSession, remoteLocation( remotelyAvailableOnPort ),
                 new CollectingOutput() );
     }
 
@@ -126,7 +132,7 @@ public abstract class AbstractShellTest
         if ( remotelyAvailableOnPort == null )
         {
             remotelyAvailableOnPort = findFreePort();
-            shellServer.makeRemotelyAvailable( remotelyAvailableOnPort.intValue(), SimpleAppServer.DEFAULT_NAME );
+            shellServer.makeRemotelyAvailable( remotelyAvailableOnPort, SimpleAppServer.DEFAULT_NAME );
         }
     }
     
@@ -163,11 +169,11 @@ public abstract class AbstractShellTest
             builder.append( (builder.length() == 0 ? "" : "-->") );
             if ( entity instanceof Node )
             {
-                builder.append( "(" + ((Node)entity).getId() + ")" );
+                builder.append( "(" ).append( ((Node) entity).getId() ).append( ")" );
             }
             else
             {
-                builder.append( "<" + ((Relationship)entity).getId() + ">" );
+                builder.append( "<" ).append( ((Relationship) entity).getId() ).append( ">" );
             }
         }
         return Pattern.quote( builder.toString() );
@@ -182,7 +188,7 @@ public abstract class AbstractShellTest
             String... theseLinesMustExistRegEx ) throws Exception
     {
         CollectingOutput output = new CollectingOutput();
-        client.evaluate(command, output);
+        client.evaluate( command, output );
 
         for ( String lineThatMustExist : theseLinesMustExistRegEx )
         {
@@ -221,27 +227,6 @@ public abstract class AbstractShellTest
         }
     }
 
-    protected void assertRelationshipExists( Relationship relationship )
-    {
-        assertRelationshipExists( relationship.getId() );
-    }
-
-    protected void assertRelationshipExists( long id )
-    {
-        Transaction transaction = db.beginTx();
-        try
-        {
-            db.getRelationshipById( id );
-        }
-        catch ( NotFoundException e )
-        {
-            fail( "Relationship " + id + " should exist" );
-        }
-        finally {
-            transaction.finish();
-        }
-    }
-
     protected void assertRelationshipDoesntExist( Relationship relationship )
     {
         assertRelationshipDoesntExist( relationship.getId() );
@@ -249,18 +234,14 @@ public abstract class AbstractShellTest
 
     protected void assertRelationshipDoesntExist( long id )
     {
-        Transaction transaction = db.beginTx();
-        try
+        try ( Transaction ignore = db.beginTx() )
         {
             db.getRelationshipById( id );
             fail( "Relationship " + id + " shouldn't exist" );
         }
         catch ( NotFoundException e )
-        { // Good
-        }
-        finally
         {
-            transaction.finish();
+            // Good
         }
     }
 
@@ -271,18 +252,13 @@ public abstract class AbstractShellTest
 
     protected void assertNodeExists( long id )
     {
-        Transaction transaction = db.beginTx();
-        try
+        try ( Transaction ignore = db.beginTx() )
         {
             db.getNodeById( id );
         }
         catch ( NotFoundException e )
         {
             fail( "Node " + id + " should exist" );
-        }
-        finally
-        {
-            transaction.finish();
         }
     }
 
@@ -293,18 +269,14 @@ public abstract class AbstractShellTest
 
     protected void assertNodeDoesntExist( long id )
     {
-        Transaction transaction = db.beginTx();
-        try
+        try ( Transaction ignore = db.beginTx() )
         {
             db.getNodeById( id );
             fail( "Relationship " + id + " shouldn't exist" );
         }
         catch ( NotFoundException e )
-        { // Good
-        }
-        finally
         {
-            transaction.finish();
+            // Good
         }
     }
 
@@ -315,59 +287,59 @@ public abstract class AbstractShellTest
 
     protected Relationship[] createRelationshipChain( RelationshipType type, int length )
     {
-        Transaction transaction = db.beginTx();
-        try {
-            Relationship[] relationshipChain = createRelationshipChain( db.getReferenceNode(), type, length );
+        try( Transaction transaction = db.beginTx() )
+        {
+            Relationship[] relationshipChain = createRelationshipChain( db.createNode(), type, length );
             transaction.success();
             return relationshipChain;
-        } finally {
-            transaction.finish();
         }
     }
 
     protected Relationship[] createRelationshipChain( Node startingFromNode, RelationshipType type,
             int length )
     {
-        Relationship[] rels = new Relationship[length];
-        Transaction tx = db.beginTx();
-        Node firstNode = startingFromNode;
-        for ( int i = 0; i < rels.length; i++ )
+        try ( Transaction tx = db.beginTx() )
         {
-            Node secondNode = db.createNode();
-            rels[i] = firstNode.createRelationshipTo( secondNode, type );
-            firstNode = secondNode;
+            Relationship[] rels = new Relationship[length];
+            Node firstNode = startingFromNode;
+            for ( int i = 0; i < rels.length; i++ )
+            {
+                Node secondNode = db.createNode();
+                rels[i] = firstNode.createRelationshipTo( secondNode, type );
+                firstNode = secondNode;
+            }
+            tx.success();
+            return rels;
         }
-        tx.success();
-        tx.finish();
-        return rels;
     }
 
     protected void deleteRelationship( Relationship relationship )
     {
-        Transaction tx = db.beginTx();
-        relationship.delete();
-        tx.success();
-        tx.finish();
+        try ( Transaction tx = db.beginTx() )
+        {
+            relationship.delete();
+            tx.success();
+        }
     }
 
     protected void setProperty( Node node, String key, Object value )
     {
-        Transaction tx = db.beginTx();
-        node.setProperty( key, value );
-        tx.success();
-        tx.finish();
+        try ( Transaction tx = db.beginTx() )
+        {
+            node.setProperty( key, value );
+            tx.success();
+        }
     }
     
     protected Node getCurrentNode() throws RemoteException, ShellException
     {
         Serializable current = shellServer.interpretVariable( shellClient.getId(), Variables.CURRENT_KEY );
-        Transaction transaction = db.beginTx();
-        try
+        int nodeId = parseInt( current.toString().substring( 1 ) );
+        try ( Transaction tx = db.beginTx() )
         {
-            return this.db.getNodeById( parseInt( current.toString().substring( 1 ) ) );
-        }
-        finally {
-            transaction.finish();
+            Node nodeById = db.getNodeById( nodeId );
+            tx.success();
+            return nodeById;
         }
     }
 }

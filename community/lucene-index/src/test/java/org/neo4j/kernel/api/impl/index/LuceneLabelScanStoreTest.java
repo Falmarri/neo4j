@@ -24,19 +24,27 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.apache.lucene.store.LockObtainFailedException;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.neo4j.helpers.collection.IteratorUtil;
+import org.neo4j.helpers.collection.PrefetchingIterator;
 import org.neo4j.kernel.DefaultFileSystemAbstraction;
-import org.neo4j.kernel.api.scan.NodeLabelUpdate;
+import org.neo4j.kernel.api.direct.AllEntriesLabelScanReader;
+import org.neo4j.kernel.api.direct.NodeLabelRange;
+import org.neo4j.kernel.api.labelscan.LabelScanReader;
+import org.neo4j.kernel.api.labelscan.NodeLabelUpdate;
 import org.neo4j.kernel.impl.api.PrimitiveLongIterator;
 import org.neo4j.kernel.impl.api.scan.LabelScanStoreProvider.FullStoreChangeStream;
 import org.neo4j.kernel.lifecycle.LifeSupport;
@@ -45,19 +53,24 @@ import org.neo4j.test.TargetDirectory;
 
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyList;
-
+import static org.hamcrest.core.IsCollectionContaining.hasItems;
 import static org.hamcrest.core.IsEqual.equalTo;
 import static org.hamcrest.core.IsInstanceOf.instanceOf;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-
+import static org.neo4j.helpers.collection.IteratorUtil.asSet;
 import static org.neo4j.helpers.collection.IteratorUtil.emptyPrimitiveLongIterator;
 import static org.neo4j.helpers.collection.IteratorUtil.iterator;
+import static org.neo4j.helpers.collection.IteratorUtil.single;
 import static org.neo4j.kernel.api.impl.index.IndexWriterFactories.standard;
-import static org.neo4j.kernel.api.scan.NodeLabelUpdate.labelChanges;
+import static org.neo4j.kernel.api.labelscan.NodeLabelUpdate.labelChanges;
 import static org.neo4j.kernel.impl.util.FileUtils.deleteRecursively;
 
+@RunWith(Parameterized.class)
 public class LuceneLabelScanStoreTest
 {
     private static final long[] NO_LABELS = new long[0];
@@ -131,6 +144,61 @@ public class LuceneLabelScanStoreTest
     }
 
     @Test
+    public void shouldScanSingleRange() throws Exception
+    {
+        // GIVEN
+        int labelId1 = 1, labelId2 = 2;
+        long nodeId1 = 10, nodeId2 = 11;
+        start( asList(
+                labelChanges( nodeId1, NO_LABELS, new long[] { labelId1 } ),
+                labelChanges( nodeId2, NO_LABELS, new long[] { labelId1, labelId2 } )
+        ) );
+
+        // WHEN
+        AllEntriesLabelScanReader reader = store.newAllEntriesReader();
+        NodeLabelRange range = single( reader.iterator() );
+
+        // THEN
+        assertArrayEquals( new long[]{nodeId1, nodeId2}, sorted( range.nodes() ) );
+
+        assertArrayEquals( new long[]{labelId1}, sorted( range.labels( nodeId1 ) ) );
+        assertArrayEquals( new long[]{labelId1, labelId2}, sorted( range.labels( nodeId2 ) ) );
+    }
+
+    @Test
+    public void shouldScanMultipleRanges() throws Exception
+    {
+        // GIVEN
+        int labelId1 = 1, labelId2 = 2;
+        long nodeId1 = 10, nodeId2 = 1280;
+        start( asList(
+                labelChanges( nodeId1, NO_LABELS, new long[] { labelId1 } ),
+                labelChanges( nodeId2, NO_LABELS, new long[] { labelId1, labelId2 } )
+        ) );
+
+        // WHEN
+        AllEntriesLabelScanReader reader = store.newAllEntriesReader();
+        Iterator<NodeLabelRange> iterator = reader.iterator();
+        NodeLabelRange range1 = iterator.next();
+        NodeLabelRange range2 = iterator.next();
+        assertFalse( iterator.hasNext() );
+
+        // THEN
+        assertArrayEquals( new long[] { nodeId1 }, sorted( range1.nodes() ) );
+        assertArrayEquals( new long[] { nodeId2 }, sorted( range2.nodes() ) );
+
+        assertArrayEquals( new long[] { labelId1 }, sorted( range1.labels( nodeId1 ) ) );
+
+        assertArrayEquals( new long[] { labelId1, labelId2 }, sorted( range2.labels( nodeId2 ) ) );
+    }
+
+    private long[] sorted( long[] input )
+    {
+        Arrays.sort( input );
+        return input;
+    }
+
+    @Test
     public void shouldRebuildFromScratchIfIndexMissing() throws Exception
     {
         // GIVEN a start of the store with existing data in it
@@ -172,6 +240,93 @@ public class LuceneLabelScanStoreTest
                     "database is stopped, delete the files in '"+dir.getAbsolutePath()+"', and then start the " +
                     "database again." ));
         }
+    }
+
+    @Test
+    public void shouldFindDecentAmountOfNodesForALabel() throws Exception
+    {
+        // GIVEN
+        // 16 is the magic number of the page iterator
+        // 32 is the number of nodes in each lucene document
+        final int labelId = 1, nodeCount = 32*16 + 10;
+        start();
+        store.updateAndCommit( new PrefetchingIterator<NodeLabelUpdate>()
+        {
+            private int i = -1;
+
+            @Override
+            protected NodeLabelUpdate fetchNextOrNull()
+            {
+                return ++i < nodeCount ? labelChanges( i, NO_LABELS, new long[] {labelId} ) : null;
+            }
+        } );
+
+        // WHEN
+        Set<Long> nodeSet = new TreeSet<>();
+        LabelScanReader reader = store.newReader();
+        PrimitiveLongIterator nodes = reader.nodesWithLabel( labelId );
+        while ( nodes.hasNext() )
+        {
+            nodeSet.add( nodes.next() );
+        }
+        reader.close();
+
+        // THEN
+        assertEquals( "Found gaps in node id range: " + gaps( nodeSet, nodeCount ), nodeCount, nodeSet.size() );
+    }
+
+    @Test
+    public void shouldFindAllLabelsForGivenNode() throws Exception
+    {
+        // GIVEN
+        // 16 is the magic number of the page iterator
+        // 32 is the number of nodes in each lucene document
+        final long labelId1 = 1, labelId2 = 2, labelId3 = 87;
+        start();
+
+        int nodeId = 42;
+        store.updateAndCommit( IteratorUtil.iterator( labelChanges( nodeId, NO_LABELS, new long[]{labelId1, labelId2} ) ) );
+        store.updateAndCommit( IteratorUtil.iterator( labelChanges( 41, NO_LABELS, new long[]{labelId3, labelId2} ) ) );
+
+        // WHEN
+        LabelScanReader reader = store.newReader();
+
+        // THEN
+        assertThat( asSet( reader.labelsForNode( nodeId ) ), hasItems(labelId1, labelId2) );
+        reader.close();
+    }
+
+    private Set<Long> gaps( Set<Long> ids, int expectedCount )
+    {
+        Set<Long> gaps = new HashSet<>();
+        for ( long i = 0; i < expectedCount; i++ )
+        {
+            if ( !ids.contains( i ) )
+            {
+                gaps.add( i );
+            }
+        }
+        return gaps;
+    }
+
+    private final LabelScanStorageStrategy strategy;
+
+    public LuceneLabelScanStoreTest( LabelScanStorageStrategy strategy )
+    {
+        this.strategy = strategy;
+    }
+
+    @Parameterized.Parameters(name = "{0}")
+    public static List<Object[]> parameterizedWithStrategies()
+    {
+        return asList(
+                new Object[]{
+                        new NodeRangeDocumentLabelScanStorageStrategy(
+                                BitmapDocumentFormat._32 )},
+                new Object[]{
+                        new NodeRangeDocumentLabelScanStorageStrategy(
+                                BitmapDocumentFormat._64 )}
+        );
     }
 
     private void assertNodesForLabel( int labelId, long... expectedNodeIds )
@@ -217,8 +372,10 @@ public class LuceneLabelScanStoreTest
     {
         life = new LifeSupport();
         monitor = new TrackingMonitor();
-        store = life.add( new LuceneLabelScanStore( new LuceneDocumentStructure(), directoryFactory, dir,
-                new DefaultFileSystemAbstraction(), standard(), asStream( existingData ), monitor ) );
+        store = life.add( new LuceneLabelScanStore(
+                strategy,
+                directoryFactory, dir, new DefaultFileSystemAbstraction(), standard(), asStream( existingData ),
+                monitor ) );
         life.start();
         assertTrue( monitor.initCalled );
     }

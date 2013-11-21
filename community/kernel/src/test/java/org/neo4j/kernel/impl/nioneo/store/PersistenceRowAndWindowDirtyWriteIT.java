@@ -19,17 +19,17 @@
  */
 package org.neo4j.kernel.impl.nioneo.store;
 
-import static org.junit.Assert.assertTrue;
-
 import java.io.File;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.util.Arrays;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
 import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.test.TargetDirectory;
 import org.neo4j.test.subprocess.BreakPoint;
@@ -40,6 +40,8 @@ import org.neo4j.test.subprocess.DebuggedThread;
 import org.neo4j.test.subprocess.EnabledBreakpoints;
 import org.neo4j.test.subprocess.ForeignBreakpoints;
 import org.neo4j.test.subprocess.SubProcessTestRunner;
+
+import static org.junit.Assert.assertTrue;
 
 @RunWith(SubProcessTestRunner.class)
 @ForeignBreakpoints({
@@ -99,6 +101,7 @@ public class PersistenceRowAndWindowDirtyWriteIT
                         50000, // memory available, must be at least that big for 2 windows to exist
                         true, // memory map?
                         false, // read only?
+                        new ConcurrentHashMap<Long, PersistenceRow>(), BrickElementFactory.DEFAULT,
                         StringLogger.DEV_NULL );
 
         Thread theTriggeringOne = new Thread( new Runnable()

@@ -25,25 +25,23 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 import org.neo4j.consistency.RecordType;
-import org.neo4j.consistency.checking.ComparativeRecordChecker;
 import org.neo4j.consistency.checking.RecordCheck;
-import org.neo4j.consistency.store.RecordReference;
+import org.neo4j.consistency.store.synthetic.IndexEntry;
+import org.neo4j.consistency.store.synthetic.LabelScanDocument;
 import org.neo4j.kernel.impl.annotations.Documented;
-import org.neo4j.kernel.impl.nioneo.store.AbstractBaseRecord;
 import org.neo4j.kernel.impl.nioneo.store.DynamicRecord;
+import org.neo4j.kernel.impl.nioneo.store.IndexRule;
 import org.neo4j.kernel.impl.nioneo.store.LabelTokenRecord;
 import org.neo4j.kernel.impl.nioneo.store.NeoStoreRecord;
 import org.neo4j.kernel.impl.nioneo.store.NodeRecord;
-import org.neo4j.kernel.impl.nioneo.store.PrimitiveRecord;
 import org.neo4j.kernel.impl.nioneo.store.PropertyBlock;
 import org.neo4j.kernel.impl.nioneo.store.PropertyKeyTokenRecord;
 import org.neo4j.kernel.impl.nioneo.store.PropertyRecord;
 import org.neo4j.kernel.impl.nioneo.store.RelationshipRecord;
 import org.neo4j.kernel.impl.nioneo.store.RelationshipTypeTokenRecord;
 import org.neo4j.kernel.impl.nioneo.store.SchemaRule;
-import org.neo4j.kernel.impl.nioneo.store.TokenRecord;
 
-public interface ConsistencyReport<RECORD extends AbstractBaseRecord, REPORT extends ConsistencyReport<RECORD, REPORT>>
+public interface ConsistencyReport
 {
     @Retention(RetentionPolicy.RUNTIME)
     @Target(ElementType.METHOD)
@@ -113,13 +111,17 @@ public interface ConsistencyReport<RECORD extends AbstractBaseRecord, REPORT ext
 
         void forDynamicLabelBlockChange( RecordType type, DynamicRecord oldRecord, DynamicRecord newRecord,
                                          RecordCheck<DynamicRecord, DynamicLabelConsistencyReport> checker );
+
+        void forNodeLabelScan( LabelScanDocument document,
+                               RecordCheck<LabelScanDocument, ConsistencyReport.LabelScanConsistencyReport> checker );
+
+        void forIndexEntry( IndexEntry entry,
+                            RecordCheck<IndexEntry, ConsistencyReport.IndexConsistencyReport> checker );
+
+        void forNodeLabelMatch( NodeRecord nodeRecord, RecordCheck<NodeRecord, LabelsMatchReport> nodeLabelCheck );
     }
 
-    <REFERRED extends AbstractBaseRecord> void forReference( RecordReference<REFERRED> other,
-                                                             ComparativeRecordChecker<RECORD, ? super REFERRED, REPORT> checker );
-
-    interface PrimitiveConsistencyReport<RECORD extends PrimitiveRecord, REPORT extends PrimitiveConsistencyReport<RECORD, REPORT>>
-            extends ConsistencyReport<RECORD, REPORT>
+    interface PrimitiveConsistencyReport extends ConsistencyReport
     {
         /** The referenced property record is not in use. */
         @Documented
@@ -147,11 +149,11 @@ public interface ConsistencyReport<RECORD extends AbstractBaseRecord, REPORT ext
         void propertyNotUpdated();
     }
 
-    interface NeoStoreConsistencyReport extends PrimitiveConsistencyReport<NeoStoreRecord, NeoStoreConsistencyReport>
+    interface NeoStoreConsistencyReport extends PrimitiveConsistencyReport
     {
     }
 
-    interface SchemaConsistencyReport extends ConsistencyReport<DynamicRecord, SchemaConsistencyReport>
+    interface SchemaConsistencyReport extends ConsistencyReport
     {
         /** The label token record referenced from the schema is not in use. */
         @Documented
@@ -196,7 +198,7 @@ public interface ConsistencyReport<RECORD extends AbstractBaseRecord, REPORT ext
         void unsupportedSchemaRuleKind( SchemaRule.Kind kind );
     }
 
-    interface NodeConsistencyReport extends PrimitiveConsistencyReport<NodeRecord, NodeConsistencyReport>
+    interface NodeConsistencyReport extends PrimitiveConsistencyReport
     {
         /** The referenced relationship record is not in use. */
         @Documented
@@ -234,10 +236,18 @@ public interface ConsistencyReport<RECORD extends AbstractBaseRecord, REPORT ext
         /** This record points to a next record that was already part of this dynamic record chain. */
         @Documented
         void dynamicRecordChainCycle( DynamicRecord nextRecord );
+
+        /** This node was not found the in the expected index. */
+        @Documented
+        void notIndexed( IndexRule index, Object propertyValue );
+
+        /** There is another node in the unique index with the same property value. */
+        @Documented
+        void uniqueIndexNotUnique( IndexRule index, Object propertyValue, long duplicateNodeId );
     }
 
     interface RelationshipConsistencyReport
-            extends PrimitiveConsistencyReport<RelationshipRecord, RelationshipConsistencyReport>
+            extends PrimitiveConsistencyReport
     {
         /** The relationship type field has an illegal value. */
         @Documented
@@ -348,7 +358,7 @@ public interface ConsistencyReport<RECORD extends AbstractBaseRecord, REPORT ext
         void targetNodeNotUpdated();
     }
 
-    interface PropertyConsistencyReport extends ConsistencyReport<PropertyRecord, PropertyConsistencyReport>
+    interface PropertyConsistencyReport extends ConsistencyReport
     {
         /** The property key as an invalid value. */
         @Documented
@@ -455,8 +465,7 @@ public interface ConsistencyReport<RECORD extends AbstractBaseRecord, REPORT ext
         void arrayMultipleOwners( DynamicRecord dynamic );
     }
 
-    interface NameConsistencyReport<RECORD extends TokenRecord, REPORT extends NameConsistencyReport<RECORD,REPORT>>
-            extends ConsistencyReport<RECORD,REPORT>
+    interface NameConsistencyReport extends ConsistencyReport
     {
         /** The name block is not in use. */
         @Documented
@@ -472,28 +481,28 @@ public interface ConsistencyReport<RECORD extends AbstractBaseRecord, REPORT ext
         void nameMultipleOwners( DynamicRecord otherOwner );
     }
 
-    interface RelationshipTypeConsistencyReport extends NameConsistencyReport<RelationshipTypeTokenRecord, RelationshipTypeConsistencyReport>
+    interface RelationshipTypeConsistencyReport extends NameConsistencyReport
     {
         /** The string record referred from this relationship type is also referred from a another relationship type. */
         @Documented
         void nameMultipleOwners( RelationshipTypeTokenRecord otherOwner );
     }
 
-    interface LabelTokenConsistencyReport extends NameConsistencyReport<LabelTokenRecord, LabelTokenConsistencyReport>
+    interface LabelTokenConsistencyReport extends NameConsistencyReport
     {
         /** The string record referred from this label name is also referred from a another label name. */
         @Documented
         void nameMultipleOwners( LabelTokenRecord otherOwner );
     }
 
-    interface PropertyKeyTokenConsistencyReport extends NameConsistencyReport<PropertyKeyTokenRecord, PropertyKeyTokenConsistencyReport>
+    interface PropertyKeyTokenConsistencyReport extends NameConsistencyReport
     {
         /** The string record referred from this key is also referred from a another key. */
         @Documented
         void nameMultipleOwners( PropertyKeyTokenRecord otherOwner );
     }
 
-    interface DynamicConsistencyReport extends ConsistencyReport<DynamicRecord, DynamicConsistencyReport>
+    interface DynamicConsistencyReport extends ConsistencyReport
     {
         /** The next block is not in use. */
         @Documented
@@ -548,7 +557,7 @@ public interface ConsistencyReport<RECORD extends AbstractBaseRecord, REPORT ext
         void orphanDynamicRecord();
     }
 
-    interface DynamicLabelConsistencyReport extends ConsistencyReport<DynamicRecord, DynamicLabelConsistencyReport>
+    interface DynamicLabelConsistencyReport extends ConsistencyReport
     {
         /** This label record is not referenced by its owning node record or that record is not in use. */
         @Documented
@@ -557,5 +566,41 @@ public interface ConsistencyReport<RECORD extends AbstractBaseRecord, REPORT ext
         /** This label record does not have an owning node record. */
         @Documented
         void orphanDynamicLabelRecord();
+    }
+
+    interface NodeInUseWithCorrectLabelsReport extends ConsistencyReport
+    {
+        void nodeNotInUse( NodeRecord referredNodeRecord );
+
+        void nodeDoesNotHaveExpectedLabel( NodeRecord referredNodeRecord, long expectedLabelId );
+    }
+
+    interface LabelScanConsistencyReport extends NodeInUseWithCorrectLabelsReport
+    {
+        /** This label scan document refers to a node record that is not in use. */
+        @Documented
+        void nodeNotInUse( NodeRecord referredNodeRecord );
+
+        /** This label scan document refers to a node that does not have the expected label. */
+        @Documented
+        void nodeDoesNotHaveExpectedLabel( NodeRecord referredNodeRecord, long expectedLabelId );
+    }
+
+    interface IndexConsistencyReport extends NodeInUseWithCorrectLabelsReport
+    {
+        /** This index entry refers to a node record that is not in use. */
+        @Documented
+        void nodeNotInUse( NodeRecord referredNodeRecord );
+
+        /** This index entry refers to a node that does not have the expected label. */
+        @Documented
+        void nodeDoesNotHaveExpectedLabel( NodeRecord referredNodeRecord, long expectedLabelId );
+    }
+
+    interface LabelsMatchReport extends ConsistencyReport
+    {
+        /** This node record has a label that is not found in the label scan store entry for this node */
+        @Documented
+        void nodeLabelNotInIndex( NodeRecord referredNodeRecord, long missingLabelId );
     }
 }

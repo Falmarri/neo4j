@@ -22,6 +22,7 @@ package org.neo4j.helpers;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
+import java.lang.Thread.State;
 import java.lang.reflect.InvocationTargetException;
 
 public class Exceptions
@@ -102,7 +103,9 @@ public class Exceptions
         while ( exception != null )
         {
             if ( !toPeel.accept( exception ) )
+            {
                 break;
+            }
             exception = exception.getCause();
         }
         return exception;
@@ -163,5 +166,46 @@ public class Exceptions
             cause.printStackTrace(System.err);
             return "[ERROR: Unable to serialize stacktrace, UTF-8 not supported.]";
         }
+    }
+    
+    public static String stringify( Thread thread, StackTraceElement[] elements )
+    {
+        StringBuilder builder = new StringBuilder(
+                "\"" + thread.getName() + "\" " + (thread.isDaemon() ? "daemon": "") +
+                " prio=" + thread.getPriority() +
+                " tid=" + thread.getId() +
+                " " + thread.getState().name().toLowerCase() + "\n" );
+        builder.append( "   " + State.class.getName() + ": " + thread.getState().name().toUpperCase() + "\n" );
+        for ( StackTraceElement element : elements )
+        {
+            builder.append( "      at " + element.getClassName() + "." + element.getMethodName() ); 
+            if ( element.isNativeMethod() )
+            {
+                builder.append( "(Native method)" );
+            }
+            else
+            {
+                builder.append( "(" + element.getFileName() + ":" + element.getLineNumber() + ")" );
+            }
+            builder.append( "\n" );
+        }
+        return builder.toString();
+    }
+    
+    @SuppressWarnings( "rawtypes" )
+    public static boolean contains( Throwable cause, Class... anyOfTheseClasses )
+    {
+        while ( cause != null )
+        {
+            for ( Class cls : anyOfTheseClasses )
+            {
+                if ( cls.isInstance( cause ) )
+                {
+                    return true;
+                }
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 }

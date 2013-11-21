@@ -38,6 +38,7 @@ import org.neo4j.helpers.collection.IteratorUtil;
 import org.neo4j.kernel.GraphDatabaseAPI;
 import org.neo4j.kernel.impl.MyRelTypes;
 import org.neo4j.kernel.impl.core.NodeImpl;
+import org.neo4j.kernel.impl.core.NodeManager;
 import org.neo4j.test.TestGraphDatabaseFactory;
 
 import static org.junit.Assert.assertEquals;
@@ -62,7 +63,7 @@ public class TestSizeOf
     {
         db = (GraphDatabaseAPI) new TestGraphDatabaseFactory().
               newImpermanentDatabaseBuilder().
-              setConfig( GraphDatabaseSettings.cache_type, GCResistantCacheProvider.NAME ).
+              setConfig( GraphDatabaseSettings.cache_type, HighPerformanceCacheProvider.NAME ).
               newGraphDatabase();
     }
 
@@ -75,14 +76,19 @@ public class TestSizeOf
     @Before
     public void clearCache()
     {
-        db.getNodeManager().clearCache();
+        nodeManager().clearCache();
     }
 
     @SuppressWarnings( "unchecked" )
     private Cache<NodeImpl> getNodeCache()
     {
         // This is a bit fragile because we depend on the order of caches() returns its caches.
-        return (Cache<NodeImpl>) IteratorUtil.first( db.getNodeManager().caches() );
+        return (Cache<NodeImpl>) IteratorUtil.first( nodeManager().caches() );
+    }
+
+    private NodeManager nodeManager()
+    {
+        return db.getDependencyResolver().resolveDependency( NodeManager.class );
     }
 
     private Node createNodeAndLoadFresh( Map<String, Object> properties, int nrOfRelationships, int nrOfTypes )
@@ -214,17 +220,24 @@ public class TestSizeOf
         countRelationships( node );
 
         // Now the node cache size should be the same as doing node.size()
-        assertEquals( db.getNodeManager().getNodeForProxy( node.getId(), null ).sizeOfObjectInBytesIncludingOverhead(), nodeCache.size() );
+        assertEquals( nodeManager().getNodeForProxy( node.getId(), null ).sizeOfObjectInBytesIncludingOverhead(), nodeCache.size() );
     }
 
     private int sizeOfNode( Node node )
     {
-        return db.getNodeManager().getNodeForProxy( node.getId(), null ).sizeOfObjectInBytesIncludingOverhead();
+        try(Transaction ignore = db.beginTx())
+        {
+            return nodeManager().getNodeForProxy( node.getId(), null ).sizeOfObjectInBytesIncludingOverhead();
+        }
     }
 
     private int sizeOfRelationship( Relationship relationship )
     {
-        return db.getNodeManager().getRelationshipForProxy( relationship.getId(), null ).sizeOfObjectInBytesIncludingOverhead();
+        try(Transaction ignore = db.beginTx())
+        {
+            return nodeManager().getRelationshipForProxy( relationship.getId() )
+                    .sizeOfObjectInBytesIncludingOverhead();
+        }
     }
 
     private int withNodeOverhead( int size )

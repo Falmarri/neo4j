@@ -19,6 +19,10 @@
  */
 package org.neo4j.kernel;
 
+/**
+ * @deprecated This will be moved to internal packages in the next major release.
+ */
+@Deprecated
 public enum IdType
 {
     NODE( 35, false ),
@@ -33,7 +37,7 @@ public enum IdType
     LABEL_TOKEN( false ),
     LABEL_TOKEN_NAME( false ),
     NEOSTORE_BLOCK( false ),
-    SCHEMA( 35, true ),
+    SCHEMA( 35, false ),
     NODE_LABELS( 35, true );
 
     private final long max;

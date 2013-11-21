@@ -1,3 +1,26 @@
+2.0.0-RC1
+---------
+o BREAKING CHANGE: Reference node has been removed.
+o BREAKING CHANGE: All classes under the org.neo4j.kernel package space, except
+  those related to the traversal frameworks, are now deprecated and due to be moved
+  into internal packages. This includes well-known classes such as EmbeddedGraphDatabase
+  and HighlyAvailableGraphDatabase, both of which are replaced by GraphDatabaseFactory
+  and HighlyAvailableGraphDatabaseFactory, respectively.
+o BREAKING CHANGE: Removed deprecated settings from org.neo4j.graphdb.factory.GraphDatabaseSettings. These settings are
+  no longer effective and can be removed without any effect.
+o BREAKING CHANGE: Removed deprecated org.neo4j.graphdb.index.IndexProvider (and associated
+  org.neo4j.graphdb.index.IndexIterable and org.neo4j.graphdb.index.IndexProviderKernelExtensionFactory). This has been
+  replaced by the kernel extension mechanism.
+o BREAKING CHANGE: Removed deprecated org.neo4j.graphdb.PropertyContainer#getPropertyValues(). Instead use
+  org.neo4j.graphdb.PropertyContainer#getPropertyKeys() and org.neo4j.graphdb.PropertyContainer#getProperty(String).
+o BREAKING CHANGE: Removed deprecated methods from org.neo4j.kernel.GraphDatabaseAPI: #getDiagnosticsManager(),
+  #getMessageLog(), #getIdGeneratorFactory(), #getKernelData() and #getPersistenceSource(). These are internal
+  components which Kernel clients should not need to access. The entire org.neo4j.kernel.GraphDatabaseAPI interface is
+  deprecated and will be removed in future.
+o BREAKING CHANGE: Deprecated constructors of EmbeddedReadOnlyDatabase and EmbeddedGraphDatabase have been removed,
+  in favor of the long-advertised alternative GraphDatabaseFactory.
+o BREAKING CHANGE: All deprecated methods in GraphDatabaseAPI have been removed in favor of getDependencyResolver().
+
 2.0.0-M05
 ---------
 o BREAKING CHANGE: GraphDatabaseSettings now only exposes Setting, deprecated settings classes have been removed.
@@ -34,6 +57,14 @@ o BREAKING CHANGE: The BatchInserter and the BatchGraphDatabase are not binary c
 ---------
 o Adds support for adding, listing, removing, and testing of labels
 o Adds support for creating, querying, and dropping label-based indexes
+
+1.9.5 (2013-11-11)
+------------------
+o Fixed NPE in PersistenceWindowPool when concurrently loading non-mapped windows
+o Fixed potential deadlock in PersistenceWindowPool cause by negative mark count
+o Performance optimizations for best-first selector
+o Database now waits on a timeout for transactions to finish before actually shutting
+  down, while preventing new transactions from starting up
 
 1.9.3 (2013-08-30)
 ------------------

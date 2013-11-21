@@ -34,7 +34,6 @@ import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.RelationshipType;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.factory.GraphDatabaseSettings;
-import org.neo4j.graphdb.index.IndexProvider;
 import org.neo4j.helpers.Service;
 import org.neo4j.helpers.collection.Iterables;
 import org.neo4j.kernel.IdGeneratorFactory;
@@ -63,7 +62,7 @@ public class BigJumpingStoreIT
         protected TestDatabase( String storeDir, Map<String, String> params )
         {
             super( storeDir, params, Iterables.<Class<?>, Class<?>>iterable( (Class<?>) GraphDatabaseSettings.class )
-                    , Service.load( IndexProvider.class ), Iterables.<KernelExtensionFactory<?>,
+                    , Iterables.<KernelExtensionFactory<?>,
                     KernelExtensionFactory>cast( Service.load( KernelExtensionFactory.class ) ),
                     Service.load( CacheProvider.class ), Service.load( TransactionInterceptorProvider.class ) );
             run();
@@ -143,6 +142,7 @@ public class BigJumpingStoreIT
         }
 
         tx.success();
+        //noinspection deprecation
         tx.finish();
 
         // Verify
@@ -158,9 +158,10 @@ public class BigJumpingStoreIT
                 assertProperties( map( "number", nodeCount++, "string", stringValue, "array", arrayValue ), node );
                 relCount += count( node.getRelationships( Direction.OUTGOING ) );
             }
-            db.getNodeManager().clearCache();
+            nodeManager().clearCache();
         }
         assertEquals( numberOfRels, relCount );
+        //noinspection deprecation
         tx.finish();
 
         // Remove stuff
@@ -218,6 +219,7 @@ public class BigJumpingStoreIT
             }
         }
         tx.success();
+        //noinspection deprecation
         tx.finish();
 
         // Verify again
@@ -270,9 +272,15 @@ public class BigJumpingStoreIT
                 }
                 nodeCount++;
             }
-            db.getNodeManager().clearCache();
+            nodeManager().clearCache();
         }
+        //noinspection deprecation
         tx.finish();
+    }
+
+    private NodeManager nodeManager()
+    {
+        return db.getDependencyResolver().resolveDependency( NodeManager.class );
     }
 
     private void setPropertyOnAll( Iterable<Relationship> relationships, String key,

@@ -77,6 +77,6 @@ public class DatabaseConfiguration
 
     public static InputStream getDefaultDatabaseConfigurationContent()
     {
-        return DesktopModel.class.getResourceAsStream( "/org/neo4j/server/config/community/neo4j-default.properties" );
+        return DesktopModel.class.getResourceAsStream( "/org/neo4j/desktop/config/neo4j-default.properties" );
     }
 }

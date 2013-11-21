@@ -22,28 +22,34 @@ package org.neo4j.kernel.impl.nioneo.xa;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
-
-import javax.transaction.xa.XAException;
 
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
+
 import org.neo4j.graphdb.ResourceIterator;
 import org.neo4j.helpers.collection.Visitor;
 import org.neo4j.kernel.DefaultIdGeneratorFactory;
 import org.neo4j.kernel.DefaultTxHook;
+import org.neo4j.kernel.api.KernelTransactionImplementation;
+import org.neo4j.kernel.api.direct.AllEntriesLabelScanReader;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
+import org.neo4j.kernel.api.labelscan.LabelScanReader;
+import org.neo4j.kernel.api.labelscan.LabelScanStore;
+import org.neo4j.kernel.api.labelscan.NodeLabelUpdate;
 import org.neo4j.kernel.api.properties.DefinedProperty;
-import org.neo4j.kernel.api.scan.LabelScanReader;
-import org.neo4j.kernel.api.scan.LabelScanStore;
-import org.neo4j.kernel.api.scan.NodeLabelUpdate;
 import org.neo4j.kernel.configuration.Config;
 import org.neo4j.kernel.impl.api.KernelSchemaStateStore;
+import org.neo4j.kernel.impl.api.index.IndexUpdates;
 import org.neo4j.kernel.impl.api.index.IndexingService;
 import org.neo4j.kernel.impl.core.CacheAccessBackDoor;
 import org.neo4j.kernel.impl.core.TransactionState;
@@ -67,9 +73,19 @@ import org.neo4j.kernel.impl.transaction.xaframework.XaLogicalLog;
 import org.neo4j.kernel.logging.SingleLoggingService;
 import org.neo4j.test.EphemeralFileSystemRule;
 
-import static org.junit.Assert.*;
-import static org.mockito.Matchers.argThat;
-import static org.mockito.Mockito.*;
+import static org.hamcrest.Matchers.equalTo;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+
 import static org.neo4j.helpers.collection.Iterables.count;
 import static org.neo4j.helpers.collection.IteratorUtil.asCollection;
 import static org.neo4j.helpers.collection.IteratorUtil.asSet;
@@ -85,7 +101,6 @@ import static org.neo4j.kernel.impl.nioneo.store.IndexRule.indexRule;
 import static org.neo4j.kernel.impl.nioneo.store.UniquenessConstraintRule.uniquenessConstraintRule;
 import static org.neo4j.kernel.impl.transaction.xaframework.InjectedTransactionValidator.ALLOW_ALL;
 import static org.neo4j.kernel.impl.util.StringLogger.DEV_NULL;
-import static org.neo4j.test.AllItemsMatcher.matchesAll;
 
 public class WriteTransactionTest
 {
@@ -151,6 +166,120 @@ public class WriteTransactionTest
     }
 
     @Test
+    public void shouldMarkDynamicLabelRecordsAsNotInUseWhenLabelsAreReInlined() throws Exception
+    {
+        // GIVEN
+        final long nodeId = neoStore.getNodeStore().nextId();
+
+        // A transaction that creates labels that just barely fit to be inlined
+        WriteTransaction writeTransaction = newWriteTransaction( mockIndexing );
+        writeTransaction.nodeCreate( nodeId );
+
+        writeTransaction.addLabelToNode( 7, nodeId );
+        writeTransaction.addLabelToNode( 11, nodeId );
+        writeTransaction.addLabelToNode( 12, nodeId );
+        writeTransaction.addLabelToNode( 15, nodeId );
+        writeTransaction.addLabelToNode( 23, nodeId );
+        writeTransaction.addLabelToNode( 27, nodeId );
+        writeTransaction.addLabelToNode( 50, nodeId );
+
+        writeTransaction.prepare();
+        writeTransaction.commit();
+
+        // And given that I now start recording the commands in the log
+        CommandCapturingVisitor commandCapture = new CommandCapturingVisitor();
+
+        // WHEN
+        // I then remove multiple labels
+        writeTransaction = newWriteTransaction( mockIndexing, commandCapture);
+
+        writeTransaction.removeLabelFromNode( 11, nodeId );
+        writeTransaction.removeLabelFromNode( 23, nodeId );
+
+        writeTransaction.prepare();
+        writeTransaction.commit();
+
+        // THEN
+        // The dynamic label record should be part of what is logged, and it should be set to not in use anymore.
+        commandCapture.visitCapturedCommands( new Visitor<XaCommand, RuntimeException>()
+        {
+            @Override
+            public boolean visit( XaCommand element ) throws RuntimeException
+            {
+                if( element instanceof Command.NodeCommand )
+                {
+                    Command.NodeCommand cmd = (Command.NodeCommand)element;
+                    Collection<DynamicRecord> beforeDynLabels = cmd.getAfter().getDynamicLabelRecords();
+                    assertThat( beforeDynLabels.size(), equalTo(1) );
+                    assertThat( beforeDynLabels.iterator().next().inUse(), equalTo(false) );
+                }
+                return true;
+            }
+        });
+    }
+
+    @Test
+    public void shouldReUseOriginalDynamicRecordWhenInlinedAndThenExpandedLabelsInSameTx() throws Exception
+    {
+        // GIVEN
+        final long nodeId = neoStore.getNodeStore().nextId();
+
+        // A transaction that creates labels that just barely fit to be inlined
+        WriteTransaction writeTransaction = newWriteTransaction( mockIndexing );
+        writeTransaction.nodeCreate( nodeId );
+
+        writeTransaction.addLabelToNode( 16, nodeId );
+        writeTransaction.addLabelToNode( 29, nodeId );
+        writeTransaction.addLabelToNode( 32, nodeId );
+        writeTransaction.addLabelToNode( 41, nodeId );
+        writeTransaction.addLabelToNode( 44, nodeId );
+        writeTransaction.addLabelToNode( 45, nodeId );
+        writeTransaction.addLabelToNode( 50, nodeId );
+        writeTransaction.addLabelToNode( 51, nodeId );
+        writeTransaction.addLabelToNode( 52, nodeId );
+
+        writeTransaction.prepare();
+        writeTransaction.commit();
+
+        // And given that I now start recording the commands in the log
+        CommandCapturingVisitor commandCapture = new CommandCapturingVisitor();
+
+        // WHEN
+        // I remove enough labels to inline them, but then add enough new labels to expand it back to dynamic
+        writeTransaction = newWriteTransaction( mockIndexing, commandCapture);
+
+        writeTransaction.removeLabelFromNode( 50, nodeId );
+        writeTransaction.removeLabelFromNode( 51, nodeId );
+        writeTransaction.removeLabelFromNode( 52, nodeId );
+        writeTransaction.addLabelToNode( 60, nodeId );
+        writeTransaction.addLabelToNode( 61, nodeId );
+        writeTransaction.addLabelToNode( 62, nodeId );
+
+        writeTransaction.prepare();
+        writeTransaction.commit();
+
+        // THEN
+        // The dynamic label record in before should be the same id as in after, and should be in use
+        commandCapture.visitCapturedCommands( new Visitor<XaCommand, RuntimeException>()
+        {
+            @Override
+            public boolean visit( XaCommand element ) throws RuntimeException
+            {
+                if( element instanceof Command.NodeCommand )
+                {
+                    Command.NodeCommand cmd = (Command.NodeCommand)element;
+                    DynamicRecord before = cmd.getBefore().getDynamicLabelRecords().iterator().next();
+                    DynamicRecord after = cmd.getAfter().getDynamicLabelRecords().iterator().next();
+
+                    assertThat( before.getId(), equalTo(after.getId()) );
+                    assertThat( after.inUse(), equalTo(true) );
+                }
+                return true;
+            }
+        });
+    }
+
+    @Test
     public void shouldRemoveSchemaRuleWhenRollingBackTransaction() throws Exception
     {
         // GIVEN
@@ -209,7 +338,7 @@ public class WriteTransactionTest
     public void shouldConvertAddedPropertyToNodePropertyUpdates() throws Exception
     {
         // GIVEN
-        long nodeId = 1;
+        long nodeId = 0;
         CapturingIndexingService indexingService = new CapturingIndexingService();
         WriteTransaction writeTransaction = newWriteTransaction( indexingService );
         int propertyKey1 = 1, propertyKey2 = 2;
@@ -233,7 +362,7 @@ public class WriteTransactionTest
     public void shouldConvertChangedPropertyToNodePropertyUpdates() throws Exception
     {
         // GIVEN
-        int nodeId = 1;
+        int nodeId = 0;
         WriteTransaction writeTransaction = newWriteTransaction( mockIndexing );
         int propertyKey1 = 1, propertyKey2 = 2;
         Object value1 = "first", value2 = 4;
@@ -262,7 +391,7 @@ public class WriteTransactionTest
     public void shouldConvertRemovedPropertyToNodePropertyUpdates() throws Exception
     {
         // GIVEN
-        int nodeId = 1;
+        int nodeId = 0;
         WriteTransaction writeTransaction = newWriteTransaction( mockIndexing );
         int propertyKey1 = 1, propertyKey2 = 2;
         Object value1 = "first", value2 = 4;
@@ -290,7 +419,7 @@ public class WriteTransactionTest
     public void shouldConvertLabelAdditionToNodePropertyUpdates() throws Exception
     {
         // GIVEN
-        long nodeId = 1;
+        long nodeId = 0;
         WriteTransaction writeTransaction = newWriteTransaction( mockIndexing );
         int propertyKey1 = 1, propertyKey2 = 2, labelId = 3;
         long[] labelIds = new long[] {labelId};
@@ -318,7 +447,7 @@ public class WriteTransactionTest
     public void shouldConvertMixedLabelAdditionAndSetPropertyToNodePropertyUpdates() throws Exception
     {
         // GIVEN
-        long nodeId = 1;
+        long nodeId = 0;
         WriteTransaction writeTransaction = newWriteTransaction( mockIndexing );
         int propertyKey1 = 1, propertyKey2 = 2, labelId1 = 3, labelId2 = 4;
         Object value1 = "first", value2 = 4;
@@ -337,8 +466,8 @@ public class WriteTransactionTest
         // THEN
         assertEquals( asSet(
                 add( nodeId, propertyKey1, value1, new long[] {labelId2} ),
-                add( nodeId, propertyKey2, value2, new long[] {labelId2} ),
-                add( nodeId, propertyKey2, value2, new long[] {labelId1, labelId2} ) ),
+                add( nodeId, propertyKey2, value2, new long[]{labelId2} ),
+                add( nodeId, propertyKey2, value2, new long[]{labelId1, labelId2} ) ),
 
                 indexingService.updates );
     }
@@ -347,7 +476,7 @@ public class WriteTransactionTest
     public void shouldConvertLabelRemovalToNodePropertyUpdates() throws Exception
     {
         // GIVEN
-        long nodeId = 1;
+        long nodeId = 0;
         WriteTransaction writeTransaction = newWriteTransaction( mockIndexing );
         int propertyKey1 = 1, propertyKey2 = 2, labelId = 3;
         long[] labelIds = new long[] {labelId};
@@ -376,7 +505,7 @@ public class WriteTransactionTest
     public void shouldConvertMixedLabelRemovalAndRemovePropertyToNodePropertyUpdates() throws Exception
     {
         // GIVEN
-        long nodeId = 1;
+        long nodeId = 0;
         WriteTransaction writeTransaction = newWriteTransaction( mockIndexing );
         int propertyKey1 = 1, propertyKey2 = 2, labelId1 = 3, labelId2 = 4;
         Object value1 = "first", value2 = 4;
@@ -406,7 +535,7 @@ public class WriteTransactionTest
     public void shouldConvertMixedLabelRemovalAndAddPropertyToNodePropertyUpdates() throws Exception
     {
         // GIVEN
-        long nodeId = 1;
+        long nodeId = 0;
         WriteTransaction writeTransaction = newWriteTransaction( mockIndexing );
         int propertyKey1 = 1, propertyKey2 = 2, labelId1 = 3, labelId2 = 4;
         Object value1 = "first", value2 = 4;
@@ -425,9 +554,9 @@ public class WriteTransactionTest
 
         // THEN
         assertEquals( asSet(
-                add( nodeId, propertyKey2, value2, new long[] {labelId1} ),
-                remove( nodeId, propertyKey1, value1, new long[] {labelId2} ),
-                remove( nodeId, propertyKey2, value2, new long[] {labelId2} ) ),
+                add( nodeId, propertyKey2, value2, new long[]{labelId1} ),
+                remove( nodeId, propertyKey1, value1, new long[]{labelId2} ),
+                remove( nodeId, propertyKey2, value2, new long[]{labelId2} ) ),
 
                 indexingService.updates );
     }
@@ -495,7 +624,7 @@ public class WriteTransactionTest
          *
          *   ()-->[0:block{size:1}]
          *
-         * WHEN adding a new property record in front of if, not chaning any data in that record i.e:
+         * WHEN adding a new property record in front of if, not changing any data in that record i.e:
          *
          *   ()-->[1:block{size:4}]-->[0:block{size:1}]
          *
@@ -553,7 +682,7 @@ public class WriteTransactionTest
          * was created resulted in two exact copies of NodePropertyUpdates. */
 
         // GIVEN
-        long nodeId = 1;
+        long nodeId = 0;
         int labelId = 5, propertyKeyId = 7;
         NodePropertyUpdate expectedUpdate = NodePropertyUpdate.add( nodeId, propertyKeyId, "Neo", new long[] {labelId} );
 
@@ -566,21 +695,28 @@ public class WriteTransactionTest
 
         // -- and a tx creating a node with that label and property key
         IndexingService index = mock( IndexingService.class );
+        IteratorCollector<NodePropertyUpdate> indexUpdates = new IteratorCollector<>( 0 );
+        doAnswer( indexUpdates ).when( index ).updateIndexes( any( IndexUpdates.class ) );
         CommandCapturingVisitor commandCapturingVisitor = new CommandCapturingVisitor();
         tx = newWriteTransaction( index, commandCapturingVisitor );
         tx.nodeCreate( nodeId );
         tx.addLabelToNode( labelId, nodeId );
         tx.nodeAddProperty( nodeId, propertyKeyId, "Neo" );
         prepareAndCommit( tx );
-        verify( index, times( 1 ) ).updateIndexes( argThat( matchesAll( expectedUpdate ) ) );
+        verify( index, times( 1 ) ).updateIndexes( any( IndexUpdates.class ) );
+        indexUpdates.assertContent( expectedUpdate );
+
         reset( index );
+        indexUpdates = new IteratorCollector<>( 0 );
+        doAnswer( indexUpdates ).when( index ).updateIndexes( any( IndexUpdates.class ) );
 
         // WHEN
         // -- later recovering that tx, there should be only one update
         tx = newWriteTransaction( index );
         commandCapturingVisitor.injectInto( tx );
         prepareAndCommitRecovered( tx );
-        verify( index, times( 1 ) ).updateIndexes( argThat( matchesAll( expectedUpdate ) ) );
+        verify( index, times( 1 ) ).updateIndexes( any( IndexUpdates.class ) );
+        indexUpdates.assertContent( expectedUpdate );
     }
 
     private String string( int length )
@@ -595,12 +731,11 @@ public class WriteTransactionTest
     }
 
     @Rule public EphemeralFileSystemRule fs = new EphemeralFileSystemRule();
-    private VerifyingXaLogicalLog log;
     private TransactionState transactionState;
     private final Config config = new Config( stringMap() );
+    @SuppressWarnings("deprecation")
     private final DefaultIdGeneratorFactory idGeneratorFactory = new DefaultIdGeneratorFactory();
     private final DefaultWindowPoolFactory windowPoolFactory = new DefaultWindowPoolFactory();
-    private StoreFactory storeFactory;
     private NeoStore neoStore;
     private CacheAccessBackDoor cacheAccessBackDoor;
 
@@ -608,7 +743,8 @@ public class WriteTransactionTest
     public void before() throws Exception
     {
         transactionState = TransactionState.NO_STATE;
-        storeFactory = new StoreFactory( config, idGeneratorFactory, windowPoolFactory,
+        @SuppressWarnings("deprecation")
+        StoreFactory storeFactory = new StoreFactory( config, idGeneratorFactory, windowPoolFactory,
                 fs.get(), DEV_NULL, new DefaultTxHook() );
         neoStore = storeFactory.createNeoStore( new File( "neostore" ) );
         cacheAccessBackDoor = mock( CacheAccessBackDoor.class );
@@ -651,9 +787,19 @@ public class WriteTransactionTest
                 tx.injectCommand( command );
             }
         }
+
+        public void visitCapturedCommands( Visitor<XaCommand, RuntimeException> visitor )
+        {
+            for ( XaCommand command : commands )
+            {
+                visitor.visit( command );
+            }
+
+        }
     }
 
     private final IndexingService mockIndexing = mock( IndexingService.class );
+    private final KernelTransactionImplementation kernelTransaction = mock( KernelTransactionImplementation.class );
 
     private WriteTransaction newWriteTransaction( IndexingService indexing )
     {
@@ -663,9 +809,10 @@ public class WriteTransactionTest
     private WriteTransaction newWriteTransaction( IndexingService indexing, Visitor<XaCommand,
             RuntimeException> verifier )
     {
-        log = new VerifyingXaLogicalLog( fs.get(), verifier );
+        VerifyingXaLogicalLog log = new VerifyingXaLogicalLog( fs.get(), verifier );
         WriteTransaction result = new WriteTransaction( 0, 0l, log, transactionState, neoStore,
-                cacheAccessBackDoor, indexing, NO_LABEL_SCAN_STORE, new IntegrityValidator(neoStore, indexing ));
+                cacheAccessBackDoor, indexing, NO_LABEL_SCAN_STORE, new IntegrityValidator(neoStore, indexing ),
+                kernelTransaction );
         result.setCommitTxId( neoStore.getLastCommittedTx()+1 );
         return result;
     }
@@ -686,7 +833,7 @@ public class WriteTransactionTest
         }
 
         @Override
-        public void updateIndexes( Iterable<NodePropertyUpdate> updates )
+        public void updateIndexes( IndexUpdates updates )
         {
             this.updates.addAll( asCollection( updates ) );
         }
@@ -719,13 +866,13 @@ public class WriteTransactionTest
         };
     }
 
-    private void prepareAndCommitRecovered( WriteTransaction tx ) throws XAException
+    private void prepareAndCommitRecovered( WriteTransaction tx ) throws Exception
     {
         tx.setRecovered();
         prepareAndCommit( tx );
     }
 
-    private void prepareAndCommit( WriteTransaction tx ) throws XAException
+    private void prepareAndCommit( WriteTransaction tx ) throws Exception
     {
         tx.doPrepare();
         tx.doCommit();
@@ -765,6 +912,12 @@ public class WriteTransactionTest
         }
 
         @Override
+        public AllEntriesLabelScanReader newAllEntriesReader()
+        {
+            return null;
+        }
+
+        @Override
         public ResourceIterator<File> snapshotStoreFiles()
         {
             return emptyIterator();
@@ -780,4 +933,45 @@ public class WriteTransactionTest
         {   // Do nothing
         }
     };
+
+    private class IteratorCollector<T> implements Answer<Object>
+    {
+        private final int arg;
+        private final List<T> elements = new ArrayList<>();
+
+        public IteratorCollector( int arg )
+        {
+            this.arg = arg;
+        }
+
+        @SafeVarargs
+        public final void assertContent( T... expected )
+        {
+            assertEquals( Arrays.asList( expected ), elements );
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public Object answer( InvocationOnMock invocation ) throws Throwable
+        {
+            Object iterator = invocation.getArguments()[arg];
+            if ( iterator instanceof Iterable )
+            {
+                iterator = ((Iterable) iterator).iterator();
+            }
+            if ( iterator instanceof Iterator )
+            {
+                collect( (Iterator) iterator );
+            }
+            return null;
+        }
+
+        private void collect( Iterator<T> iterator )
+        {
+            while ( iterator.hasNext() )
+            {
+                elements.add( iterator.next() );
+            }
+        }
+    }
 }

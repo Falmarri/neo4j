@@ -23,6 +23,7 @@ import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import javax.transaction.SystemException;
+import javax.transaction.TransactionManager;
 
 import org.junit.After;
 import org.junit.Test;
@@ -32,7 +33,7 @@ import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.factory.HighlyAvailableGraphDatabaseFactory;
 import org.neo4j.kernel.api.exceptions.LabelNotFoundKernelException;
 import org.neo4j.kernel.ha.HighlyAvailableGraphDatabase;
-import org.neo4j.kernel.impl.transaction.TxManager;
+import org.neo4j.kernel.impl.coreapi.ThreadToStatementContextBridge;
 import org.neo4j.test.TargetDirectory;
 import org.neo4j.test.ha.ClusterManager;
 
@@ -58,8 +59,8 @@ public class LabelIT
         Label label = label( "Person" );
 
         // WHEN
-        javax.transaction.Transaction txOnSlave1 = createNodeAndKeepTxOpen( slave1, label );
-        javax.transaction.Transaction txOnSlave2 = createNodeAndKeepTxOpen( slave2, label );
+        TransactionContinuation txOnSlave1 = createNodeAndKeepTxOpen( slave1, label );
+        TransactionContinuation txOnSlave2 = createNodeAndKeepTxOpen( slave2, label );
 
         commit(slave1, txOnSlave1);
         commit(slave2, txOnSlave2);
@@ -70,32 +71,28 @@ public class LabelIT
 
     private long getLabelId( HighlyAvailableGraphDatabase db, Label label ) throws LabelNotFoundKernelException
     {
-        Transaction tx = db.beginTx();
-        try
+        try ( Transaction ignore = db.beginTx() )
         {
             ThreadToStatementContextBridge bridge = db.getDependencyResolver().resolveDependency(
                     ThreadToStatementContextBridge.class );
-            return bridge.statement().readOperations().labelGetForName( label.name() );
-        }
-        finally
-        {
-            tx.finish();
+            return bridge.instance().readOperations().labelGetForName( label.name() );
         }
     }
 
-    private void commit( HighlyAvailableGraphDatabase db, javax.transaction.Transaction tx ) throws Exception
+    private void commit( HighlyAvailableGraphDatabase db, TransactionContinuation txc ) throws Exception
     {
-        TxManager txManager = db.getDependencyResolver().resolveDependency( TxManager.class );
-        txManager.resume( tx );
-        txManager.commit();
+        txc.resume();
+        txc.commit();
     }
 
-    private javax.transaction.Transaction createNodeAndKeepTxOpen( HighlyAvailableGraphDatabase db, Label label )
+    private TransactionContinuation createNodeAndKeepTxOpen( HighlyAvailableGraphDatabase db, Label label )
             throws SystemException
     {
-        db.beginTx();
+        TransactionContinuation txc = new TransactionContinuation( db );
+        txc.begin();
         db.createNode( label );
-        return db.getDependencyResolver().resolveDependency( TxManager.class ).suspend();
+        txc.suspend();
+        return txc;
     }
 
     private final File storeDir = TargetDirectory.forTest( getClass() ).graphDbDir( true );
@@ -125,4 +122,36 @@ public class LabelIT
             clusterManager.stop();
     }
 
+    private static class TransactionContinuation
+    {
+        private final HighlyAvailableGraphDatabase db;
+        private final TransactionManager txManager;
+        private Transaction graphDbTx;
+        private javax.transaction.Transaction jtaTx;
+
+        private TransactionContinuation( HighlyAvailableGraphDatabase db ) {
+            this.db = db;
+            txManager = db.getDependencyResolver().resolveDependency( TransactionManager.class );
+        }
+
+        public void begin()
+        {
+            graphDbTx = db.beginTx();
+        }
+
+        public void suspend() throws SystemException
+        {
+            jtaTx = txManager.suspend();
+        }
+
+        public void resume() throws Exception
+        {
+            txManager.resume( jtaTx );
+        }
+
+        public void commit()
+        {
+            graphDbTx.close();
+        }
+    }
 }

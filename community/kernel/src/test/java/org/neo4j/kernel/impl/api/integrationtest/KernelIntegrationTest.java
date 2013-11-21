@@ -25,14 +25,13 @@ import org.junit.Before;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.factory.GraphDatabaseSettings;
 import org.neo4j.kernel.GraphDatabaseAPI;
-import org.neo4j.kernel.ThreadToStatementContextBridge;
 import org.neo4j.kernel.api.DataWriteOperations;
-import org.neo4j.kernel.api.KernelAPI;
 import org.neo4j.kernel.api.ReadOperations;
 import org.neo4j.kernel.api.SchemaWriteOperations;
 import org.neo4j.kernel.api.Statement;
 import org.neo4j.kernel.api.TokenWriteOperations;
 import org.neo4j.kernel.api.exceptions.KernelException;
+import org.neo4j.kernel.impl.coreapi.ThreadToStatementContextBridge;
 import org.neo4j.kernel.impl.nioneo.store.NeoStore;
 import org.neo4j.kernel.impl.nioneo.xa.NeoStoreXaDataSource;
 import org.neo4j.kernel.impl.transaction.XaDataSourceManager;
@@ -42,8 +41,8 @@ import org.neo4j.test.impl.EphemeralFileSystemAbstraction;
 
 public abstract class KernelIntegrationTest
 {
+    @SuppressWarnings("deprecation")
     protected GraphDatabaseAPI db;
-    protected KernelAPI kernel;
     protected ThreadToStatementContextBridge statementContextProvider;
 
     private Transaction beansTx;
@@ -53,28 +52,28 @@ public abstract class KernelIntegrationTest
     protected TokenWriteOperations tokenWriteOperationsInNewTransaction() throws KernelException
     {
         beansTx = db.beginTx();
-        statement = statementContextProvider.statement();
+        statement = statementContextProvider.instance();
         return statement.tokenWriteOperations();
     }
 
     protected DataWriteOperations dataWriteOperationsInNewTransaction() throws KernelException
     {
         beansTx = db.beginTx();
-        statement = statementContextProvider.statement();
+        statement = statementContextProvider.instance();
         return statement.dataWriteOperations();
     }
 
     protected SchemaWriteOperations schemaWriteOperationsInNewTransaction() throws KernelException
     {
         beansTx = db.beginTx();
-        statement = statementContextProvider.statement();
+        statement = statementContextProvider.instance();
         return statement.schemaWriteOperations();
     }
 
     protected ReadOperations readOperationsInNewTransaction()
     {
         beansTx = db.beginTx();
-        statement = statementContextProvider.statement();
+        statement = statementContextProvider.instance();
         return statement.readOperations();
     }
 
@@ -111,14 +110,19 @@ public abstract class KernelIntegrationTest
     protected void startDb()
     {
         TestGraphDatabaseBuilder graphDatabaseFactory = (TestGraphDatabaseBuilder) new TestGraphDatabaseFactory().setFileSystem(fs).newImpermanentDatabaseBuilder();
+
+        //noinspection deprecation
         db = (GraphDatabaseAPI) graphDatabaseFactory.setConfig(GraphDatabaseSettings.cache_type,"none").newGraphDatabase();
         statementContextProvider = db.getDependencyResolver().resolveDependency(
                 ThreadToStatementContextBridge.class );
-        kernel = db.getDependencyResolver().resolveDependency( KernelAPI.class );
     }
 
     protected void stopDb()
     {
+        if ( beansTx != null )
+        {
+            beansTx.finish();
+        }
         db.shutdown();
     }
 

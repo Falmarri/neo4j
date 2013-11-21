@@ -37,5 +37,10 @@ public enum RecordType
     LABEL,
     LABEL_NAME,
 
-    NODE_DYNAMIC_LABEL
+    NODE_DYNAMIC_LABEL,
+
+    // Below are non-native records
+
+    LABEL_SCAN_DOCUMENT,
+    INDEX
 }

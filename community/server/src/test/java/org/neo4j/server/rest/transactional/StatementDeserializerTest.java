@@ -26,7 +26,7 @@ import java.util.Iterator;
 import org.junit.Test;
 
 import org.neo4j.server.rest.transactional.error.Neo4jError;
-import org.neo4j.server.rest.transactional.error.StatusCode;
+import org.neo4j.server.rest.transactional.error.Status;
 
 import static java.util.Arrays.asList;
 
@@ -69,7 +69,7 @@ public class StatementDeserializerTest
         String json = "{ \"timeout\" : 200, \"statements\" : [ { \"statement\" : \"ignored\", \"parameters\" : {}} ] }";
 
         assertYieldsErrors( json,
-                new Neo4jError( StatusCode.INVALID_REQUEST_FORMAT,
+                new Neo4jError( Status.Request.InvalidFormat,
                         new DeserializationException( "Unable to deserialize request. Expected first field to be 'statements', but was 'timeout'." )));
     }
 
@@ -94,6 +94,42 @@ public class StatementDeserializerTest
 
         assertThat( de.hasNext(), equalTo( false ) );
     }
+
+    @Test
+    public void shouldIgnoreUnknownFields() throws Exception
+    {
+        // Given
+        String json =  "{ \"statements\" : [ { \"a\" : \"\", \"b\" : { \"k\":1 }, \"statement\" : \"blah\" } ] }";
+
+        // When
+        StatementDeserializer de = new StatementDeserializer( new ByteArrayInputStream( json.getBytes( "UTF-8" ) ) );
+
+        // Then
+        assertThat( de.hasNext(), equalTo( true ) );
+
+        assertThat( de.next().statement(), equalTo( "blah" ) );
+        assertThat( de.hasNext(), equalTo( false ) );
+    }
+
+    @Test
+    public void shouldTakeParametersBeforeStatement() throws Exception
+    {
+        // Given
+        String json =  "{ \"statements\" : [ { \"a\" : \"\", \"parameters\" : { \"k\":1 }, \"statement\" : \"blah\"}]}";
+
+        // When
+        StatementDeserializer de = new StatementDeserializer( new ByteArrayInputStream( json.getBytes( "UTF-8" ) ) );
+
+        // Then
+        assertThat( de.hasNext(), equalTo( true ) );
+
+        Statement stmt = de.next();
+        assertThat( stmt.statement(), equalTo( "blah" ) );
+        assertThat( stmt.parameters(), equalTo( map("k", 1) ) );
+
+        assertThat( de.hasNext(), equalTo( false ) );
+    }
+
 
     @Test
     public void shouldTreatEmptyInputStreamAsEmptyStatementList() throws Exception
@@ -141,16 +177,41 @@ public class StatementDeserializerTest
     public void shouldNotThrowButReportErrorOnInvalidInput() throws Exception
     {
         assertYieldsErrors( "{}",
-                new Neo4jError( StatusCode.INVALID_REQUEST_FORMAT, new DeserializationException( "Unable to " +
+                new Neo4jError( Status.Request.InvalidFormat, new DeserializationException( "Unable to " +
                         "deserialize request. " +
                         "Expected [START_OBJECT, FIELD_NAME, START_ARRAY], " +
                         "found [START_OBJECT, END_OBJECT, null]." ) ) );
+
+
+        assertYieldsErrors( "{ \"statements\":\"WAIT WAT A STRING NOO11!\" }",
+                new Neo4jError( Status.Request.InvalidFormat, new DeserializationException( "Unable to " +
+                        "deserialize request. Expected [START_OBJECT, FIELD_NAME, START_ARRAY], found [START_OBJECT, " +
+                        "FIELD_NAME, VALUE_STRING]." ) ) );
+
         assertYieldsErrors( "[{]}",
-                new Neo4jError( StatusCode.INVALID_REQUEST_FORMAT,
+                new Neo4jError( Status.Request.InvalidFormat,
                         new DeserializationException( "Unable to deserialize request: Unexpected close marker ']': " +
                                 "expected '}' " +
                                 "(for OBJECT starting at [Source: TestInputStream; line: 1, column: 1])\n " +
                                 "at [Source: TestInputStream; line: 1, column: 4]" ) ) );
+
+        assertYieldsErrors( "{ \"statements\" : \"ITS A STRING\" }",
+                new Neo4jError( Status.Request.InvalidFormat,
+                        new DeserializationException( "Unable to deserialize request. " +
+                                "Expected [START_OBJECT, FIELD_NAME, START_ARRAY], " +
+                                "found [START_OBJECT, FIELD_NAME, VALUE_STRING]." ) ) );
+
+        assertYieldsErrors( "{ \"statements\" : [ { \"statement\" : [\"dd\"] } ] }",
+                new Neo4jError( Status.Request.InvalidFormat,
+                        new DeserializationException( "Unable to deserialize request: Can not deserialize instance of" +
+                                " java.lang.String out of START_ARRAY token\n at [Source: TestInputStream; line: 1, " +
+                                "column: 22]" ) ) );
+
+        assertYieldsErrors( "{ \"statements\" : [ { \"statement\" : \"stmt\", \"parameters\" : [\"AN ARRAY!!\"] } ] }",
+                new Neo4jError( Status.Request.InvalidFormat,
+                        new DeserializationException( "Unable to deserialize request: Can not deserialize instance of" +
+                                " java.util.LinkedHashMap out of START_ARRAY token\n at [Source: TestInputStream; " +
+                                "line: 1, column: 42]" ) ) );
     }
 
     private void assertYieldsErrors( String json, Neo4jError... expectedErrors ) throws UnsupportedEncodingException
@@ -176,8 +237,8 @@ public class StatementDeserializerTest
             Neo4jError error = actual.next();
             Neo4jError expectedError = expected.next();
 
-            assertThat( error.getStatusCode(), equalTo( expectedError.getStatusCode() ) );
             assertThat( error.getMessage(), equalTo( expectedError.getMessage() ) );
+            assertThat( error.status(), equalTo( expectedError.status() ) );
         }
 
         assertFalse( expected.hasNext() );

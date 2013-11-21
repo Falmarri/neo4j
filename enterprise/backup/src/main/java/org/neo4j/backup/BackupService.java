@@ -71,15 +71,22 @@ class BackupService
     class BackupOutcome
     {
         private final Map<String, Long> lastCommittedTxs;
+        private final boolean consistent;
 
-        BackupOutcome( Map<String, Long> lastCommittedTxs )
+        BackupOutcome( Map<String, Long> lastCommittedTxs, boolean consistent )
         {
             this.lastCommittedTxs = lastCommittedTxs;
+            this.consistent = consistent;
         }
 
         public Map<String, Long> getLastCommittedTxs()
         {
             return Collections.unmodifiableMap( lastCommittedTxs );
+        }
+        
+        public boolean isConsistent()
+        {
+            return consistent;
         }
     }
 
@@ -95,6 +102,7 @@ class BackupService
         client.start();
         long timestamp = System.currentTimeMillis();
         Map<String, Long> lastCommittedTxs = emptyMap();
+        boolean consistent = !checkConsistency; // default to true if we're not checking consistency
         try
         {
             Response<Void> response = client.fullBackup( decorateWithProgressIndicator(
@@ -109,7 +117,7 @@ class BackupService
                         ServerUtil.txHandlerForFullCopy() );
                 // Then go over all datasources, try to extract the latest tx
                 Set<String> noTxPresent = new HashSet<String>();
-                for ( XaDataSource ds : targetDb.getXaDataSourceManager().getAllRegisteredDataSources() )
+                for ( XaDataSource ds : dsManager( targetDb ).getAllRegisteredDataSources() )
                 {
                     long lastTx = ds.getLastCommittedTxId();
                     try
@@ -134,7 +142,7 @@ class BackupService
                      * span the next-to-last up to the latest for each datasource
                      */
                     BackupClient recoveryClient = new BackupClient(
-                            sourceHostNameOrIp, sourcePort, targetDb.getDependencyResolver().resolveDependency( Logging.class ), targetDb.getStoreId() );
+                            sourceHostNameOrIp, sourcePort, targetDb.getDependencyResolver().resolveDependency( Logging.class ), targetDb.storeId() );
                     recoveryClient.start();
                     Response<Void> recoveryResponse = null;
                     Map<String, Long> recoveryDiff = new HashMap<String, Long>();
@@ -159,7 +167,7 @@ class BackupService
                              */
                             Triplet<String, Long, TxExtractor> tx = txs.next();
                             scratch.clear();
-                            XaDataSource ds = targetDb.getXaDataSourceManager().getXaDataSource(
+                            XaDataSource ds = dsManager( targetDb ).getXaDataSource(
                                     tx.first() );
                             long logVersion = ds.getCurrentLogVersion() - 1;
                             FileChannel newLog = new RandomAccessFile(
@@ -214,11 +222,11 @@ class BackupService
                 StringLogger logger = StringLogger.SYSTEM;
                 try
                 {
-                    new ConsistencyCheckService().runFullConsistencyCheck(
+                    consistent = new ConsistencyCheckService().runFullConsistencyCheck(
                             targetDirectory,
                             tuningConfiguration,
                             ProgressMonitorFactory.textual( System.err ),
-                            logger );
+                            logger ).isSuccessful();
                 }
                 catch ( ConsistencyCheckIncompleteException e )
                 {
@@ -241,7 +249,7 @@ class BackupService
                 throw new RuntimeException( throwable );
             }
         }
-        return new BackupOutcome( lastCommittedTxs );
+        return new BackupOutcome( lastCommittedTxs, consistent );
     }
 
     BackupOutcome doIncrementalBackup( String sourceHostNameOrIp, int sourcePort, String targetDirectory,
@@ -287,7 +295,7 @@ class BackupService
 
     private RequestContext slaveContextOf( GraphDatabaseAPI graphDb )
     {
-        XaDataSourceManager dsManager = graphDb.getXaDataSourceManager();
+        XaDataSourceManager dsManager = dsManager( graphDb );
         List<Tx> txs = new ArrayList<Tx>();
         for ( XaDataSource ds : dsManager.getAllRegisteredDataSources() )
         {
@@ -375,15 +383,17 @@ class BackupService
                                                   RequestContext context )
     {
         BackupClient client = new BackupClient( sourceHostNameOrIp, sourcePort, targetDb.getDependencyResolver().resolveDependency( Logging.class ),
-                targetDb.getStoreId() );
+                targetDb.storeId() );
         client.start();
         Map<String, Long> lastCommittedTxs;
+        boolean consistent = false;
         try
         {
             lastCommittedTxs = unpackResponse( client.incrementalBackup( context ),
                     targetDb.getDependencyResolver().resolveDependency( XaDataSourceManager.class ),
                     new ProgressTxHandler() );
             trimLogicalLogCount( targetDb );
+            consistent = true;
         }
         finally
         {
@@ -396,12 +406,12 @@ class BackupService
                 throw new RuntimeException( throwable );
             }
         }
-        return new BackupOutcome( lastCommittedTxs );
+        return new BackupOutcome( lastCommittedTxs, consistent );
     }
 
     private void trimLogicalLogCount( GraphDatabaseAPI targetDb )
     {
-        for ( XaDataSource ds : targetDb.getXaDataSourceManager().getAllRegisteredDataSources() )
+        for ( XaDataSource ds : dsManager( targetDb ).getAllRegisteredDataSources() )
         {
             try
             {
@@ -439,6 +449,11 @@ class BackupService
                 currentVersion--;
             }
         }
+    }
+
+    private XaDataSourceManager dsManager( GraphDatabaseAPI targetDb )
+    {
+        return targetDb.getDependencyResolver().resolveDependency( XaDataSourceManager.class );
     }
 
     private Map<String, Long> unpackResponse( Response<Void> response, XaDataSourceManager xaDsm, TxHandler txHandler )

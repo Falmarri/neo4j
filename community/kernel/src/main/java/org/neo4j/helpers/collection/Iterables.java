@@ -227,22 +227,7 @@ public final class Iterables
 
     public static <X> X single( Iterable<? extends X> i )
     {
-        Iterator<? extends X> iter = i.iterator();
-        if ( iter.hasNext() )
-        {
-            X result = iter.next();
-
-            if ( iter.hasNext() )
-            {
-                throw new IllegalArgumentException( "More than one element in iterable" );
-            }
-
-            return result;
-        }
-        else
-        {
-            throw new IllegalArgumentException( "No elements in iterable" );
-        }
+        return IteratorUtil.single( i );
     }
 
     public static <X> Iterable<X> skip( final int skip, final Iterable<X> iterable )
@@ -466,6 +451,11 @@ public final class Iterables
         return concat( Arrays.asList( (Iterator<T>[]) iterables ).iterator() );
     }
 
+    public static <T> ResourceIterator<T> concatResourceIterators( Iterator<ResourceIterator<T>> iterators )
+    {
+        return new CombiningResourceIterator<>(iterators);
+    }
+
     public static <T> Iterator<T> concat( Iterator<Iterator<T>> iterators )
     {
         return new CombiningIterator<>(iterators);
@@ -628,6 +618,11 @@ public final class Iterables
                 return asResourceIterator( labels.iterator() );
             }
         };
+    }
+
+    public static <T> Set<T> toSet( Iterable<T> iterable )
+    {
+        return addAll( new HashSet<T>(), iterable );
     }
 
     private static class MapIterable<FROM, TO>

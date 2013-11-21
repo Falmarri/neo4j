@@ -19,8 +19,10 @@
  */
 package org.neo4j.kernel.impl.api.index;
 
+import java.io.File;
 import java.util.concurrent.Future;
 
+import org.neo4j.graphdb.ResourceIterator;
 import org.neo4j.kernel.api.exceptions.index.IndexPopulationFailedKernelException;
 import org.neo4j.kernel.api.index.InternalIndexState;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
@@ -43,19 +45,25 @@ public class RecoveringIndexProxy extends AbstractSwallowingIndexProxy
     @Override
     public boolean awaitStoreScanCompleted() throws IndexPopulationFailedKernelException, InterruptedException
     {
-        throw new UnsupportedOperationException( "cannot await population on a recovering index" );
+        throw unsupportedOperation( "Cannot await population on a recovering index." );
     }
 
     @Override
     public void activate()
     {
-        throw new UnsupportedOperationException( "Cannot activate recovering index." );
+        throw  unsupportedOperation( "Cannot activate recovering index." );
     }
 
     @Override
     public void validate()
     {
-        throw new UnsupportedOperationException( "Cannot validate recovering index." );
+        throw  unsupportedOperation( "Cannot validate recovering index." );
+    }
+
+    @Override
+    public ResourceIterator<File> snapshotFiles()
+    {
+        throw  unsupportedOperation( "Cannot snapshot a recovering index." );
     }
 
     @Override
@@ -68,5 +76,10 @@ public class RecoveringIndexProxy extends AbstractSwallowingIndexProxy
     public IndexPopulationFailure getPopulationFailure() throws IllegalStateException
     {
         throw new IllegalStateException( this + " is recovering" );
+    }
+
+    private UnsupportedOperationException unsupportedOperation( String message )
+    {
+        return new UnsupportedOperationException( message + " Recovering Index" + getDescriptor() );
     }
 }

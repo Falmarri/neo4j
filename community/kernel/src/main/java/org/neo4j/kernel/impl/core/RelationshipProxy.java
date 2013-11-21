@@ -29,22 +29,18 @@ import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.NotFoundException;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.RelationshipType;
-import org.neo4j.helpers.Function;
 import org.neo4j.helpers.ThisShouldNotHappenError;
-import org.neo4j.kernel.ThreadToStatementContextBridge;
-import org.neo4j.kernel.api.exceptions.InvalidTransactionTypeKernelException;
 import org.neo4j.kernel.api.ReadOnlyDatabaseKernelException;
 import org.neo4j.kernel.api.Statement;
 import org.neo4j.kernel.api.exceptions.EntityNotFoundException;
+import org.neo4j.kernel.api.exceptions.InvalidTransactionTypeKernelException;
 import org.neo4j.kernel.api.exceptions.PropertyKeyIdNotFoundKernelException;
 import org.neo4j.kernel.api.exceptions.PropertyNotFoundException;
 import org.neo4j.kernel.api.exceptions.schema.IllegalTokenNameException;
 import org.neo4j.kernel.api.operations.KeyReadOperations;
 import org.neo4j.kernel.api.properties.DefinedProperty;
 import org.neo4j.kernel.api.properties.Property;
-
-import static org.neo4j.helpers.collection.Iterables.map;
-import static org.neo4j.helpers.collection.IteratorUtil.asSet;
+import org.neo4j.kernel.impl.coreapi.ThreadToStatementContextBridge;
 
 public class RelationshipProxy implements Relationship
 {
@@ -83,7 +79,7 @@ public class RelationshipProxy implements Relationship
     @Override
     public void delete()
     {
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             statement.dataWriteOperations().relationshipDelete( getId() );
         }
@@ -154,7 +150,7 @@ public class RelationshipProxy implements Relationship
     @Override
     public Iterable<String> getPropertyKeys()
     {
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             List<String> keys = new ArrayList<>();
             Iterator<DefinedProperty> properties = statement.readOperations().relationshipGetAllProperties( getId() );
@@ -176,26 +172,6 @@ public class RelationshipProxy implements Relationship
     }
 
     @Override
-    public Iterable<Object> getPropertyValues()
-    {
-        try ( Statement statement = statementContextProvider.statement() )
-        {
-            return asSet( map( new Function<DefinedProperty, Object>()
-            {
-                @Override
-                public Object apply( DefinedProperty prop )
-                {
-                    return prop.value();
-                }
-            }, statement.readOperations().relationshipGetAllProperties( getId() ) ) );
-        }
-        catch ( EntityNotFoundException e )
-        {
-            throw new NotFoundException( "Relationship has been deleted", e );
-        }
-    }
-
-    @Override
     public Object getProperty( String key )
     {
         if ( null == key )
@@ -203,7 +179,7 @@ public class RelationshipProxy implements Relationship
             throw new IllegalArgumentException( "(null) property key is not allowed" );
         }
 
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             int propertyId = statement.readOperations().propertyKeyGetForName( key );
             if ( propertyId == KeyReadOperations.NO_SUCH_PROPERTY_KEY )
@@ -226,7 +202,7 @@ public class RelationshipProxy implements Relationship
             throw new IllegalArgumentException( "(null) property key is not allowed" );
         }
 
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             int propertyId = statement.readOperations().propertyKeyGetForName( key );
             return statement.readOperations().relationshipGetProperty( relId, propertyId ).value( defaultValue );
@@ -245,7 +221,7 @@ public class RelationshipProxy implements Relationship
             return false;
         }
 
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             int propertyId = statement.readOperations().propertyKeyGetForName( key );
             return propertyId != KeyReadOperations.NO_SUCH_PROPERTY_KEY &&
@@ -261,7 +237,7 @@ public class RelationshipProxy implements Relationship
     public void setProperty( String key, Object value )
     {
         boolean success = false;
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             int propertyKeyId = statement.tokenWriteOperations().propertyKeyGetOrCreateForName( key );
             statement.dataWriteOperations().relationshipSetProperty( relId, Property.property( propertyKeyId, value ) );
@@ -296,7 +272,7 @@ public class RelationshipProxy implements Relationship
     @Override
     public Object removeProperty( String key )
     {
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             int propertyId = statement.tokenWriteOperations().propertyKeyGetOrCreateForName( key );
             return statement.dataWriteOperations().relationshipRemoveProperty( relId, propertyId ).value( null );

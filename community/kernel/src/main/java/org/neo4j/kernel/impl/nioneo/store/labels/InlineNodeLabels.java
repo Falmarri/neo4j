@@ -19,6 +19,7 @@
  */
 package org.neo4j.kernel.impl.nioneo.store.labels;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 
@@ -28,6 +29,7 @@ import org.neo4j.kernel.impl.nioneo.store.NodeStore;
 import org.neo4j.kernel.impl.util.Bits;
 
 import static java.lang.Long.highestOneBit;
+import static java.lang.String.format;
 
 import static org.neo4j.kernel.impl.nioneo.store.labels.LabelIdArray.concatAndSort;
 import static org.neo4j.kernel.impl.nioneo.store.labels.LabelIdArray.filter;
@@ -51,13 +53,19 @@ public class InlineNodeLabels implements NodeLabels
     @Override
     public long[] get( NodeStore nodeStore )
     {
+        return getIfLoaded();
+    }
+
+    @Override
+    public long[] getIfLoaded()
+    {
         return parseInlined( labelField );
     }
 
     @Override
     public Collection<DynamicRecord> put( long[] labelIds, NodeStore nodeStore )
     {
-        if ( tryInlineInNodeRecord( labelIds, Collections.<DynamicRecord>emptyList() ) )
+        if ( tryInlineInNodeRecord( labelIds, node.getDynamicLabelRecords() ) )
         {
             return Collections.emptyList();
         }
@@ -71,7 +79,7 @@ public class InlineNodeLabels implements NodeLabels
     public Collection<DynamicRecord> add( long labelId, NodeStore nodeStore )
     {
         long[] augmentedLabelIds = labelCount( labelField ) == 0 ? new long[]{labelId} :
-                concatAndSort( parseInlined( labelField ), labelId );
+                                   concatAndSort( parseInlined( labelField ), labelId );
 
         return put( augmentedLabelIds, nodeStore );
     }
@@ -80,7 +88,7 @@ public class InlineNodeLabels implements NodeLabels
     public Collection<DynamicRecord> remove( long labelId, NodeStore nodeStore )
     {
         long[] newLabelIds = filter( parseInlined( labelField ), labelId );
-        boolean inlined = tryInlineInNodeRecord( newLabelIds, Collections.<DynamicRecord>emptyList() );
+        boolean inlined = tryInlineInNodeRecord( newLabelIds, node.getDynamicLabelRecords() );
         assert inlined;
         return Collections.emptyList();
     }
@@ -101,7 +109,7 @@ public class InlineNodeLabels implements NodeLabels
         }
 
         byte bitsPerLabel = (byte) (ids.length > 0 ? (LABEL_BITS / ids.length) : LABEL_BITS);
-        long limit = 1 << bitsPerLabel;
+        long limit = 1L << bitsPerLabel;
         Bits bits = bits( 5 );
         for ( long id : ids )
         {
@@ -114,11 +122,12 @@ public class InlineNodeLabels implements NodeLabels
                 return false;
             }
         }
-        node.setLabelField( combineLabelCountAndLabelStorage( (byte) ids.length, bits.getLongs()[0] ), changedDynamicRecords );
+        node.setLabelField( combineLabelCountAndLabelStorage( (byte) ids.length, bits.getLongs()[0] ),
+                            changedDynamicRecords );
         return true;
     }
 
-    private static long[] parseInlined( long labelField )
+    public static long[] parseInlined( long labelField )
     {
         byte numberOfLabels = labelCount( labelField );
         if ( numberOfLabels == 0 )
@@ -139,11 +148,23 @@ public class InlineNodeLabels implements NodeLabels
 
     private static long combineLabelCountAndLabelStorage( byte labelCount, long labelBits )
     {
-        return (((long) labelCount << 36) | labelBits);
+        return ((((long)labelCount) << 36) | labelBits);
     }
 
     private static byte labelCount( long labelField )
     {
         return (byte) ((labelField & 0xF000000000L) >>> 36);
+    }
+
+    @Override
+    public boolean isInlined()
+    {
+        return true;
+    }
+
+    @Override
+    public String toString()
+    {
+        return format( "Inline(0x%x:%s)", node.getLabelField(), Arrays.toString( getIfLoaded(/*it is*/ ) ) );
     }
 }

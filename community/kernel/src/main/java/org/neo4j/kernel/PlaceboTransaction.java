@@ -21,8 +21,13 @@ package org.neo4j.kernel;
 
 import org.neo4j.graphdb.Lock;
 import org.neo4j.kernel.impl.core.TransactionState;
+import org.neo4j.kernel.impl.persistence.PersistenceManager;
 import org.neo4j.kernel.impl.transaction.AbstractTransactionManager;
 
+/**
+ * @deprecated This will be moved to internal packages in the next major release.
+ */
+@Deprecated
 public class PlaceboTransaction extends TopLevelTransaction
 {
     public final static Lock NO_LOCK = new Lock()
@@ -33,9 +38,9 @@ public class PlaceboTransaction extends TopLevelTransaction
         }
     };
     
-    public PlaceboTransaction( AbstractTransactionManager transactionManager, TransactionState state )
+    public PlaceboTransaction( PersistenceManager pm, AbstractTransactionManager transactionManager, TransactionState state )
     {
-        super( transactionManager, state );
+        super( pm, transactionManager, state );
     }
 
     @Override

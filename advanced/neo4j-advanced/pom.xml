@@ -4,13 +4,13 @@
   <parent>
     <groupId>org.neo4j</groupId>
     <artifactId>parent</artifactId>
-    <version>2.0.0-M06</version>
+    <version>2.0.0-RC1</version>
     <relativePath>../..</relativePath>
   </parent>
 
   <groupId>org.neo4j</groupId>
   <artifactId>neo4j-advanced</artifactId>
-  <version>2.0.0-M06</version>
+  <version>2.0.0-RC1</version>
   <name>Neo4j Advanced</name>
   <packaging>jar</packaging>
   <url>http://components.neo4j.org/${project.artifactId}/${project.version}</url>
@@ -19,6 +19,7 @@
 
   <properties>
     <short-name>neo4j-advanced</short-name>
+    <version-package>advanced.impl</version-package>
     <bundle.namespace>org.neo4j</bundle.namespace>
     <docs.url>http://docs.neo4j.org/chunked/${project.version}/deployment-installation.html#editions</docs.url>
     <docs-plugin.skip>true</docs-plugin.skip>
@@ -233,7 +234,7 @@
   <distributionManagement>
     <site>
       <id>neo4j-site</id>
-      <url>scpexe://static.neo4j.org/var/www/components.neo4j.org/${project.artifactId}/${project.version}</url>
+      <url>scpexe://docs.neo4j.org/data/www/doc/components.neo4j.org/${project.artifactId}/${project.version}</url>
     </site>
   </distributionManagement>
 

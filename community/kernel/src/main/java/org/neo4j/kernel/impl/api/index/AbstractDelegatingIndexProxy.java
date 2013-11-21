@@ -19,15 +19,17 @@
  */
 package org.neo4j.kernel.impl.api.index;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.concurrent.Future;
 
+import org.neo4j.graphdb.ResourceIterator;
 import org.neo4j.kernel.api.exceptions.index.IndexActivationFailedKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexNotFoundKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexPopulationFailedKernelException;
 import org.neo4j.kernel.api.index.IndexReader;
+import org.neo4j.kernel.api.index.IndexUpdater;
 import org.neo4j.kernel.api.index.InternalIndexState;
-import org.neo4j.kernel.api.index.NodePropertyUpdate;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
 import org.neo4j.kernel.impl.api.constraints.ConstraintVerificationFailedKernelException;
 
@@ -40,17 +42,11 @@ public abstract class AbstractDelegatingIndexProxy implements IndexProxy
     {
         getDelegate().start();
     }
-    
+
     @Override
-    public void update( Iterable<NodePropertyUpdate> updates ) throws IOException
+    public IndexUpdater newUpdater( IndexUpdateMode mode )
     {
-        getDelegate().update( updates );
-    }
-    
-    @Override
-    public void recover( Iterable<NodePropertyUpdate> updates ) throws IOException
-    {
-        getDelegate().recover( updates );
+        return getDelegate().newUpdater( mode );
     }
 
     @Override
@@ -123,5 +119,11 @@ public abstract class AbstractDelegatingIndexProxy implements IndexProxy
     public String toString()
     {
         return String.format( "%s -> %s", getClass().getSimpleName(), getDelegate().toString() );
+    }
+
+    @Override
+    public ResourceIterator<File> snapshotFiles() throws IOException
+    {
+        return getDelegate().snapshotFiles();
     }
 }

@@ -21,11 +21,11 @@ package org.neo4j.kernel.impl.api;
 
 import org.junit.Test;
 
+import org.neo4j.graphdb.Transaction;
 import org.neo4j.kernel.GraphDatabaseAPI;
-import org.neo4j.kernel.api.exceptions.InvalidTransactionTypeKernelException;
-import org.neo4j.kernel.api.KernelAPI;
-import org.neo4j.kernel.api.KernelTransaction;
 import org.neo4j.kernel.api.Statement;
+import org.neo4j.kernel.api.exceptions.InvalidTransactionTypeKernelException;
+import org.neo4j.kernel.impl.coreapi.ThreadToStatementContextBridge;
 import org.neo4j.test.ImpermanentGraphDatabase;
 
 import static org.hamcrest.Matchers.containsString;
@@ -37,21 +37,26 @@ public class KernelTest
     @Test
     public void shouldNotAllowCreationOfConstraintsWhenInHA() throws Exception
     {
+        //noinspection deprecation
         GraphDatabaseAPI db = new FakeHaDatabase();
-        KernelAPI kernelAPI = db.getDependencyResolver().resolveDependency( KernelAPI.class );
-        db.beginTx();
-        KernelTransaction tx = kernelAPI.newTransaction();
-        Statement statement = tx.acquireStatement();
+        ThreadToStatementContextBridge stmtBridge =
+                db.getDependencyResolver().resolveDependency( ThreadToStatementContextBridge.class );
 
-        try
+        try ( Transaction ignored = db.beginTx() )
         {
-            statement.schemaWriteOperations().uniquenessConstraintCreate( 1, 1 );
-            fail( "expected exception here" );
+            Statement statement = stmtBridge.instance();
+
+            try
+            {
+                statement.schemaWriteOperations().uniquenessConstraintCreate( 1, 1 );
+                fail( "expected exception here" );
+            }
+            catch ( InvalidTransactionTypeKernelException e )
+            {
+                assertThat( e.getMessage(), containsString( "HA" ) );
+            }
         }
-        catch ( InvalidTransactionTypeKernelException e )
-        {
-            assertThat( e.getMessage(), containsString( "HA" ) );
-        }
+
         db.shutdown();
     }
 

@@ -20,12 +20,11 @@
 package org.neo4j.consistency.checking.full;
 
 import java.lang.reflect.Array;
-import java.util.ArrayList;
 import java.util.List;
 
 import org.neo4j.consistency.ConsistencyCheckSettings;
 import org.neo4j.consistency.checking.CheckDecorator;
-import org.neo4j.consistency.checking.SchemaRecordCheck;
+import org.neo4j.consistency.checking.index.IndexAccessors;
 import org.neo4j.consistency.report.ConsistencyReporter;
 import org.neo4j.consistency.report.ConsistencySummaryStatistics;
 import org.neo4j.consistency.report.InconsistencyMessageLogger;
@@ -35,25 +34,21 @@ import org.neo4j.consistency.store.DiffRecordAccess;
 import org.neo4j.consistency.store.DirectRecordAccess;
 import org.neo4j.graphdb.factory.GraphDatabaseSettings;
 import org.neo4j.helpers.progress.ProgressMonitorFactory;
+import org.neo4j.kernel.api.direct.DirectStoreAccess;
 import org.neo4j.kernel.configuration.Config;
 import org.neo4j.kernel.impl.nioneo.store.AbstractBaseRecord;
 import org.neo4j.kernel.impl.nioneo.store.LabelTokenRecord;
 import org.neo4j.kernel.impl.nioneo.store.PropertyKeyTokenRecord;
 import org.neo4j.kernel.impl.nioneo.store.RecordStore;
 import org.neo4j.kernel.impl.nioneo.store.RelationshipTypeTokenRecord;
-import org.neo4j.kernel.impl.nioneo.store.SchemaStore;
 import org.neo4j.kernel.impl.nioneo.store.StoreAccess;
 import org.neo4j.kernel.impl.util.StringLogger;
-
-import static org.neo4j.consistency.checking.full.MultiPassStore.ARRAYS;
-import static org.neo4j.consistency.checking.full.MultiPassStore.NODES;
-import static org.neo4j.consistency.checking.full.MultiPassStore.PROPERTIES;
-import static org.neo4j.consistency.checking.full.MultiPassStore.RELATIONSHIPS;
-import static org.neo4j.consistency.checking.full.MultiPassStore.STRINGS;
 
 public class FullCheck
 {
     private final boolean checkPropertyOwners;
+    private final boolean checkLabelScanStore;
+    private final boolean checkIndexes;
     private final TaskExecutionOrder order;
     private final ProgressMonitorFactory progressFactory;
     private final Long totalMappedMemory;
@@ -61,19 +56,21 @@ public class FullCheck
     public FullCheck( Config tuningConfiguration, ProgressMonitorFactory progressFactory )
     {
         this.checkPropertyOwners = tuningConfiguration.get( ConsistencyCheckSettings.consistency_check_property_owners );
+        this.checkLabelScanStore = tuningConfiguration.get( ConsistencyCheckSettings.consistency_check_label_scan_store );
+        this.checkIndexes = tuningConfiguration.get( ConsistencyCheckSettings.consistency_check_indexes );
         this.order = tuningConfiguration.get( ConsistencyCheckSettings.consistency_check_execution_order );
         this.totalMappedMemory = tuningConfiguration.get( GraphDatabaseSettings.all_stores_total_mapped_memory_size );
         this.progressFactory = progressFactory;
     }
 
-    public ConsistencySummaryStatistics execute( StoreAccess store, StringLogger logger )
+    public ConsistencySummaryStatistics execute( DirectStoreAccess stores, StringLogger logger )
             throws ConsistencyCheckIncompleteException
     {
         ConsistencySummaryStatistics summary = new ConsistencySummaryStatistics();
         InconsistencyReport report = new InconsistencyReport( new InconsistencyMessageLogger( logger ), summary );
 
         OwnerCheck ownerCheck = new OwnerCheck( checkPropertyOwners );
-        execute( store, ownerCheck, recordAccess( store ), report );
+        execute( stores, ownerCheck, recordAccess( stores.nativeStores() ), report );
         ownerCheck.scanForOrphanChains( progressFactory );
 
         if ( !summary.isConsistent() )
@@ -83,80 +80,37 @@ public class FullCheck
         return summary;
     }
 
-    void execute( StoreAccess store, CheckDecorator decorator, DiffRecordAccess recordAccess,
-                  InconsistencyReport report )
+    void execute( final DirectStoreAccess directStoreAccess, CheckDecorator decorator, final DiffRecordAccess recordAccess,
+                  final InconsistencyReport report )
             throws ConsistencyCheckIncompleteException
     {
-        StoreProcessor processEverything = new StoreProcessor( decorator,
-                new ConsistencyReporter( recordAccess, report ) );
+        final ConsistencyReporter reporter = new ConsistencyReporter( recordAccess, report );
+        StoreProcessor processEverything = new StoreProcessor( decorator, reporter );
 
         ProgressMonitorFactory.MultiPartBuilder progress = progressFactory.multipleParts( "Full consistency check" );
-        List<StoreProcessorTask> tasks = new ArrayList<>( 16 );
 
+        final StoreAccess nativeStores = directStoreAccess.nativeStores();
+        try ( IndexAccessors indexes = new IndexAccessors( directStoreAccess.indexes(), nativeStores.getSchemaStore() ) )
+        {
+            MultiPassStore.Factory multiPass = new MultiPassStore.Factory(
+                    decorator, totalMappedMemory, nativeStores, recordAccess, report );
+            List<StoppableRunnable> tasks = new ConsistencyCheckTasks( progress, order, processEverything ).createTasks(
+                    nativeStores,
+                    directStoreAccess.labelScanStore(),
+                    indexes,
+                    multiPass,
+                    reporter,
+                    checkLabelScanStore,
+                    checkIndexes
+            );
 
-        MultiPassStore.Factory processorFactory = new MultiPassStore.Factory(
-                decorator, totalMappedMemory, store, recordAccess, report );
+            order.execute( tasks, progress.build() );
+        }
+        catch ( Exception e )
+        {
+            throw new ConsistencyCheckIncompleteException( e );
+        }
 
-        tasks.add( new StoreProcessorTask<>(
-                store.getNodeStore(), progress, order,
-                processEverything, processorFactory.createAll( PROPERTIES, RELATIONSHIPS ) ) );
-
-        tasks.add( new StoreProcessorTask<>(
-                store.getRelationshipStore(), progress, order,
-                processEverything, processorFactory.createAll( NODES, PROPERTIES, RELATIONSHIPS ) ) );
-        tasks.add( new StoreProcessorTask<>(
-                store.getPropertyStore(), progress, order,
-                processEverything, processorFactory.createAll( PROPERTIES, STRINGS, ARRAYS ) ) );
-        tasks.add( new StoreProcessorTask<>(
-                store.getStringStore(), progress, order,
-                processEverything, processorFactory.createAll( STRINGS ) ) );
-        tasks.add( new StoreProcessorTask<>(
-                store.getArrayStore(), progress, order,
-                processEverything, processorFactory.createAll( ARRAYS ) ) );
-
-        // The schema store is verified in multiple passes that share state since it fits into memory
-        // and we care about the consistency of back references (cf. SemanticCheck)
-
-        // PASS 1: Dynamic record chains
-        tasks.add( new StoreProcessorTask<>(
-                store.getSchemaStore(), progress, order,
-                processEverything, processEverything ) );
-
-        // PASS 2: Rule integrity and obligation build up
-        final SchemaRecordCheck schemaCheck = new SchemaRecordCheck( (SchemaStore) store.getSchemaStore() );
-        tasks.add( new SchemaStoreProcessorTask<>(
-                store.getSchemaStore(), "check_rules", schemaCheck, progress, order,
-                processEverything, processEverything ) );
-
-        // PASS 3: Obligation verification and semantic rule uniqueness
-        tasks.add( new SchemaStoreProcessorTask<>(
-                store.getSchemaStore(), "check_obligations", schemaCheck.forObligationChecking(), progress, order,
-                processEverything, processEverything ) );
-
-        tasks.add( new StoreProcessorTask<>(
-                store.getRelationshipTypeTokenStore(), progress, order,
-                processEverything, processEverything ) );
-        tasks.add( new StoreProcessorTask<>(
-                store.getPropertyKeyTokenStore(), progress, order,
-                processEverything, processEverything ) );
-        tasks.add( new StoreProcessorTask<>(
-                store.getLabelTokenStore(), progress, order,
-                processEverything, processEverything ) );
-
-        tasks.add( new StoreProcessorTask<>(
-                store.getRelationshipTypeNameStore(), progress, order,
-                processEverything, processEverything ) );
-        tasks.add( new StoreProcessorTask<>(
-                store.getPropertyKeyNameStore(), progress, order,
-                processEverything, processEverything ) );
-        tasks.add( new StoreProcessorTask<>(
-                store.getLabelNameStore(), progress, order,
-                processEverything, processEverything ) );
-
-        tasks.add( new StoreProcessorTask<>( store.getNodeDynamicLabelStore(), progress, order,
-                processEverything, processEverything ) );
-
-        order.execute( tasks, progress.build() );
     }
 
     static DiffRecordAccess recordAccess( StoreAccess store )

@@ -21,7 +21,7 @@ package org.neo4j.kernel.impl.api.index;
 
 import org.neo4j.helpers.collection.Visitor;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
-import org.neo4j.kernel.api.scan.NodeLabelUpdate;
+import org.neo4j.kernel.api.labelscan.NodeLabelUpdate;
 
 /** The indexing services view of the universe. */
 public interface IndexStoreView
@@ -43,4 +43,6 @@ public interface IndexStoreView
     <FAILURE extends Exception> StoreScan<FAILURE> visitNodes( int[] labelIds, int[] propertyKeyIds,
             Visitor<NodePropertyUpdate, FAILURE> propertyUpdateVisitor,
             Visitor<NodeLabelUpdate, FAILURE> labelUpdateVisitor );
+
+    Iterable<NodePropertyUpdate> nodeAsUpdates( long nodeId );
 }

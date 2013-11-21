@@ -19,10 +19,6 @@
  */
 package org.neo4j.kernel.impl.core;
 
-import static java.util.Arrays.asList;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
-
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -36,6 +32,9 @@ import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.kernel.impl.MyRelTypes;
 import org.neo4j.test.TestGraphDatabaseFactory;
+
+import static java.util.Arrays.asList;
+import static org.junit.Assert.*;
 
 public class TestNeo4jApiExceptions
 {
@@ -109,6 +108,9 @@ public class TestNeo4jApiExceptions
         node2.delete();
         rel.delete();
         node3.delete();
+
+        // Finally
+        rollback();
     }
 
     @Test
@@ -140,6 +142,9 @@ public class TestNeo4jApiExceptions
         catch ( NotFoundException e )
         { // good
         }
+
+        // Finally
+        rollback();
     }
 
 
@@ -147,7 +152,8 @@ public class TestNeo4jApiExceptions
     public void shouldGiveNiceErrorWhenShutdownKernelApi()
     {
         GraphDatabaseService graphDb = graph;
-        Node node = graphDb.getReferenceNode();
+        Node node = graphDb.createNode();
+        commit();
         graphDb.shutdown();
 
         try
@@ -164,7 +170,8 @@ public class TestNeo4jApiExceptions
     public void shouldGiveNiceErrorWhenShutdownLegacy()
     {
         GraphDatabaseService graphDb = graph;
-        Node node = graphDb.getReferenceNode();
+        Node node = graphDb.createNode();
+        commit();
         graphDb.shutdown();
 
         try
@@ -194,7 +201,7 @@ public class TestNeo4jApiExceptions
         if ( tx != null )
         {
             tx.success();
-            tx.finish();
+            tx.close();
         }
         tx = graph.beginTx();
     }
@@ -204,7 +211,16 @@ public class TestNeo4jApiExceptions
         if ( tx != null )
         {
             tx.success();
-            tx.finish();
+            tx.close();
+            tx = null;
+        }
+    }
+
+    public void rollback()
+    {
+        if ( tx != null )
+        {
+            tx.close();
             tx = null;
         }
     }
@@ -219,6 +235,7 @@ public class TestNeo4jApiExceptions
     @After
     public void cleanUp()
     {
+        rollback();
         graph.shutdown();
     }
 

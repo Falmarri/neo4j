@@ -22,9 +22,6 @@ package org.neo4j.cluster;
 import java.net.URI;
 
 import org.neo4j.cluster.com.BindingNotifier;
-import org.neo4j.cluster.com.message.Message;
-import org.neo4j.cluster.com.message.MessageProcessor;
-import org.neo4j.cluster.com.message.MessageType;
 import org.neo4j.cluster.statemachine.StateMachine;
 import org.neo4j.cluster.statemachine.StateMachineConversations;
 import org.neo4j.cluster.statemachine.StateMachineProxyFactory;
@@ -35,7 +32,7 @@ import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.kernel.logging.Logging;
 
 /**
- * A ProtocolServer ties together the underlying ConnectedStateMachines with an understanding of ones
+ * A ProtocolServer ties together the underlying StateMachines with an understanding of ones
  * own server address (me), and provides a proxy factory for creating clients to invoke the CSM.
  */
 public class ProtocolServer implements BindingNotifier
@@ -53,16 +50,9 @@ public class ProtocolServer implements BindingNotifier
         this.stateMachines = stateMachines;
         this.msgLog = logging.getMessagesLog( getClass() );
 
-        FromHeaderMessageProcessor fromHeaderMessageProcessor = new FromHeaderMessageProcessor();
-        addBindingListener( fromHeaderMessageProcessor );
-        stateMachines.addMessageProcessor( fromHeaderMessageProcessor );
-
-        StateMachineConversations conversations = new StateMachineConversations();
-        proxyFactory = new StateMachineProxyFactory( stateMachines, conversations );
+        StateMachineConversations conversations = new StateMachineConversations(me);
+        proxyFactory = new StateMachineProxyFactory( stateMachines, conversations, me );
         stateMachines.addMessageProcessor( proxyFactory );
-
-        addBindingListener( conversations );
-        addBindingListener( proxyFactory );
     }
 
     public void addBindingListener( BindingListener listener )
@@ -145,27 +135,5 @@ public class ProtocolServer implements BindingNotifier
     public URI boundAt()
     {
         return boundAt;
-    }
-
-    private class FromHeaderMessageProcessor
-            implements MessageProcessor, BindingListener
-    {
-        private String me;
-
-        @Override
-        public void listeningAt( URI me )
-        {
-            this.me = me.toString();
-        }
-
-        @Override
-        public boolean process( Message<? extends MessageType> message )
-        {
-            if ( message.hasHeader( Message.TO ) && me != null )
-            {
-                message.setHeader( Message.FROM, me );
-            }
-            return true;
-        }
     }
 }

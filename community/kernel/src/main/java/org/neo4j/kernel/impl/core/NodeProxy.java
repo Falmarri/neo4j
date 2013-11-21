@@ -31,20 +31,20 @@ import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.NotFoundException;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.RelationshipType;
-import org.neo4j.graphdb.ResourceIterable;
-import org.neo4j.graphdb.ResourceIterator;
 import org.neo4j.graphdb.ReturnableEvaluator;
 import org.neo4j.graphdb.StopEvaluator;
 import org.neo4j.graphdb.Traverser;
 import org.neo4j.graphdb.Traverser.Order;
-import org.neo4j.helpers.Function;
-import org.neo4j.helpers.FunctionFromPrimitiveInt;
 import org.neo4j.helpers.ThisShouldNotHappenError;
-import org.neo4j.kernel.ThreadToStatementContextBridge;
-import org.neo4j.kernel.api.exceptions.*;
-import org.neo4j.kernel.api.exceptions.InvalidTransactionTypeKernelException;
+import org.neo4j.kernel.impl.coreapi.ThreadToStatementContextBridge;
 import org.neo4j.kernel.api.ReadOnlyDatabaseKernelException;
 import org.neo4j.kernel.api.Statement;
+import org.neo4j.kernel.api.exceptions.EntityNotFoundException;
+import org.neo4j.kernel.api.exceptions.InvalidTransactionTypeKernelException;
+import org.neo4j.kernel.api.exceptions.LabelNotFoundKernelException;
+import org.neo4j.kernel.api.exceptions.PropertyKeyIdNotFoundKernelException;
+import org.neo4j.kernel.api.exceptions.PropertyNotFoundException;
+import org.neo4j.kernel.api.exceptions.RelationshipTypeIdNotFoundKernelException;
 import org.neo4j.kernel.api.exceptions.schema.IllegalTokenNameException;
 import org.neo4j.kernel.api.exceptions.schema.TooManyLabelsException;
 import org.neo4j.kernel.api.operations.KeyReadOperations;
@@ -60,8 +60,6 @@ import org.neo4j.kernel.impl.traversal.OldTraverserWrapper;
 import static java.lang.String.format;
 
 import static org.neo4j.graphdb.DynamicLabel.label;
-import static org.neo4j.helpers.collection.Iterables.map;
-import static org.neo4j.helpers.collection.IteratorUtil.asSet;
 
 public class NodeProxy implements Node
 {
@@ -104,7 +102,7 @@ public class NodeProxy implements Node
     @Override
     public void delete()
     {
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             statement.dataWriteOperations().nodeDelete( getId() );
         }
@@ -206,7 +204,7 @@ public class NodeProxy implements Node
     public void setProperty( String key, Object value )
     {
         boolean requireRollback = true; // TODO: this seems like the wrong level to do this on...
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             int propertyKeyId = statement.tokenWriteOperations().propertyKeyGetOrCreateForName( key );
             try
@@ -248,7 +246,7 @@ public class NodeProxy implements Node
     @Override
     public Object removeProperty( String key ) throws NotFoundException
     {
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             int propertyKeyId = statement.tokenWriteOperations().propertyKeyGetOrCreateForName( key );
             return statement.dataWriteOperations().nodeRemoveProperty( nodeId, propertyKeyId ).value( null );
@@ -279,7 +277,7 @@ public class NodeProxy implements Node
             throw new IllegalArgumentException( "(null) property key is not allowed" );
         }
 
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             int propertyKeyId = statement.readOperations().propertyKeyGetForName( key );
             return statement.readOperations().nodeGetProperty( nodeId, propertyKeyId ).value( defaultValue );
@@ -291,29 +289,9 @@ public class NodeProxy implements Node
     }
 
     @Override
-    public Iterable<Object> getPropertyValues()
-    {
-        try ( Statement statement = statementContextProvider.statement() )
-        {
-            return asSet( map( new Function<DefinedProperty, Object>()
-            {
-                @Override
-                public Object apply( DefinedProperty prop )
-                {
-                    return prop.value();
-                }
-            }, statement.readOperations().nodeGetAllProperties( getId() ) ) );
-        }
-        catch ( EntityNotFoundException e )
-        {
-            throw new NotFoundException( "Node not found", e );
-        }
-    }
-
-    @Override
     public Iterable<String> getPropertyKeys()
     {
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             List<String> keys = new ArrayList<>();
             Iterator<DefinedProperty> properties = statement.readOperations().nodeGetAllProperties( getId() );
@@ -342,7 +320,7 @@ public class NodeProxy implements Node
             throw new IllegalArgumentException( "(null) property key is not allowed" );
         }
 
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             int propertyKeyId = statement.readOperations().propertyKeyGetForName( key );
             if ( propertyKeyId == KeyReadOperations.NO_SUCH_PROPERTY_KEY )
@@ -365,7 +343,7 @@ public class NodeProxy implements Node
             return false;
         }
 
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             int propertyKeyId = statement.readOperations().propertyKeyGetForName( key );
             return statement.readOperations().nodeGetProperty( nodeId, propertyKeyId ).isDefined();
@@ -425,7 +403,7 @@ public class NodeProxy implements Node
         //{
         //    throw new IllegalArgumentException( "Nodes do not belong to same graph database." );
         //}
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             long relationshipTypeId = statement.tokenWriteOperations().relationshipTypeGetOrCreateForName( type.name() );
             return nodeLookup.getNodeManager().newRelationshipProxyById(
@@ -487,7 +465,7 @@ public class NodeProxy implements Node
     @Override
     public void addLabel( Label label )
     {
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             try
             {
@@ -523,7 +501,7 @@ public class NodeProxy implements Node
     @Override
     public void removeLabel( Label label )
     {
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             int labelId = statement.readOperations().labelGetForName( label.name() );
             if ( labelId != KeyReadOperations.NO_SUCH_LABEL )
@@ -548,7 +526,7 @@ public class NodeProxy implements Node
     @Override
     public boolean hasLabel( Label label )
     {
-        try ( Statement statement = statementContextProvider.statement() )
+        try ( Statement statement = statementContextProvider.instance() )
         {
             int labelId = statement.readOperations().labelGetForName( label.name() );
             return statement.readOperations().nodeHasLabel( getId(), labelId );
@@ -560,42 +538,26 @@ public class NodeProxy implements Node
     }
 
     @Override
-    public ResourceIterable<Label> getLabels()
+    public Iterable<Label> getLabels()
     {
-        return new ResourceIterable<Label>()
+        try ( Statement statement = statementContextProvider.instance() )
         {
-            @Override
-            public ResourceIterator<Label> iterator()
+            PrimitiveIntIterator labels = statement.readOperations().nodeGetLabels( getId() );
+            List<Label> keys = new ArrayList<>();
+            while ( labels.hasNext() )
             {
-                PrimitiveIntIterator labels;
-                final Statement statement = statementContextProvider.statement();
-                try
-                {
-                    labels = statement.readOperations().nodeGetLabels( getId() );
-                }
-                catch ( EntityNotFoundException e )
-                {
-                    statement.close();
-                    throw new NotFoundException( "No node with id " + getId() + " found.", e );
-                }
-
-                return nodeLookup.getCleanupService().resourceIterator( map( new FunctionFromPrimitiveInt<Label>()
-                {
-                    @Override
-                    public Label apply( int labelId )
-                    {
-                        try
-                        {
-                            return label( statement.readOperations().labelGetName( labelId ) );
-                        }
-                        catch ( LabelNotFoundKernelException e )
-                        {
-                            throw new ThisShouldNotHappenError( "Mattias", "Listed labels for node " + nodeId +
-                                    ", but the returned label " + labelId + " doesn't exist anymore" );
-                        }
-                    }
-                }, labels ), statement );
+                int labelId = labels.next();
+                keys.add( label( statement.readOperations().labelGetName( labelId ) ) );
             }
-        };
+            return keys;
+        }
+        catch ( EntityNotFoundException e )
+        {
+            throw new NotFoundException( "Node not found", e );
+        }
+        catch ( LabelNotFoundKernelException e )
+        {
+            throw new ThisShouldNotHappenError( "Stefan", "Label retrieved through kernel API should exist." );
+        }
     }
 }

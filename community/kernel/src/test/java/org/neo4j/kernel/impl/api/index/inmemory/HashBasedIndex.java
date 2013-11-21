@@ -19,8 +19,10 @@
  */
 package org.neo4j.kernel.impl.api.index.inmemory;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
@@ -72,5 +74,47 @@ class HashBasedIndex extends InMemoryIndexImplementation
         {
             nodes.remove( nodeId );
         }
+    }
+
+    @Override
+    void remove( long nodeId )
+    {
+        for ( Set<Long> nodes : data.values() )
+        {
+            nodes.remove( nodeId );
+        }
+    }
+
+    @Override
+    public long maxCount()
+    {
+        return ids().size();
+    }
+
+    @Override
+    public Iterator<Long> iterator()
+    {
+        return ids().iterator();
+    }
+
+    private Collection<Long> ids()
+    {
+        Set<Long> allIds = new HashSet<>();
+        for ( Set<Long> someIds : data.values() )
+        {
+            allIds.addAll( someIds );
+        }
+        return allIds;
+    }
+
+    @Override
+    InMemoryIndexImplementation snapshot()
+    {
+        HashBasedIndex snapshot = new HashBasedIndex();
+        for ( Map.Entry<Object, Set<Long>> entry : data.entrySet() )
+        {
+            snapshot.data.put( entry.getKey(), new HashSet<>( entry.getValue() ) );
+        }
+        return snapshot;
     }
 }

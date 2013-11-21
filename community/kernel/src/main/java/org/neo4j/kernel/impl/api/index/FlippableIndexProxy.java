@@ -19,19 +19,23 @@
  */
 package org.neo4j.kernel.impl.api.index;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import org.neo4j.graphdb.ResourceIterator;
 import org.neo4j.kernel.api.exceptions.index.ExceptionDuringFlipKernelException;
 import org.neo4j.kernel.api.exceptions.index.FlipFailedKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexActivationFailedKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexNotFoundKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexPopulationFailedKernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexProxyAlreadyClosedKernelException;
+import org.neo4j.kernel.api.index.IndexEntryConflictException;
 import org.neo4j.kernel.api.index.IndexReader;
+import org.neo4j.kernel.api.index.IndexUpdater;
 import org.neo4j.kernel.api.index.InternalIndexState;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
@@ -69,27 +73,14 @@ public class FlippableIndexProxy implements IndexProxy
     }
 
     @Override
-    public void update( Iterable<NodePropertyUpdate> updates ) throws IOException
+    public IndexUpdater newUpdater( IndexUpdateMode mode )
     {
+        // Making use of reentrant locks to ensure that the delegate's constructor is called under lock protection
+        // while still retaining the lock until a call to close on the returned IndexUpdater
         lock.readLock().lock();
         try
         {
-            delegate.update( updates );
-        }
-        finally
-        {
-            lock.readLock().unlock();
-        }
-    }
-
-    @Override
-    public void recover( Iterable<NodePropertyUpdate> updates ) throws IOException
-    {
-        // TODO Shouldn't need the lock
-        lock.readLock().lock();
-        try
-        {
-            delegate.recover( updates );
+            return new LockingIndexUpdater( delegate.newUpdater( mode ) );
         }
         finally
         {
@@ -238,7 +229,21 @@ public class FlippableIndexProxy implements IndexProxy
             lock.readLock().unlock();
         }
     }
-    
+
+    @Override
+    public ResourceIterator<File> snapshotFiles() throws IOException
+    {
+        lock.readLock().lock();
+        try
+        {
+            return delegate.snapshotFiles();
+        }
+        finally
+        {
+            lock.readLock().unlock();
+        }
+    }
+
     @Override
     public IndexPopulationFailure getPopulationFailure() throws IllegalStateException
     {
@@ -314,6 +319,34 @@ public class FlippableIndexProxy implements IndexProxy
         if ( closed )
         {
             throw new IndexProxyAlreadyClosedKernelException( this.getClass() );
+        }
+    }
+
+    private class LockingIndexUpdater extends DelegatingIndexUpdater
+    {
+        private LockingIndexUpdater( IndexUpdater delegate )
+        {
+            super( delegate );
+            lock.readLock().lock();
+        }
+
+        @Override
+        public void process( NodePropertyUpdate update ) throws IOException, IndexEntryConflictException
+        {
+            delegate.process( update );
+        }
+
+        @Override
+        public void close() throws IOException, IndexEntryConflictException
+        {
+            try
+            {
+                delegate.close();
+            }
+            finally
+            {
+                lock.readLock().unlock();
+            }
         }
     }
 }

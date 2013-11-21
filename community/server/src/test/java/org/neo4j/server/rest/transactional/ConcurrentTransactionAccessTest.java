@@ -25,7 +25,6 @@ import org.junit.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 import org.neo4j.helpers.Clock;
-import org.neo4j.kernel.api.KernelAPI;
 import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.server.rest.transactional.error.InvalidConcurrentTransactionAccess;
 import org.neo4j.server.rest.web.TransactionUriScheme;
@@ -44,7 +43,7 @@ public class ConcurrentTransactionAccessTest
         // given
         TransactionRegistry registry =
                 new TransactionHandleRegistry( mock( Clock.class), 0, StringLogger.DEV_NULL );
-        KernelAPI kernel = mock( KernelAPI.class );
+        TransitionalPeriodTransactionMessContainer kernel = mock( TransitionalPeriodTransactionMessContainer.class );
         when(kernel.newTransaction()).thenReturn( mock(TransitionalTxManagementKernelTransaction.class) );
         TransactionFacade actions = new TransactionFacade( kernel, null, registry, null, null );
 

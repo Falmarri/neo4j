@@ -25,7 +25,6 @@ import java.util.List;
 
 import org.neo4j.cypher.javacompat.ExecutionEngine;
 import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Transaction;
 import org.neo4j.test.TestGraphDatabaseFactory;
 
 /**
@@ -66,31 +65,28 @@ public final class CypherDoc
 
         StringBuilder output = new StringBuilder( 4096 );
         GraphDatabaseService database = new TestGraphDatabaseFactory().newImpermanentDatabase();
-        try(Transaction ignored = database.beginTx())
+        ExecutionEngine engine = new ExecutionEngine( database );
+        State state = new State( engine, database );
+
+        boolean hasConsole = false;
+        for ( Block block : blocks )
         {
-            ExecutionEngine engine = new ExecutionEngine( database );
-            State state = new State( engine, database );
-
-            removeReferenceNode( database );
-
-            boolean hasConsole = false;
-            for ( Block block : blocks )
+            if ( block.type == BlockType.CONSOLE )
             {
-                if ( block.type == BlockType.CONSOLE )
-                {
-                    hasConsole = true;
-                }
-                output.append( block.process( state ) )
-                        .append( EOL )
-                        .append( EOL );
+                hasConsole = true;
             }
-            if ( !hasConsole )
-            {
-                output.append( BlockType.CONSOLE.process( null, state ) );
-            }
-
-            return output.toString();
+            output.append( block.process( state ) )
+                    .append( EOL )
+                    .append( EOL );
         }
+        if ( !hasConsole )
+        {
+            output.append( BlockType.CONSOLE.process( null, state ) );
+        }
+
+        database.shutdown();
+
+        return output.toString();
     }
 
     static List<Block> parseBlocks( String input )
@@ -127,16 +123,5 @@ public final class CypherDoc
             blocks.add( Block.getBlock( currentBlock ) );
         }
         return blocks;
-    }
-
-    static void removeReferenceNode( GraphDatabaseService database )
-    {
-        try(Transaction tx = database.beginTx())
-        {
-            //noinspection deprecation
-            database.getReferenceNode()
-                    .delete();
-            tx.success();
-        }
     }
 }

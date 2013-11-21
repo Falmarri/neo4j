@@ -66,6 +66,43 @@ class ListBasedIndex extends InMemoryIndexImplementation
         }
     }
 
+    @Override
+    void remove( long nodeId )
+    {
+        for ( Iterator<Entry> iterator = data.iterator(); iterator.hasNext(); )
+        {
+            if ( iterator.next().nodeId == nodeId )
+            {
+                iterator.remove();
+            }
+        }
+    }
+
+    @Override
+    public long maxCount()
+    {
+        return data.size();
+    }
+
+    @Override
+    public Iterator<Long> iterator()
+    {
+        final Iterator<Entry> iterator = data.iterator();
+
+        return new PrefetchingIterator<Long>()
+        {
+            @Override
+            protected Long fetchNextOrNull()
+            {
+                if ( ! iterator.hasNext() )
+                {
+                    return null;
+                }
+                return iterator.next().nodeId;
+            }
+        };
+    }
+
     private static class Entry
     {
         private final Object propertyValue;
@@ -106,5 +143,13 @@ class ListBasedIndex extends InMemoryIndexImplementation
                 return null;
             }
         };
+    }
+
+    @Override
+    InMemoryIndexImplementation snapshot()
+    {
+        ListBasedIndex snapshot = new ListBasedIndex();
+        snapshot.data.addAll( data );
+        return snapshot;
     }
 }

@@ -19,12 +19,17 @@
  */
 package org.neo4j.kernel.index;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.neo4j.test.ha.ClusterManager.allSeesAllAsAvailable;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Future;
 
 import org.junit.Test;
-
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.index.Index;
@@ -36,13 +41,7 @@ import org.neo4j.kernel.ha.UpdatePuller;
 import org.neo4j.test.AbstractClusterTest;
 import org.neo4j.test.OtherThreadExecutor;
 import org.neo4j.test.OtherThreadExecutor.WorkerCommand;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-
-import static org.neo4j.test.ha.ClusterManager.allSeesAllAsAvailable;
+import org.neo4j.test.ha.ClusterManager;
 
 public class IndexOperationsIT extends AbstractClusterTest
 {
@@ -80,8 +79,8 @@ public class IndexOperationsIT extends AbstractClusterTest
         long nodeId = createNode( master, key, value, true );
         cluster.sync();
         // -- get Index and IndexManager references to all dbs
-        Map<HighlyAvailableGraphDatabase,IndexManager> indexManagers = new HashMap<HighlyAvailableGraphDatabase, IndexManager>();
-        Map<HighlyAvailableGraphDatabase,Index<Node>> indexes = new HashMap<HighlyAvailableGraphDatabase, Index<Node>>();
+        Map<HighlyAvailableGraphDatabase,IndexManager> indexManagers = new HashMap<>();
+        Map<HighlyAvailableGraphDatabase,Index<Node>> indexes = new HashMap<>();
         for ( HighlyAvailableGraphDatabase db : cluster.getAllMembers() )
         {
             Transaction transaction = db.beginTx();
@@ -102,6 +101,9 @@ public class IndexOperationsIT extends AbstractClusterTest
         cluster.shutdown( master );
         indexManagers.remove( master );
         indexes.remove( master );
+
+        cluster.await( ClusterManager.masterAvailable( master ) );
+        cluster.await( ClusterManager.masterSeesSlavesAsAvailable( 1 ) );
 
         // THEN
         // -- the index instances should still be viable to use
@@ -147,8 +149,8 @@ public class IndexOperationsIT extends AbstractClusterTest
         HighlyAvailableGraphDatabase db1 = cluster.getMaster(), db2 = cluster.getAnySlave();
         long node = createNode( db1, key, value, false );
         cluster.sync();
-        OtherThreadExecutor<HighlyAvailableGraphDatabase> w1 = new OtherThreadExecutor<HighlyAvailableGraphDatabase>( "w1", db1 );
-        OtherThreadExecutor<HighlyAvailableGraphDatabase> w2 = new OtherThreadExecutor<HighlyAvailableGraphDatabase>( "w2", db2 );
+        OtherThreadExecutor<HighlyAvailableGraphDatabase> w1 = new OtherThreadExecutor<>( "w1", db1 );
+        OtherThreadExecutor<HighlyAvailableGraphDatabase> w2 = new OtherThreadExecutor<>( "w2", db2 );
         Transaction tx1 = w1.execute( new BeginTx() );
         Transaction tx2 = w2.execute( new BeginTx() );
 
@@ -173,8 +175,8 @@ public class IndexOperationsIT extends AbstractClusterTest
         cluster.sync();
         assertNodeAndIndexingExists( cluster.getAnySlave( db1, db2 ), node, key, value );
         
-        w2.shutdown();
-        w1.shutdown();
+        w2.close();
+        w1.close();
     }
     
     private long createNode( HighlyAvailableGraphDatabase author, String key, Object value, boolean index )

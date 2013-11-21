@@ -3,13 +3,9 @@
 Neo4j Shell
 ===========
 
-// If you're just looking for an example try the <<shell-example>>, otherwise read on.
-
-Neo4j shell is a command-line shell for browsing the graph, much like how the Unix shell along with commands like +cd+, +ls+ and +pwd+ can be used to browse your local file system.
-It consists of two parts:
-
-* a lightweight client that sends commands via RMI and
-* a server that processes those commands and sends the result back to the client.
+Neo4j shell is a command-line shell for running Cypher queries.
+There's also commands to get information about the database.
+In addition, you can browse the graph, much like how the Unix shell along with commands like +cd+, +ls+ and +pwd+ can be used to browse your local file system.
 
 It's a nice tool for development and debugging.
 This guide will show you how to get it going!
@@ -17,7 +13,7 @@ This guide will show you how to get it going!
 [[shell-starting]]
 == Starting the shell ==
 
-When used together with Neo4j started as a server, simply issue the following at the command line:
+When used together with a Neo4j server, simply issue the following at the command line:
 
 [source,shell]
 ----
@@ -120,6 +116,8 @@ it against the given database. For example:
 $ neo4j-shell -file export.cql > result.txt
 ----
 
+Supplying +-+ as the filename reads from +stdin+ instead.
+
 [[shell-options]]
 == Passing options and arguments ==
 
@@ -187,14 +185,13 @@ Single line comments, which will be ignored, can be made by using the prefix "//
 [[shell-current-pos]]
 === Current node/relationship and path ===
 You have a current node/relationship and a "current path" (like a current working directory in bash) that you've traversed so far.
-You start at the http://api.neo4j.org/current/org/neo4j/graphdb/GraphDatabaseService.html#getReferenceNode()[reference node] and can then +cd+ your way through the graph (check your current path at any time with the +pwd+ command).
+When the shell first starts you are not positioned on any entity, but you can +cd+ your way through the graph (check your current path at any time with the +pwd+ command).
 +cd+ can be used in different ways:
 
 * +cd <node-id>+ will traverse one relationship to the supplied node id. The node must have a direct relationship to the current node.
 * +cd -a <node-id>+ will do an absolute path change, which means the supplied node doesn't have to have a direct relationship to the current node.
 * +cd -r <relationship-id>+ will traverse to a relationship instead of a node. The relationship must have the current node as either start or end point. To see the relationship ids use the +ls -vr+ command on nodes.
 * +cd -ar <relationship-id>+ will do an absolute path change which means the relationship can be any relationship in the graph.
-* +cd+ will take you back to the reference node, where you started in the first place.
 * +cd ..+ will traverse back one step to the previous location, removing the last path item from your current path (+pwd+).
 * +cd start+ _(only if your current location is a relationship)_. Traverses to the start node of the relationship.
 * +cd end+ _(only if your current location is a relationship)_. Traverses to the end node of the relationship.
@@ -330,6 +327,7 @@ include::shell/simple-cypher-result-dump.asciidoc[]
 
 include::shell/database-dump.asciidoc[]
 
+////
 [[shell-extending]]
 == Extending the shell: Adding your own commands ==
 
@@ -365,6 +363,8 @@ And you could now use it in the shell by typing +lsreltypes+ (its name is based 
 If you'd like it to display some nice help information when using the +help+ (or +man+) app, override the +getDescription+ method for a general description and use +addValueType+ method to add descriptions about (and logic to) the options you can supply when using your app.
 
 Know that the apps reside server-side so if you have a running server and starts a remote client to it from another JVM you can't add your apps on the client.
+
+////
 
 [[shell-sample-session]]
 == An example shell session ==

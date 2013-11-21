@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.commons.lang3.StringUtils;
+import org.neo4j.graphdb.Transaction;
 import org.neo4j.visualization.asciidoc.AsciidocHelper;
 import org.neo4j.visualization.graphviz.AsciiDocSimpleStyle;
 import org.neo4j.visualization.graphviz.GraphvizWriter;
@@ -164,7 +165,6 @@ enum BlockType
         @Override
         String process( Block block, State state )
         {
-            List<String> queryHeader = new ArrayList<String>();
             List<String> queryLines = new ArrayList<String>();
             boolean queryStarted = false;
             for ( String line : block.lines )
@@ -174,10 +174,6 @@ enum BlockType
                     if ( line.startsWith( CODE_BLOCK ) )
                     {
                         queryStarted = true;
-                    }
-                    else
-                    {
-                        queryHeader.add( line );
                     }
                 }
                 else if ( queryStarted )
@@ -193,17 +189,15 @@ enum BlockType
                 }
             }
             String query = StringUtils.join( queryLines, CypherDoc.EOL );
-            String result = state.engine.execute( query ).dumpToString();
-            state.latestResult = result;
+            try (Transaction tx = state.database.beginTx())
+            {
+                state.latestResult = state.engine.execute( query )
+                        .dumpToString();
+                tx.success();
+            }
             String prettifiedQuery = state.engine.prettify( query );
             StringBuilder output = new StringBuilder( 512 );
-            output.append( StringUtils.join( queryHeader, CypherDoc.EOL ) )
-                    .append( CypherDoc.EOL )
-                    .append( CODE_BLOCK )
-                    .append( CypherDoc.EOL )
-                    .append( prettifiedQuery )
-                    .append( CypherDoc.EOL )
-                    .append( CODE_BLOCK )
+            output.append( AsciidocHelper.createCypherSnippetFromPreformattedQuery( prettifiedQuery ) )
                     .append( CypherDoc.EOL )
                     .append( CypherDoc.EOL );
 
@@ -234,7 +228,7 @@ enum BlockType
             GraphvizWriter writer = new GraphvizWriter(
                     AsciiDocSimpleStyle.withAutomaticRelationshipTypeColors() );
             ByteArrayOutputStream out = new ByteArrayOutputStream();
-            try
+            try (Transaction ignored = state.database.beginTx())
             {
                 writer.emit( out, Walker.fullGraph( state.database ) );
             }

@@ -28,12 +28,11 @@ import java.util.List;
 import org.neo4j.cypher.CypherException;
 import org.neo4j.cypher.javacompat.ExecutionEngine;
 import org.neo4j.cypher.javacompat.ExecutionResult;
-import org.neo4j.kernel.api.KernelAPI;
 import org.neo4j.kernel.api.exceptions.TransactionFailureException;
 import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.server.rest.transactional.error.InternalBeginTransactionError;
 import org.neo4j.server.rest.transactional.error.Neo4jError;
-import org.neo4j.server.rest.transactional.error.StatusCode;
+import org.neo4j.server.rest.transactional.error.Status;
 import org.neo4j.server.rest.web.TransactionUriScheme;
 
 /**
@@ -57,7 +56,7 @@ public class TransactionHandle
 {
     private static final CypherExceptionMapping EXCEPTION_MAPPING = new CypherExceptionMapping();
 
-    private final KernelAPI kernel;
+    private final TransitionalPeriodTransactionMessContainer txManagerFacade;
     private final ExecutionEngine engine;
     private final TransactionRegistry registry;
     private final TransactionUriScheme uriScheme;
@@ -65,10 +64,10 @@ public class TransactionHandle
     private final long id;
     private TransitionalTxManagementKernelTransaction context;
 
-    public TransactionHandle( KernelAPI kernel, ExecutionEngine engine, TransactionRegistry registry,
-                              TransactionUriScheme uriScheme, StringLogger log )
+    public TransactionHandle( TransitionalPeriodTransactionMessContainer txManagerFacade, ExecutionEngine engine,
+                              TransactionRegistry registry, TransactionUriScheme uriScheme, StringLogger log )
     {
-        this.kernel = kernel;
+        this.txManagerFacade = txManagerFacade;
         this.engine = engine;
         this.registry = registry;
         this.uriScheme = uriScheme;
@@ -151,7 +150,7 @@ public class TransactionHandle
         {
             try
             {
-                context = (TransitionalTxManagementKernelTransaction) kernel.newTransaction();
+                context = txManagerFacade.newTransaction();
             }
             catch ( RuntimeException e )
             {
@@ -170,15 +169,15 @@ public class TransactionHandle
     {
         executeStatements( statements, output, errors );
 
-        if ( errors.isEmpty() )
+        if ( Status.Code.shouldRollBackOn( errors ) )
+        {
+            rollback( errors );
+        }
+        else
         {
             context.suspendSinceTransactionsAreStillThreadBound();
             long lastActiveTimestamp = registry.release( id, this );
             output.transactionStatus( lastActiveTimestamp );
-        }
-        else
-        {
-            rollback( errors );
         }
     }
 
@@ -198,7 +197,7 @@ public class TransactionHandle
                 catch ( Exception e )
                 {
                     log.error( "Failed to commit transaction.", e );
-                    errors.add( new Neo4jError( StatusCode.INTERNAL_COMMIT_TRANSACTION_ERROR, e ) );
+                    errors.add( new Neo4jError( Status.Transaction.CouldNotCommit, e ) );
                 }
             }
             else
@@ -210,7 +209,7 @@ public class TransactionHandle
                 catch ( Exception e )
                 {
                     log.error( "Failed to rollback transaction.", e );
-                    errors.add( new Neo4jError( StatusCode.INTERNAL_ROLLBACK_TRANSACTION_ERROR, e ) );
+                    errors.add( new Neo4jError( Status.Transaction.CouldNotRollback, e ) );
                 }
             }
         }
@@ -229,7 +228,7 @@ public class TransactionHandle
         catch ( Exception e )
         {
             log.error( "Failed to rollback transaction.", e );
-            errors.add( new Neo4jError( StatusCode.INTERNAL_ROLLBACK_TRANSACTION_ERROR, e ) );
+            errors.add( new Neo4jError( Status.Transaction.CouldNotRollback, e ) );
         }
         finally
         {
@@ -249,13 +248,6 @@ public class TransactionHandle
                 try
                 {
                     result = engine.execute( statement.statement(), statement.parameters() );
-                    // NOTE: The TransactionContext et cetera used up until this method, and then blatantly ignored,
-                    // is meant to be passed on to a new internal cypher API, like so:
-
-                    // ctx = tx.newStatement()
-                    // cypher.execute( ctx, statement, resultVisitor );
-                    // ctx.close()
-
                     output.statementResult( result, statement.includeStats(), statement.resultDataContents() );
                 }
                 catch ( CypherException e )
@@ -265,12 +257,12 @@ public class TransactionHandle
                 }
                 catch ( IOException e )
                 {
-                    errors.add( new Neo4jError( StatusCode.NETWORK_ERROR, e ) );
+                    errors.add( new Neo4jError( Status.Network.UnknownFailure, e ) );
                     break;
                 }
-                catch ( RuntimeException e )
+                catch ( Exception e )
                 {
-                    errors.add( new Neo4jError( StatusCode.INTERNAL_STATEMENT_EXECUTION_ERROR, e ) );
+                    errors.add( new Neo4jError( Status.Statement.ExecutionFailure, e ) );
                     break;
                 }
             }
@@ -281,9 +273,9 @@ public class TransactionHandle
                 errors.add( deserializationErrors.next() );
             }
         }
-        catch ( RuntimeException e )
+        catch ( Exception e )
         {
-            errors.add( new Neo4jError( StatusCode.INTERNAL_DATABASE_ERROR, e ) );
+            errors.add( new Neo4jError( Status.General.UnknownFailure, e ) );
         }
     }
 }

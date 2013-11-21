@@ -37,15 +37,16 @@ import org.neo4j.graphdb.schema.IndexDefinition;
 import org.neo4j.helpers.collection.IteratorUtil;
 import org.neo4j.kernel.GraphDatabaseAPI;
 import org.neo4j.kernel.api.KernelStatement;
+import org.neo4j.kernel.api.labelscan.LabelScanStore;
 import org.neo4j.kernel.api.operations.KeyReadOperations;
 import org.neo4j.kernel.api.properties.Property;
-import org.neo4j.kernel.api.scan.LabelScanStore;
 import org.neo4j.kernel.impl.api.index.IndexDescriptor;
 import org.neo4j.kernel.impl.api.index.IndexingService;
 import org.neo4j.kernel.impl.core.LabelTokenHolder;
 import org.neo4j.kernel.impl.core.PropertyKeyTokenHolder;
 import org.neo4j.kernel.impl.core.RelationshipTypeTokenHolder;
 import org.neo4j.kernel.impl.nioneo.store.NeoStore;
+import org.neo4j.kernel.impl.nioneo.store.SchemaStorage;
 import org.neo4j.kernel.impl.persistence.PersistenceManager;
 import org.neo4j.kernel.impl.transaction.XaDataSourceManager;
 import org.neo4j.test.TestGraphDatabaseFactory;
@@ -277,12 +278,13 @@ public class StoreStatementOperationsTest
         }
     }
 
-    private GraphDatabaseAPI db;
+    @SuppressWarnings("deprecation") private GraphDatabaseAPI db;
     private final Label label1 = label( "first-label" ), label2 = label( "second-label" );
     private final String propertyKey = "name";
     private KernelStatement state;
     private StoreStatementOperations statement;
 
+    @SuppressWarnings("deprecation")
     @Before
     public void before()
     {

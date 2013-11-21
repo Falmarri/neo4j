@@ -19,11 +19,13 @@
  */
 package org.neo4j.kernel.impl.nioneo.store;
 
-import static java.util.Collections.emptyList;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+
+import static java.util.Collections.emptyList;
+
+import static org.neo4j.kernel.impl.nioneo.store.labels.NodeLabelsField.parseLabelsField;
 
 public class NodeRecord extends PrimitiveRecord
 {
@@ -38,7 +40,7 @@ public class NodeRecord extends PrimitiveRecord
         super( id, nextProp );
         this.committedNextRel = this.nextRel = nextRel;
     }
-    
+
     public long getNextRel()
     {
         return nextRel;
@@ -53,43 +55,35 @@ public class NodeRecord extends PrimitiveRecord
     {
         return isCreated() ? Record.NO_NEXT_RELATIONSHIP.intValue() : committedNextRel;
     }
-    
-    /**
-     * Sets the label field to an in-lined field, no dynamic records were changed by doing this.
-     * 
-     * @param labels this will be in-lined labels.
-     */
-    public void setLabelField( long labels )
-    {
-        this.labels = labels;
-        this.dynamicLabelRecords = emptyList();
-        this.isLight = true;
-    }
-    
+
     /**
      * Sets the label field to a pointer to the first changed dynamic record. All changed
      * dynamic records by doing this are supplied here.
-     * 
+     *
      * @param labels this will be either in-lined labels, or an id where to get the labels
-     * @param changedDynamicRecords all changed dynamic records by doing this.
+     * @param dynamicRecords all changed dynamic records by doing this.
      */
-    public void setLabelField( long labels, Collection<DynamicRecord> changedDynamicRecords )
+    public void setLabelField( long labels, Collection<DynamicRecord> dynamicRecords )
     {
         this.labels = labels;
-        this.dynamicLabelRecords = changedDynamicRecords;
-        this.isLight = false;
+        this.dynamicLabelRecords = dynamicRecords;
+
+        // Only mark it as heavy if there are dynamic records, since there's a possibility that we just
+        // loaded a light version of the node record where this method was called for setting the label field.
+        // Keeping it as light in this case would make it possible to load it fully later on.
+        this.isLight = dynamicRecords.isEmpty();
     }
-    
+
     public long getLabelField()
     {
         return this.labels;
     }
-    
+
     public boolean isLight()
     {
         return isLight;
     }
-    
+
     public Collection<DynamicRecord> getDynamicLabelRecords()
     {
         return this.dynamicLabelRecords;
@@ -102,10 +96,12 @@ public class NodeRecord extends PrimitiveRecord
                 .append( ",used=" ).append( inUse() )
                 .append( ",rel=" ).append( nextRel )
                 .append( ",prop=" ).append( getNextProp() )
-                .append( ",labels=" ).append( getLabelField() )
+                .append( ",labels=" ).append( parseLabelsField( this ) )
                 .append( "," ).append( isLight ? "light" : "heavy" );
         if ( !isLight && !dynamicLabelRecords.isEmpty() )
+        {
             builder.append( ",dynlabels=" ).append( dynamicLabelRecords );
+        }
         return builder.append( "]" ).toString();
     }
 
@@ -114,7 +110,7 @@ public class NodeRecord extends PrimitiveRecord
     {
         property.setNodeId( getId() );
     }
-    
+
     @Override
     public NodeRecord clone()
     {
@@ -123,12 +119,15 @@ public class NodeRecord extends PrimitiveRecord
         clone.nextRel = nextRel;
         clone.labels = labels;
         clone.isLight = isLight;
+        clone.setInUse( inUse() );
 
         if( dynamicLabelRecords.size() > 0 )
         {
-            List<DynamicRecord> clonedLabelRecords = new ArrayList<DynamicRecord>(dynamicLabelRecords.size());
+            List<DynamicRecord> clonedLabelRecords = new ArrayList<>(dynamicLabelRecords.size());
             for ( DynamicRecord labelRecord : dynamicLabelRecords )
+            {
                 clonedLabelRecords.add( labelRecord.clone() );
+            }
             clone.dynamicLabelRecords = clonedLabelRecords;
         }
         return clone;

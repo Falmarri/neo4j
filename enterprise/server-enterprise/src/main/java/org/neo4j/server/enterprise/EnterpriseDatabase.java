@@ -49,18 +49,6 @@ public class EnterpriseDatabase extends CommunityDatabase
                     public GraphDatabaseAPI createDatabase( String databaseStoreDirectory,
                                                             Map<String, String> databaseProperties )
                     {
-//                        List<IndexProvider> indexProviders = Iterables.toList( Service.load( IndexProvider.class ) );
-//                        List<KernelExtensionFactory<?>> kernelExtensions = Iterables.toList( Iterables
-//                                .<KernelExtensionFactory<?>, KernelExtensionFactory>cast( Service.load(
-//                                        KernelExtensionFactory
-//                                .class ) ) );
-//                        List<CacheProvider> cacheProviders = Iterables.toList( Service.load( CacheProvider.class ) );
-//                        List<TransactionInterceptorProvider> txInterceptorProviders =
-//                                Iterables.toList( Service.load( TransactionInterceptorProvider.class ) );
-//                        List<SchemaIndexProvider> schemaIndexProviders =
-//                                Iterables.toList( Service.load( SchemaIndexProvider.class ) );
-//                        return new HighlyAvailableGraphDatabase( databaseStoreDirectory, databaseProperties,
-//                                indexProviders, kernelExtensions, cacheProviders, txInterceptorProviders );
                         return (GraphDatabaseAPI) new HighlyAvailableGraphDatabaseFactory().
                                 newHighlyAvailableDatabaseBuilder( databaseStoreDirectory ).
                                 setConfig( databaseProperties ).newGraphDatabase();
@@ -78,25 +66,14 @@ public class EnterpriseDatabase extends CommunityDatabase
     }
 
     @Override
-    @SuppressWarnings("deprecation")
-    public void start() throws Throwable
+    protected AbstractGraphDatabase createDb()
     {
-        try
-        {
-            GraphDatabaseFactory factory = DatabaseMode.valueOf( serverConfiguration.getString(
-                    Configurator.DB_MODE_KEY, DatabaseMode.SINGLE.name() ).toUpperCase() );
+        GraphDatabaseFactory factory = DatabaseMode.valueOf( serverConfiguration.getString(
+            Configurator.DB_MODE_KEY, DatabaseMode.SINGLE.name() ).toUpperCase() );
 
-            this.graph = (AbstractGraphDatabase) factory.createDatabase(
-                    serverConfiguration.getString( Configurator.DATABASE_LOCATION_PROPERTY_KEY,
-                            Configurator.DEFAULT_DATABASE_LOCATION_PROPERTY_KEY ),
-                    getDbTuningPropertiesWithServerDefaults() );
-
-            log.info( "Successfully started database" );
-        }
-        catch ( Exception e )
-        {
-            log.error( "Failed to start database.", e );
-            throw e;
-        }
+        return (AbstractGraphDatabase) factory.createDatabase(
+                serverConfiguration.getString( Configurator.DATABASE_LOCATION_PROPERTY_KEY,
+                        Configurator.DEFAULT_DATABASE_LOCATION_PROPERTY_KEY ),
+                getDbTuningPropertiesWithServerDefaults() );
     }
 }

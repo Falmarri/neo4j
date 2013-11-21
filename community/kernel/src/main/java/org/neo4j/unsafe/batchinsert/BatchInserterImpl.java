@@ -42,16 +42,16 @@ import org.neo4j.graphdb.schema.IndexDefinition;
 import org.neo4j.helpers.FunctionFromPrimitiveLong;
 import org.neo4j.helpers.Settings;
 import org.neo4j.helpers.collection.Visitor;
-import org.neo4j.kernel.BaseConstraintCreator;
+import org.neo4j.kernel.impl.coreapi.schema.BaseConstraintCreator;
 import org.neo4j.kernel.DefaultIdGeneratorFactory;
 import org.neo4j.kernel.EmbeddedGraphDatabase;
 import org.neo4j.kernel.IdGeneratorFactory;
 import org.neo4j.kernel.IdType;
-import org.neo4j.kernel.IndexCreatorImpl;
-import org.neo4j.kernel.IndexDefinitionImpl;
+import org.neo4j.kernel.impl.coreapi.schema.IndexCreatorImpl;
+import org.neo4j.kernel.impl.coreapi.schema.IndexDefinitionImpl;
 import org.neo4j.kernel.InternalAbstractGraphDatabase;
-import org.neo4j.kernel.InternalSchemaActions;
-import org.neo4j.kernel.PropertyUniqueConstraintDefinition;
+import org.neo4j.kernel.impl.coreapi.schema.InternalSchemaActions;
+import org.neo4j.kernel.impl.coreapi.schema.PropertyUniqueConstraintDefinition;
 import org.neo4j.kernel.StoreLocker;
 import org.neo4j.kernel.api.constraints.UniquenessConstraint;
 import org.neo4j.kernel.api.exceptions.KernelException;
@@ -61,9 +61,9 @@ import org.neo4j.kernel.api.index.IndexPopulator;
 import org.neo4j.kernel.api.index.InternalIndexState;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
+import org.neo4j.kernel.api.labelscan.LabelScanStore;
+import org.neo4j.kernel.api.labelscan.NodeLabelUpdate;
 import org.neo4j.kernel.api.properties.DefinedProperty;
-import org.neo4j.kernel.api.scan.LabelScanStore;
-import org.neo4j.kernel.api.scan.NodeLabelUpdate;
 import org.neo4j.kernel.configuration.Config;
 import org.neo4j.kernel.extension.KernelExtensionFactory;
 import org.neo4j.kernel.extension.KernelExtensions;
@@ -624,7 +624,7 @@ public class BatchInserterImpl implements BatchInserter
             }
             primitive.setNextProp( thatFits.getId() );
         }
-        thatFits.addPropertyBlock( block );
+        thatFits.setPropertyBlock( block );
         getPropertyStore().updateRecord( thatFits );
         return result;
     }
@@ -1278,16 +1278,6 @@ public class BatchInserterImpl implements BatchInserter
         return storeDir.getPath();
     }
 
-    @Override
-    public long getReferenceNode()
-    {
-        if ( nodeExists( 0 ) )
-        {
-            return 0;
-        }
-        return -1;
-    }
-
     // needed by lucene-index
     public IndexStore getIndexStore()
     {
@@ -1362,7 +1352,7 @@ public class BatchInserterImpl implements BatchInserter
     private class DependencyResolverImpl extends DependencyResolver.Adapter
     {
         @Override
-        public <T> T resolveDependency( Class<T> type, SelectionStrategy<T> selector ) throws IllegalArgumentException
+        public <T> T resolveDependency( Class<T> type, SelectionStrategy selector ) throws IllegalArgumentException
         {
             if ( type.isInstance( fileSystem ) )
             {

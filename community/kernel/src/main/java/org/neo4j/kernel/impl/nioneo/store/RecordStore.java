@@ -29,13 +29,15 @@ import org.neo4j.helpers.collection.PrefetchingIterator;
 import org.neo4j.helpers.progress.ProgressListener;
 import org.neo4j.kernel.IdType;
 
-public interface RecordStore<R extends AbstractBaseRecord>
+public interface RecordStore<R extends AbstractBaseRecord> extends IdSequence
 {
     File getStorageFileName();
 
     WindowPoolStats getWindowPoolStats();
 
     long getHighId();
+
+    long getHighestPossibleIdInUse();
 
     R getRecord( long id );
 
@@ -101,7 +103,8 @@ public interface RecordStore<R extends AbstractBaseRecord>
             processRecord( PropertyRecord.class, store, property );
         }
 
-        public void processString( RecordStore<DynamicRecord> store, DynamicRecord string, IdType idType ) throws FAILURE
+        public void processString( RecordStore<DynamicRecord> store, DynamicRecord string,
+                                   @SuppressWarnings( "deprecation") IdType idType ) throws FAILURE
         {
             processDynamic( store, string );
         }
@@ -145,7 +148,8 @@ public interface RecordStore<R extends AbstractBaseRecord>
                                                      + type.getSimpleName().replace( "Record", "" ) + " records" );
         }
 
-        public <R extends AbstractBaseRecord> Iterable<R> scan( final RecordStore<R> store,
+        @SafeVarargs
+        public final <R extends AbstractBaseRecord> Iterable<R> scan( final RecordStore<R> store,
                 final Predicate<? super R>... filters )
         {
             return new Iterable<R>()

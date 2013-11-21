@@ -19,13 +19,11 @@
  */
 package org.neo4j.kernel.impl.core;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import org.neo4j.graphdb.GraphDatabaseService;
@@ -35,7 +33,6 @@ import org.neo4j.graphdb.PropertyContainer;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.RelationshipType;
 import org.neo4j.graphdb.index.Index;
-import org.neo4j.helpers.Pair;
 import org.neo4j.helpers.Predicate;
 import org.neo4j.helpers.ThisShouldNotHappenError;
 import org.neo4j.helpers.Triplet;
@@ -44,13 +41,15 @@ import org.neo4j.helpers.collection.FilteringIterator;
 import org.neo4j.helpers.collection.IteratorWrapper;
 import org.neo4j.helpers.collection.PrefetchingIterator;
 import org.neo4j.kernel.PropertyTracker;
-import org.neo4j.kernel.ThreadToStatementContextBridge;
+import org.neo4j.kernel.impl.coreapi.ThreadToStatementContextBridge;
 import org.neo4j.kernel.api.properties.DefinedProperty;
 import org.neo4j.kernel.impl.cache.AutoLoadingCache;
 import org.neo4j.kernel.impl.cache.Cache;
 import org.neo4j.kernel.impl.cache.CacheProvider;
+import org.neo4j.kernel.impl.nioneo.store.NeoStore;
 import org.neo4j.kernel.impl.nioneo.store.NodeRecord;
 import org.neo4j.kernel.impl.nioneo.store.RelationshipRecord;
+import org.neo4j.kernel.impl.nioneo.store.TokenStore;
 import org.neo4j.kernel.impl.nioneo.xa.NeoStoreXaDataSource;
 import org.neo4j.kernel.impl.persistence.EntityIdGenerator;
 import org.neo4j.kernel.impl.persistence.PersistenceManager;
@@ -61,19 +60,15 @@ import org.neo4j.kernel.impl.transaction.xaframework.XaDataSource;
 import org.neo4j.kernel.impl.util.ArrayMap;
 import org.neo4j.kernel.impl.util.RelIdArray;
 import org.neo4j.kernel.impl.util.RelIdArray.DirectionWrapper;
-import org.neo4j.kernel.impl.util.RelIdArrayWithLoops;
 import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.kernel.lifecycle.Lifecycle;
 
 import static java.lang.String.format;
 import static java.util.Arrays.asList;
-
 import static org.neo4j.helpers.collection.Iterables.cast;
 
 public class NodeManager implements Lifecycle, EntityFactory
 {
-    private long referenceNodeId = 0;
-
     private final StringLogger logger;
     private final GraphDatabaseService graphDbService;
     private final AutoLoadingCache<NodeImpl> nodeCache;
@@ -90,6 +85,8 @@ public class NodeManager implements Lifecycle, EntityFactory
 
     private final NodeProxy.NodeLookup nodeLookup;
     private final RelationshipProxy.RelationshipLookups relationshipLookups;
+
+    private final RelationshipLoader relationshipLoader;
 
     private final List<PropertyTracker<Node>> nodePropertyTrackers;
     private final List<PropertyTracker<Relationship>> relationshipPropertyTrackers;
@@ -123,7 +120,7 @@ public class NodeManager implements Lifecycle, EntityFactory
             int typeId = data.getType();
             final long startNodeId = data.getFirstNode();
             final long endNodeId = data.getSecondNode();
-            return newRelationshipImpl( id, startNodeId, endNodeId, typeId, false );
+            return new RelationshipImpl( id, startNodeId, endNodeId, typeId, false );
         }
     };
 
@@ -154,6 +151,7 @@ public class NodeManager implements Lifecycle, EntityFactory
         this.xaDsm = xaDsm;
         nodePropertyTrackers = new LinkedList<>();
         relationshipPropertyTrackers = new LinkedList<>();
+        this.relationshipLoader = new RelationshipLoader( persistenceManager, relCache );
         this.graphProperties = instantiateGraphProperties();
     }
 
@@ -179,10 +177,15 @@ public class NodeManager implements Lifecycle, EntityFactory
         {
             if ( ds.getName().equals( NeoStoreXaDataSource.DEFAULT_DATA_SOURCE_NAME ) )
             {
-                // Load and cache all keys from persistence manager
-                addRawRelationshipTypes( persistenceManager.loadAllRelationshipTypeTokens() );
-                addPropertyKeyTokens( persistenceManager.loadAllPropertyKeyTokens() );
-                addLabelTokens( persistenceManager.loadAllLabelTokens() );
+                NeoStore neoStore = ((NeoStoreXaDataSource) ds).getNeoStore();
+
+                TokenStore<?> propTokens = neoStore.getPropertyStore().getPropertyKeyTokenStore();
+                TokenStore<?> labelTokens = neoStore.getLabelTokenStore();
+                TokenStore<?> relTokens = neoStore.getRelationshipTypeStore();
+
+                addRawRelationshipTypes( relTokens.getTokens( Integer.MAX_VALUE ) );
+                addPropertyKeyTokens( propTokens.getTokens( Integer.MAX_VALUE ) );
+                addLabelTokens( labelTokens.getTokens( Integer.MAX_VALUE ) );
             }
         }
     }
@@ -253,7 +256,7 @@ public class NodeManager implements Lifecycle, EntityFactory
                     + "] deleted" );
         }
         long id = idGenerator.nextId( Relationship.class );
-        RelationshipImpl rel = newRelationshipImpl( id, startNodeId, endNodeId, typeId, true );
+        RelationshipImpl rel = new RelationshipImpl( id, startNodeId, endNodeId, typeId, true );
         RelationshipProxy proxy = new RelationshipProxy( id, relationshipLookups, statementCtxProvider );
         TransactionState tx = getTransactionState();
         tx.acquireWriteLock( proxy );
@@ -285,11 +288,6 @@ public class NodeManager implements Lifecycle, EntityFactory
                 setRollbackOnly();
             }
         }
-    }
-
-    private RelationshipImpl newRelationshipImpl( long id, long startNodeId, long endNodeId, int typeId, boolean newRel)
-    {
-        return new RelationshipImpl( id, startNodeId, endNodeId, typeId, newRel );
     }
 
     public Node getNodeByIdOrNull( long nodeId )
@@ -408,6 +406,14 @@ public class NodeManager implements Lifecycle, EntityFactory
                 } ) );
     }
 
+    /**
+     * TODO: We only grab this lock in one single place, from inside the kernel:
+     * {@link org.neo4j.kernel.impl.api.DefaultLegacyKernelOperations#relationshipCreate(org.neo4j.kernel.api.Statement, long, long, long)}.
+     * We should move that code around such that this lock is grabbed through the locking layer in the kernel cake, and
+     * then we should remove this locking code. It is dangerous to have it here, because it allows grabbing a lock
+     * before the kernel is registered as a data source. If that happens in HA, we will attempt to grab locks on the
+     * master before the transaction is started on the master.
+     */
     public NodeImpl getNodeForProxy( long nodeId, LockType lock )
     {
         if ( lock != null )
@@ -420,20 +426,6 @@ public class NodeManager implements Lifecycle, EntityFactory
             throw new NotFoundException( format( "Node %d not found", nodeId ) );
         }
         return node;
-    }
-
-    public Node getReferenceNode() throws NotFoundException
-    {
-        if ( referenceNodeId == -1 )
-        {
-            throw new NotFoundException( "No reference node set" );
-        }
-        return getNodeById( referenceNodeId );
-    }
-
-    public void setReferenceNodeId( long nodeId )
-    {
-        this.referenceNodeId = nodeId;
     }
 
     protected Relationship getRelationshipByIdOrNull( long relId )
@@ -548,13 +540,8 @@ public class NodeManager implements Lifecycle, EntityFactory
         return relTypeHolder.getTokenById( id );
     }
 
-    public RelationshipImpl getRelationshipForProxy( long relId, LockType lock )
+    public RelationshipImpl getRelationshipForProxy( long relId )
     {
-        if ( lock != null )
-        {
-            lock.acquire( getTransactionState(),
-                    new RelationshipProxy( relId, relationshipLookups, statementCtxProvider ) );
-        }
         RelationshipImpl rel = relCache.get( relId );
         if ( rel == null )
         {
@@ -594,83 +581,9 @@ public class NodeManager implements Lifecycle, EntityFactory
         return persistenceManager.getRelationshipChainPosition( node.getId() );
     }
 
-    Triplet<ArrayMap<Integer, RelIdArray>, List<RelationshipImpl>, Long> getMoreRelationships( NodeImpl node )
-    {
-        long nodeId = node.getId();
-        long position = node.getRelChainPosition();
-        Pair<Map<DirectionWrapper, Iterable<RelationshipRecord>>, Long> rels =
-                persistenceManager.getMoreRelationships( nodeId, position );
-        ArrayMap<Integer, RelIdArray> newRelationshipMap =
-                new ArrayMap<>();
-
-        List<RelationshipImpl> relsList = new ArrayList<>( 150 );
-
-        Iterable<RelationshipRecord> loops = rels.first().get( DirectionWrapper.BOTH );
-        boolean hasLoops = loops != null;
-        if ( hasLoops )
-        {
-            populateLoadedRelationships( loops, relsList, DirectionWrapper.BOTH, true, newRelationshipMap );
-        }
-        populateLoadedRelationships( rels.first().get( DirectionWrapper.OUTGOING ), relsList,
-                DirectionWrapper.OUTGOING, hasLoops,
-                newRelationshipMap
-        );
-        populateLoadedRelationships( rels.first().get( DirectionWrapper.INCOMING ), relsList,
-                DirectionWrapper.INCOMING, hasLoops,
-                newRelationshipMap
-        );
-
-        return Triplet.of( newRelationshipMap, relsList, rels.other() );
-    }
-
-    /**
-     * @param loadedRelationshipsOutputParameter
-     *         This is the return value for this method. It's written like this
-     *         because several calls to this method are used to gradually build up
-     *         the map of RelIdArrays that are ultimately involved in the operation.
-     */
-    private void populateLoadedRelationships( Iterable<RelationshipRecord> loadedRelationshipRecords,
-                                              List<RelationshipImpl> relsList,
-                                              DirectionWrapper dir,
-                                              boolean hasLoops,
-                                              ArrayMap<Integer, RelIdArray> loadedRelationshipsOutputParameter )
-    {
-        for ( RelationshipRecord rel : loadedRelationshipRecords )
-        {
-            long relId = rel.getId();
-            RelationshipImpl relImpl = getOrCreateRelationshipFromCache( relsList, rel, relId );
-
-            getOrCreateRelationships( hasLoops, relImpl.getTypeId(), loadedRelationshipsOutputParameter )
-                    .add( relId, dir );
-        }
-    }
-
-    private RelIdArray getOrCreateRelationships( boolean hasLoops, int typeId, ArrayMap<Integer, RelIdArray> loadedRelationships )
-    {
-        RelIdArray relIdArray = loadedRelationships.get( typeId );
-        if ( relIdArray == null )
-        {
-            relIdArray = hasLoops ? new RelIdArrayWithLoops( typeId ) : new RelIdArray( typeId );
-            loadedRelationships.put( typeId, relIdArray );
-        }
-        return relIdArray;
-    }
-
     void putAllInRelCache( Collection<RelationshipImpl> relationships )
     {
         relCache.putAll( relationships );
-    }
-
-    private RelationshipImpl getOrCreateRelationshipFromCache( List<RelationshipImpl> newlyCreatedRelationships,
-                                                               RelationshipRecord rel, long relId )
-    {
-        RelationshipImpl relImpl = relCache.get( relId );
-        if ( relImpl == null )
-        {
-            newlyCreatedRelationships.add( relImpl );
-            relImpl = newRelationshipImpl( relId, rel.getFirstNode(), rel.getSecondNode(), rel.getType(), false );
-        }
-        return relImpl;
     }
 
     Iterator<DefinedProperty> loadGraphProperties( boolean light )
@@ -860,6 +773,11 @@ public class NodeManager implements Lifecycle, EntityFactory
                 setRollbackOnly();
             }
         }
+    }
+
+    public Triplet<ArrayMap<Integer, RelIdArray>, List<RelationshipImpl>, Long> getMoreRelationships( NodeImpl node )
+    {
+        return relationshipLoader.getMoreRelationships( node );
     }
 
     public NodeImpl getNodeIfCached( long nodeId )

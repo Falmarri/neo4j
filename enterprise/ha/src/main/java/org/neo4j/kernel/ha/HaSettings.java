@@ -19,8 +19,6 @@
  */
 package org.neo4j.kernel.ha;
 
-import java.util.List;
-
 import org.neo4j.graphdb.config.Setting;
 import org.neo4j.graphdb.factory.Description;
 import org.neo4j.helpers.HostnamePort;
@@ -33,15 +31,9 @@ import static org.neo4j.helpers.Settings.BYTES;
 import static org.neo4j.helpers.Settings.DURATION;
 import static org.neo4j.helpers.Settings.HOSTNAME_PORT;
 import static org.neo4j.helpers.Settings.INTEGER;
-import static org.neo4j.helpers.Settings.list;
 import static org.neo4j.helpers.Settings.min;
 import static org.neo4j.helpers.Settings.options;
 import static org.neo4j.helpers.Settings.setting;
-import static org.neo4j.kernel.impl.cache.GcrSettings.log_interval;
-import static org.neo4j.kernel.impl.cache.GcrSettings.node_cache_array_fraction;
-import static org.neo4j.kernel.impl.cache.GcrSettings.node_cache_size;
-import static org.neo4j.kernel.impl.cache.GcrSettings.relationship_cache_array_fraction;
-import static org.neo4j.kernel.impl.cache.GcrSettings.relationship_cache_size;
 
 /**
  * Settings for High Availability mode
@@ -55,7 +47,7 @@ public class HaSettings
     public static final Setting<Long> read_timeout = setting( "ha.read_timeout", DURATION, "20s" );
 
     @Description( "Timeout for waiting for instance to become master or slave." )
-    public static final Setting<Long> state_switch_timeout = setting( "ha.state_switch_timeout", DURATION, "20s" );
+    public static final Setting<Long> state_switch_timeout = setting( "ha.state_switch_timeout", DURATION, "120s" );
 
     @Description( "Timeout for taking remote (write) locks on slaves. Defaults to ha.read_timeout." )
     public static final Setting<Long> lock_read_timeout = setting( "ha.lock_read_timeout", DURATION, read_timeout );
@@ -65,7 +57,7 @@ public class HaSettings
             setting( "ha.max_concurrent_channels_per_slave", INTEGER, "20", min( 1 ) );
 
     @Description( "Hostname and port to bind the HA server." )
-    public static final Setting<HostnamePort> ha_server = setting( "ha.server", HOSTNAME_PORT, ":6001-6011" );
+    public static final Setting<HostnamePort> ha_server = setting( "ha.server", HOSTNAME_PORT, "0.0.0.0:6001-6011" );
 
     @Description("Whether this instance should only participate as slave in cluster. If set to true, it will never be elected as master.")
     public static final Setting<Boolean> slave_only = setting( "ha.slave_only", BOOLEAN, Settings.FALSE );
@@ -73,15 +65,6 @@ public class HaSettings
     @Description( "Policy for how to handle branched data." )
     public static final Setting<BranchedDataPolicy> branched_data_policy = setting( "ha.branched_data_policy",
             options( BranchedDataPolicy.class ), "keep_all" );
-
-    @Description( "List of ZooKeeper coordinators. Only needed for rolling upgrade from 1.8 to 1.9." )
-    @Deprecated
-    public static final Setting<List<HostnamePort>> coordinators = setting( "ha.upgrade_coordinators", list( ",", HOSTNAME_PORT ),
-            "" );
-
-    @Description( "ZooKeeper session timeout. Only needed for rolling upgrade from 1.8 to 1.9." )
-    @Deprecated
-    public static final Setting<Long> zk_session_timeout = setting( "ha.zk_session_timeout", DURATION, "5s");
 
     @Description( "Max size of the data chunks that flows between master and slaves in HA. Bigger size may increase " +
             "throughput, but may be more sensitive to variations in bandwidth, whereas lower size increases tolerance" +
@@ -98,12 +81,6 @@ public class HaSettings
     @Description( "Push strategy of a transaction to a slave during commit." )
     public static final Setting<TxPushStrategy> tx_push_strategy = setting( "ha.tx_push_strategy", options(
             TxPushStrategy.class ), "fixed" );
-
-    public static final Setting<Long> gcr_node_cache_size = node_cache_size;
-    public static final Setting<Long> gcr_relationship_cache_size = relationship_cache_size;
-    public static final Setting<Float> gcr_node_cache_array_fraction = node_cache_array_fraction;
-    public static final Setting<Float> gcr_relationship_cache_array_fraction = relationship_cache_array_fraction;
-    public static final Setting<Long> gcr_log_interval = log_interval;
 
     public static enum TxPushStrategy
     {

@@ -36,13 +36,10 @@ import org.neo4j.kernel.impl.cache.MonitorGc;
 import static org.neo4j.helpers.Settings.ANY;
 import static org.neo4j.helpers.Settings.BOOLEAN;
 import static org.neo4j.helpers.Settings.BYTES;
-import static org.neo4j.helpers.Settings.DURATION_FORMAT;
 import static org.neo4j.helpers.Settings.FALSE;
-import static org.neo4j.helpers.Settings.FLOAT;
 import static org.neo4j.helpers.Settings.INTEGER;
 import static org.neo4j.helpers.Settings.NO_DEFAULT;
 import static org.neo4j.helpers.Settings.PATH;
-import static org.neo4j.helpers.Settings.SIZE_FORMAT;
 import static org.neo4j.helpers.Settings.STRING;
 import static org.neo4j.helpers.Settings.TRUE;
 import static org.neo4j.helpers.Settings.basePath;
@@ -51,7 +48,6 @@ import static org.neo4j.helpers.Settings.matches;
 import static org.neo4j.helpers.Settings.min;
 import static org.neo4j.helpers.Settings.options;
 import static org.neo4j.helpers.Settings.port;
-import static org.neo4j.helpers.Settings.range;
 import static org.neo4j.helpers.Settings.setting;
 
 /**
@@ -68,7 +64,7 @@ public abstract class GraphDatabaseSettings
     public static final Setting<Boolean> read_only = setting( "read_only", BOOLEAN, FALSE );
 
     @Description("The type of cache to use for nodes and relationships. "
-            + "Note that the Neo4j Enterprise Edition has the additional 'gcr' cache type. "
+                  + "Note that the Neo4j Enterprise Edition has the additional 'hpc' cache type (High-Performance Cache). "
             + "See the chapter on caches in the manual for more information.")
     public static final Setting<String> cache_type = setting( "cache_type", options( availableCaches() ), availableCaches()[0] );
 
@@ -96,7 +92,7 @@ public abstract class GraphDatabaseSettings
     @Description("Enable this to specify a parser other than the default one.")
     public static final Setting<String> cypher_parser_version = setting(
             "cypher_parser_version",
-            options( "1.9", "2.0", "legacy" ), NO_DEFAULT );
+            options( "1.9", "2.0" ), NO_DEFAULT );
 
     @Description("Used to set the number of Cypher query execution plans that are cached.")
     public static Setting<Integer> query_cache_size = setting( "query_cache_size", INTEGER, "100", min( 0 ) );
@@ -149,11 +145,6 @@ public abstract class GraphDatabaseSettings
     // Lucene settings
     @Description("Integer value that sets the maximum number of open lucene index searchers.")
     public static Setting<Integer> lucene_searcher_cache_size = setting("lucene_searcher_cache_size",INTEGER, Integer.toString( Integer.MAX_VALUE ), min( 1 ));
-
-    @Description("NOTE: This no longer has any effect. Integer value that sets the maximum number of open lucene " +
-            "index writers.")
-    @Deprecated
-    public static Setting<Integer> lucene_writer_cache_size = setting("lucene_writer_cache_size", INTEGER, Integer.toString( Integer.MAX_VALUE), min(1) );
 
     // NeoStore settings
     @Description("Determines whether any TransactionInterceptors loaded will intercept prepared transactions before " +
@@ -221,10 +212,6 @@ public abstract class GraphDatabaseSettings
     @Description("How many relationships to read at a time during iteration")
     public static final Setting<Integer> relationship_grab_size = setting("relationship_grab_size", INTEGER, "100", min( 1 ));
 
-    @Description("Whether to grab locks on files or not.")
-    @Deprecated
-    public static final Setting<Boolean> grab_file_lock = setting("grab_file_lock", BOOLEAN, TRUE );
-
     @Description("Specifies the block size for storing strings. This parameter is only honored when the store is " +
             "created, otherwise it is ignored. " +
             "Note that each character in a string occupies two bytes, meaning that a block size of 120 (the default " +
@@ -262,63 +249,6 @@ public abstract class GraphDatabaseSettings
             "blocked.")
     public static final Setting<Long> gc_monitor_block_threshold = MonitorGc.Configuration.gc_monitor_threshold;
 
-    // Old GCR size settings, using string values
-
-    /**
-     * Use GcrSettings.gcr_node_cache_size instead.
-     */
-    @Description("The amount of memory to use for the node cache (when using the 'gcr' cache).")
-    @Deprecated
-    public static final Setting<String> node_cache_size = setting("node_cache_size", STRING, NO_DEFAULT, matches( SIZE_FORMAT ) );
-
-    /**
-     * Use GcrSettings.gcr_relationship_cache_size instead.
-     */
-    @Description("The amount of memory to use for the relationship cache (when using the 'gcr' cache).")
-    @Deprecated
-    public static final Setting<String> relationship_cache_size = setting("relationship_cache_size", STRING, NO_DEFAULT, matches( SIZE_FORMAT ));
-
-    @Description("The fraction of the heap (1%-10%) to use for the base array in the node cache (when using the 'gcr'" +
-            " cache).")
-    @Deprecated
-    public static final Setting<Float> node_cache_array_fraction = setting("node_cache_array_fraction", FLOAT, "1.0", range( 1.0f, 10.0f ));
-
-    @Description("The fraction of the heap (1%-10%) to use for the base array in the relationship cache (when using " +
-            "the 'gcr' cache).")
-    @Deprecated
-    public static final Setting<Float> relationship_cache_array_fraction = setting("relationship_cache_array_fraction", FLOAT, "1.0", range( 1.0f, 10.0f ));
-
-    /**
-     * Use GcrSettings.gcr_cache_log_interval instead.
-     */
-    @Description("The minimal time that must pass in between logging statistics from the cache (when using the 'gcr' " +
-            "cache).")
-    @Deprecated
-    public static final Setting<String> gcr_cache_min_log_interval = setting("gcr_cache_min_log_interval",STRING, "60s", matches( DURATION_FORMAT) );
-
-
-    // TODO: Implement a good scheme for documenting individual options for option configs.
-//        @Description("Use weak reference cache.")
-//        public static final String weak = "weak";
-//
-//        @Description("Provides optimal utilization of the available memory. Suitable for high performance traversal. " +
-//                "\n" +
-//                "May run into GC issues under high load if the frequently accessed parts of the graph does not fit in" +
-//                " the cache.")
-//        public static final String soft = "soft";
-//
-//        @Description("Don't use caching.")
-//        public static final String none = "none";
-//
-//        @Description("Use strong references.")
-//        public static final String strong = "strong";
-//
-//        @Description("GC resistant cache. Gets assigned a configurable amount of space in the JVM heap \n" +
-//                "and will evict objects whenever it grows bigger than that, instead of relying on GC for eviction. \n" +
-//                "It has got the fastest insert/lookup times and should be optimal for most use cases. \n" +
-//                "This is the default cache setting.")
-//        public static final String gcr = "gcr";
-
     private static String[] availableCaches()
     {
         List<String> available = new ArrayList<>();
@@ -327,7 +257,7 @@ public abstract class GraphDatabaseSettings
             available.add( cacheProvider.getName() );
         }
                                            // --- higher prio ---->
-        for ( String prioritized : new String[] { "soft", "gcr" } )
+        for ( String prioritized : new String[] { "soft", "hpc" } )
         {
             if ( available.remove( prioritized ) )
             {

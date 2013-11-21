@@ -4,12 +4,12 @@
   <parent>
     <groupId>org.neo4j</groupId>
     <artifactId>parent</artifactId>
-    <version>2.0.0-M06</version>
+    <version>2.0.0-RC1</version>
     <relativePath>..</relativePath>
   </parent>
   <groupId>org.neo4j.doc</groupId>
   <artifactId>neo4j-manual</artifactId>
-  <version>2.0.0-M06</version>
+  <version>2.0.0-RC1</version>
   <name>Neo4j - Reference Manual</name>
   <description>Neo4j Reference Manual.</description>
   <url>http://components.neo4j.org/${project.artifactId}/${project.version}</url>
@@ -126,14 +126,14 @@
     </dependency>
     <dependency>
       <groupId>org.neo4j</groupId>
-      <artifactId>neo4j-cypher</artifactId>
+      <artifactId>neo4j-cypher-docs</artifactId>
       <version>${neo4j.version}</version>
       <classifier>test-sources</classifier>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.neo4j</groupId>
-      <artifactId>neo4j-cypher</artifactId>
+      <artifactId>neo4j-cypher-docs</artifactId>
       <version>${neo4j.version}</version>
       <classifier>docs</classifier>
       <scope>provided</scope>
@@ -301,7 +301,7 @@
               <excludes>META-INF,META-INF/**</excludes>
               <type>jar</type>
               <outputDirectory>${docs.test-sources}</outputDirectory>
-              <includeArtifactIds>neo4j-cypher,neo4j-examples,neo4j-server,neo4j-lucene-index,neo4j-backup,neo4j-kernel</includeArtifactIds>
+              <includeArtifactIds>neo4j-cypher-docs,neo4j-examples,neo4j-server,neo4j-lucene-index,neo4j-backup,neo4j-kernel</includeArtifactIds>
             </configuration>
           </execution>
           <execution>
@@ -339,6 +339,7 @@
               <arguments>
                 <argument>${docs.sources}/cypherdoc</argument>
                 <argument>${project.build.directory}/../src/tutorials/cypher</argument>
+                <argument>${project.build.directory}/../src/tutorials/modeling</argument>
               </arguments>
             </configuration>
           </execution>
@@ -664,7 +665,7 @@
   <distributionManagement>
     <site>
       <id>neo4j-site</id>
-      <url>scpexe://static.neo4j.org/var/www/components.neo4j.org/${project.artifactId}/${project.version}</url>
+      <url>scpexe://docs.neo4j.org/data/www/doc/components.neo4j.org/${project.artifactId}/${project.version}</url>
     </site>
   </distributionManagement>
 

@@ -23,11 +23,10 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.helpers.Function;
 import org.neo4j.kernel.GraphDatabaseAPI;
-import org.neo4j.kernel.ThreadToStatementContextBridge;
+import org.neo4j.kernel.impl.coreapi.ThreadToStatementContextBridge;
 import org.neo4j.kernel.api.KernelTransaction;
 import org.neo4j.kernel.api.Statement;
 import org.neo4j.kernel.api.constraints.UniquenessConstraint;
@@ -35,19 +34,19 @@ import org.neo4j.kernel.api.exceptions.KernelException;
 import org.neo4j.kernel.api.exceptions.index.IndexNotFoundKernelException;
 import org.neo4j.kernel.impl.api.index.IndexDescriptor;
 import org.neo4j.kernel.impl.api.index.SchemaIndexTestHelper;
-import org.neo4j.kernel.impl.transaction.AbstractTransactionManager;
+import org.neo4j.kernel.impl.persistence.PersistenceManager;
 import org.neo4j.test.ImpermanentDatabaseRule;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.*;
 
 public class KernelSchemaStateFlushingTest
 {
     public @Rule ImpermanentDatabaseRule dbRule = new ImpermanentDatabaseRule();
 
     private GraphDatabaseAPI db;
-    private AbstractTransactionManager txManager;
 
     private ThreadToStatementContextBridge ctxProvider;
+    private PersistenceManager persistenceManager;
 
     @Test
     public void shouldKeepSchemaStateIfSchemaIsNotModified()
@@ -137,7 +136,7 @@ public class KernelSchemaStateFlushingTest
         try ( Transaction tx = db.beginTx() )
         {
             UniquenessConstraint descriptor;
-            try ( Statement statement = ctxProvider.statement() )
+            try ( Statement statement = ctxProvider.instance() )
             {
                 descriptor = statement.schemaWriteOperations().uniquenessConstraintCreate( 1, 1 );
             }
@@ -150,7 +149,7 @@ public class KernelSchemaStateFlushingTest
     {
         try ( Transaction tx = db.beginTx() )
         {
-            try ( Statement statement = ctxProvider.statement() )
+            try ( Statement statement = ctxProvider.instance() )
             {
                 statement.schemaWriteOperations().constraintDrop( descriptor );
             }
@@ -163,7 +162,7 @@ public class KernelSchemaStateFlushingTest
         try ( Transaction tx = db.beginTx() )
         {
             IndexDescriptor descriptor;
-            try ( Statement statement = ctxProvider.statement() )
+            try ( Statement statement = ctxProvider.instance() )
             {
                 descriptor = statement.schemaWriteOperations().indexCreate( 1, 1 );
             }
@@ -176,7 +175,7 @@ public class KernelSchemaStateFlushingTest
     {
         try ( Transaction tx = db.beginTx() )
         {
-            try ( Statement statement = ctxProvider.statement() )
+            try ( Statement statement = ctxProvider.instance() )
             {
                 statement.schemaWriteOperations().indexDrop( descriptor );
             }
@@ -188,7 +187,7 @@ public class KernelSchemaStateFlushingTest
     {
         try ( Transaction tx = db.beginTx() )
         {
-            try ( Statement statement = ctxProvider.statement() )
+            try ( Statement statement = ctxProvider.instance() )
             {
                 SchemaIndexTestHelper.awaitIndexOnline( statement.readOperations(), descriptor );
             }
@@ -200,7 +199,7 @@ public class KernelSchemaStateFlushingTest
     {
         try ( Transaction tx = db.beginTx() )
         {
-            KernelTransaction txc = txManager.getKernelTransaction();
+            KernelTransaction txc = persistenceManager.currentKernelTransaction();
             String result;
             try
             {
@@ -233,7 +232,7 @@ public class KernelSchemaStateFlushingTest
     public void setup()
     {
         db = dbRule.getGraphDatabaseAPI();
-        txManager = db.getDependencyResolver().resolveDependency( AbstractTransactionManager.class );
+        persistenceManager = db.getDependencyResolver().resolveDependency( PersistenceManager.class );
         ctxProvider = db.getDependencyResolver().resolveDependency( ThreadToStatementContextBridge.class );
     }
 
