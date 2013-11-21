@@ -108,7 +108,12 @@ class LuceneDocumentStructure
 
     public Query newQuery( Object value )
     {
-        if ( value instanceof Number )
+    	
+    	if (value instanceof Query){
+    		
+    		return (Query) value;
+    	}
+    	else if ( value instanceof Number )
         {
             Number number = (Number) value;
             return LuceneUtil.rangeQuery( NUMBER_PROPERTY_FIELD_IDENTIFIER, number.doubleValue(),
@@ -124,17 +129,13 @@ class LuceneDocumentStructure
         }
         else
         {
-        	String val = value.toString();
-        	if (val.startsWith(":")){
-        		val = val.substring(1);
-        		try {
-					return new QueryParser(Version.LUCENE_36, STRING_PROPERTY_FIELD_IDENTIFIER, LuceneDataSource.LOWER_CASE_KEYWORD_ANALYZER).parse(val);
-				} catch (ParseException e) {
-					
-				}
-        	}
-    		return new TermQuery( new Term( STRING_PROPERTY_FIELD_IDENTIFIER, val ) );
-        	
+
+        	try {
+				return new QueryParser(LuceneDataSource.LUCENE_VERSION, STRING_PROPERTY_FIELD_IDENTIFIER, LuceneDataSource.LOWER_CASE_KEYWORD_ANALYZER).parse(value.toString());
+			} catch (ParseException e) {
+				// TODO Auto-generated catch block
+				return new TermQuery( new Term( STRING_PROPERTY_FIELD_IDENTIFIER, value.toString() ) );
+			}			
         }
     }
 
