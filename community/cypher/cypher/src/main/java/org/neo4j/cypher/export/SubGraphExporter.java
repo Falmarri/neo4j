@@ -191,7 +191,7 @@ public class SubGraphExporter
 
     private String toString(Object value) {
         if (value==null) return "null";
-        if (value instanceof String) return "\""+value+"\"";
+        if (value instanceof String) return "\""+((String) value).replace("\"", "\\\"")+"\"";
         if (value instanceof Iterator) {
             return toString(((Iterator)value));
         }
