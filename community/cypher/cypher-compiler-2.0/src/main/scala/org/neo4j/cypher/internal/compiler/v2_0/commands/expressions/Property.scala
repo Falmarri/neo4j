@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -42,7 +42,7 @@ case class Property(mapExpr: Expression, propertyKey: KeyToken)
     case _              => throw new ThisShouldNotHappenError("Andres", "Need something with properties")
   }
 
-  def rewrite(f: (Expression) => Expression) = f(new Property(mapExpr.rewrite(f), propertyKey.rewrite(f)))
+  def rewrite(f: (Expression) => Expression) = f(Property(mapExpr.rewrite(f), propertyKey.rewrite(f)))
 
   override def children = Seq(mapExpr, propertyKey)
 
@@ -52,7 +52,7 @@ case class Property(mapExpr: Expression, propertyKey: KeyToken)
     throw new ThisShouldNotHappenError("Andres", "This class should override evaluateType, and this method should never be run")
 
   override def evaluateType(expectedType: CypherType, symbols: SymbolTable) = {
-    mapExpr.evaluateType(MapType(), symbols)
+    mapExpr.evaluateType(CTMap, symbols)
     expectedType
   }
 

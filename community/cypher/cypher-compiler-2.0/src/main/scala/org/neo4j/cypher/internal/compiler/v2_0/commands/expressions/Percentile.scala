@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -26,25 +26,25 @@ import org.neo4j.cypher.internal.compiler.v2_0.pipes.aggregation.PercentileDiscF
 case class PercentileCont(anInner: Expression, percentile: Expression) extends AggregationWithInnerExpression(anInner) {
   def createAggregationFunction = new PercentileContFunction(anInner, percentile)
 
-  def expectedInnerType = NumberType()
+  def expectedInnerType = CTNumber
 
   def rewrite(f: (Expression) => Expression) = f(PercentileCont(anInner.rewrite(f), percentile.rewrite(f)))
 
   def calculateType(symbols: SymbolTable): CypherType = {
-    percentile.evaluateType(NumberType(), symbols)
-    anInner.evaluateType(NumberType(), symbols)
+    percentile.evaluateType(CTNumber, symbols)
+    anInner.evaluateType(CTNumber, symbols)
   }
 }
 
 case class PercentileDisc(anInner: Expression, percentile: Expression) extends AggregationWithInnerExpression(anInner) {
   def createAggregationFunction = new PercentileDiscFunction(anInner, percentile)
 
-  def expectedInnerType = NumberType()
+  def expectedInnerType = CTNumber
 
   def rewrite(f: (Expression) => Expression) = f(PercentileDisc(anInner.rewrite(f), percentile.rewrite(f)))
 
   def calculateType(symbols: SymbolTable): CypherType = {
-    percentile.evaluateType(NumberType(), symbols)
-    anInner.evaluateType(NumberType(), symbols)
+    percentile.evaluateType(CTNumber, symbols)
+    anInner.evaluateType(CTNumber, symbols)
   }
 }

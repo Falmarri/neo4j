@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -21,7 +21,7 @@ package org.neo4j.cypher.internal.compiler.v2_0.commands.expressions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
 import commands.values.TokenType._
-import commands.ReturnItem
+import commands.{CoercedPredicate, True, Not, ReturnItem}
 import pipes.QueryState
 import symbols._
 import org.neo4j.helpers.ThisShouldNotHappenError
@@ -43,26 +43,26 @@ class ExpressionTest extends Assertions {
 
   @Test def merge_two_different_identifiers() {
     testMerge(
-      Map("a" -> AnyType()),
-      Map("b" -> AnyType()),
+      Map("a" -> CTAny),
+      Map("b" -> CTAny),
 
-      Map("a" -> AnyType(), "b" -> AnyType()))
+      Map("a" -> CTAny, "b" -> CTAny))
   }
 
   @Test def merge_two_deps_on_the_same_identifier() {
     testMerge(
-      Map("a" -> AnyType()),
-      Map("a" -> AnyType()),
+      Map("a" -> CTAny),
+      Map("a" -> CTAny),
 
-      Map("a" -> AnyType()))
+      Map("a" -> CTAny))
   }
 
   @Test def merge_two_deps_same_id_different_types() {
     testMerge(
-      Map("a" -> AnyType()),
-      Map("a" -> MapType()),
+      Map("a" -> CTAny),
+      Map("a" -> CTMap),
 
-      Map("a" -> AnyType()))
+      Map("a" -> CTAny))
   }
 
   @Test
@@ -89,6 +89,21 @@ class ExpressionTest extends Assertions {
     assert(aggregates.toList ===  List(Avg(Property(Identifier("a"), PropertyKey("age")))))
   }
 
+  @Test
+  def should_handle_rewriting_to_non_predicates() {
+    // given
+    val expression = Not(True())
+
+    // when
+    val result = expression.rewrite {
+      case True() => Literal(true)
+      case e      => e
+    }
+
+    // then
+    assert(result === Not(CoercedPredicate(Literal(true))))
+  }
+
   private def testMerge(a: Map[String, CypherType], b: Map[String, CypherType], expected: Map[String, CypherType]) {
     merge(a, b, expected)
     merge(b, a, expected)
@@ -107,7 +122,7 @@ class ExpressionTest extends Assertions {
     val result = keys.toSeq.map(k => (a.get(k), b.get(k)) match {
       case (Some(x), None)    => k -> x
       case (None, Some(x))    => k -> x
-      case (Some(x), Some(y)) => k -> x.mergeDown(y)
+      case (Some(x), Some(y)) => k -> x.mergeUp(y)
       case (None, None)       => throw new ThisShouldNotHappenError("Andres", "only here to stop warnings")
     }).toMap
 

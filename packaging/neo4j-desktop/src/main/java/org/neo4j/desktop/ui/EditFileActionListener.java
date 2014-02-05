@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -28,6 +28,7 @@ import java.io.IOException;
 import static java.lang.String.format;
 import static javax.swing.JOptionPane.ERROR_MESSAGE;
 import static javax.swing.JOptionPane.showMessageDialog;
+import static org.neo4j.desktop.ui.ScrollableOptionPane.showWrappedMessageDialog;
 
 public abstract class EditFileActionListener implements ActionListener
 {
@@ -62,10 +63,11 @@ public abstract class EditFileActionListener implements ActionListener
         catch ( IOException e )
         {
             e.printStackTrace( System.out );
-            showMessageDialog( parentComponent,
-                format("Couldn't open %s, please open the file manually", file.getAbsolutePath() ),
-                "Error",
-                ERROR_MESSAGE );
+            showWrappedMessageDialog( parentComponent,
+                    format( "Couldn't open %s, please open the file manually",
+                            file.getAbsolutePath() ),
+                    "Error",
+                    ERROR_MESSAGE );
         }
     }
 

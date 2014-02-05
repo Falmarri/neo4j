@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -41,6 +41,7 @@ public class IndexWriterFactories
                 IndexWriterConfig writerConfig = new IndexWriterConfig( Version.LUCENE_36, LuceneDataSource.LOWER_CASE_KEYWORD_ANALYZER );
                 writerConfig.setMaxBufferedDocs( 100000 ); // TODO figure out depending on environment?
                 writerConfig.setIndexDeletionPolicy( new MultipleBackupDeletionPolicy() );
+                writerConfig.setTermIndexInterval( 14 );
                 return new IndexWriter( directory, writerConfig );
             }
         };

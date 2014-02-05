@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -25,20 +25,20 @@ import org.neo4j.cypher.internal.compiler.v2_0.pipes.aggregation.StdevFunction
 case class Stdev(anInner: Expression) extends AggregationWithInnerExpression(anInner) {
   def createAggregationFunction = new StdevFunction(anInner, false)
 
-  def expectedInnerType = NumberType()
+  def expectedInnerType = CTNumber
 
   def rewrite(f: (Expression) => Expression) = f(Stdev(anInner.rewrite(f)))
 
-  def calculateType(symbols: SymbolTable): CypherType = DoubleType()
+  def calculateType(symbols: SymbolTable): CypherType = CTDouble
 }
 
 case class StdevP(anInner: Expression) extends AggregationWithInnerExpression(anInner) {
   def createAggregationFunction = new StdevFunction(anInner, true)
 
-  def expectedInnerType = NumberType()
+  def expectedInnerType = CTNumber
 
   def rewrite(f: (Expression) => Expression) = f(StdevP(anInner.rewrite(f)))
 
-  def calculateType(symbols: SymbolTable): CypherType = DoubleType()
+  def calculateType(symbols: SymbolTable): CypherType = CTDouble
 }
 

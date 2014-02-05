@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -28,41 +28,40 @@ import scala.collection.immutable.SortedSet
 
 class CollectionSliceTest extends Assertions {
   val dummyCollection = DummyExpression(
-    TypeSet(CollectionType(NodeType()), NodeType(), CollectionType(StringType())),
-    DummyToken(2,3))
+    CTCollection(CTNode) | CTNode | CTCollection(CTString))
 
   @Test
   def shouldReturnCollectionTypesOfExpression() {
     val slice = CollectionSlice(dummyCollection,
-      Some(SignedInteger(1, DummyToken(5,6))),
-      Some(SignedInteger(2, DummyToken(7,8))),
-      DummyToken(4, 8))
+      Some(SignedIntegerLiteral("1")(DummyPosition(5))),
+      Some(SignedIntegerLiteral("2")(DummyPosition(7)))
+    )(DummyPosition(4))
 
     val result = slice.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
     assertEquals(Seq(), result.errors)
-    assertEquals(Set(CollectionType(NodeType()), CollectionType(StringType())), slice.types(result.state))
+    assertEquals(CTCollection(CTNode) | CTCollection(CTString), slice.types(result.state))
   }
 
   @Test
   def shouldRaiseErrorWhenNeitherFromOrTwoSpecified() {
     val slice = CollectionSlice(dummyCollection,
       None,
-      None,
-      DummyToken(4, 8))
+      None
+    )(DummyPosition(4))
 
     val result = slice.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
-    assertEquals(Seq(SemanticError("The start or end (or both) is required for a collection slice", slice.token)), result.errors)
+    assertEquals(Seq(SemanticError("The start or end (or both) is required for a collection slice", slice.position)), result.errors)
   }
 
   @Test
   def shouldRaiseErrorIfStartingFromFraction() {
-    val to = Double(1.3, DummyToken(5,6))
+    val to = DoubleLiteral("1.3")(DummyPosition(5))
     val slice = CollectionSlice(dummyCollection,
       None,
-      Some(to),
-      DummyToken(4, 8))
+      Some(to)
+    )(DummyPosition(4))
 
     val result = slice.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
-    assertEquals(Seq(SemanticError("Type mismatch: expected Integer or Long but was Double", to.token, SortedSet(to.token))), result.errors)
+    assertEquals(Seq(SemanticError("Type mismatch: expected Integer but was Double", to.position)), result.errors)
   }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -82,6 +82,15 @@ class HashBasedIndex extends InMemoryIndexImplementation
         for ( Set<Long> nodes : data.values() )
         {
             nodes.remove( nodeId );
+        }
+    }
+
+    @Override
+    void iterateAll( IndexEntryIterator iterator ) throws Exception
+    {
+        for ( Map.Entry<Object, Set<Long>> entry : data.entrySet() )
+        {
+            iterator.visitEntry( entry.getKey(), entry.getValue() );
         }
     }
 

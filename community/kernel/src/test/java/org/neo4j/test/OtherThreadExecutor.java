@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -178,6 +178,11 @@ public class OtherThreadExecutor<T> implements ThreadFactory, Visitor<LineLogger
         waitUntilThreadState( Thread.State.WAITING );
     }
 
+    public void waitUntilBlocked() throws TimeoutException
+    {
+        waitUntilThreadState( Thread.State.BLOCKED );
+    }
+    
     public void waitUntilThreadState( Thread.State... possibleStates ) throws TimeoutException
     {
         Set<Thread.State> stateSet = new HashSet<>( asList( possibleStates ) );
@@ -217,15 +222,17 @@ public class OtherThreadExecutor<T> implements ThreadFactory, Visitor<LineLogger
         return thread;
     }
 
+    @Override
     public void close()
     {
         commandExecutor.shutdown();
         try
         {
-            commandExecutor.awaitTermination( 1000, TimeUnit.SECONDS );
+            commandExecutor.awaitTermination( 10, TimeUnit.SECONDS );
         }
-        catch ( InterruptedException e )
-        {   // OK
+        catch ( Exception e )
+        {
+            commandExecutor.shutdownNow();
         }
     }
 

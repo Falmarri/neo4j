@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -36,8 +36,6 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
 
-import org.neo4j.desktop.config.Environment;
-import org.neo4j.desktop.config.Installation;
 import org.neo4j.desktop.runtime.DatabaseActions;
 
 import static java.lang.String.format;
@@ -74,16 +72,14 @@ public class MainWindow
     private final JPanel statusPanel;
     private final JTextField directoryDisplay;
     private final SystemOutDebugWindow debugWindow;
-    private final Environment environment;
     private final SysTray sysTray;
 
     private DatabaseStatus databaseStatus;
 
-    public MainWindow( final DatabaseActions databaseActions, Installation installation, DesktopModel model )
+    public MainWindow( final DatabaseActions databaseActions, DesktopModel model )
     {
         this.model = model;
         this.debugWindow = new SystemOutDebugWindow();
-        this.environment = installation.getEnvironment();
         this.databaseActions = databaseActions;
 
         this.frame = new JFrame( "Neo4j Community" );
@@ -171,7 +167,7 @@ public class MainWindow
         JPanel panel = withLayout( statusPanelLayout, withTitledBorder( "Status", createPanel() ) );
         for ( DatabaseStatus status : DatabaseStatus.values() )
         {
-            panel.add( status.name(), status.display( model, environment ) );
+            panel.add( status.name(), status.display( model ) );
         }
 
         panel.addMouseListener( new MouseAdapter()

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,20 +19,16 @@
  */
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
+import Expression.SemanticContext
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{expressions => commandexpressions}
-import org.neo4j.cypher.internal.compiler.v2_0.commands.expressions.{Expression => CommandExpression}
-import org.neo4j.cypher.internal.compiler.v2_0.ast.Expression.SemanticContext
+import symbols._
 
-case class ShortestPathExpression(pattern: ShortestPath) extends Expression with SimpleTypedExpression {
-  def token = pattern.token
-  protected def possibleTypes = Set(CollectionType(PathType()))
+case class ShortestPathExpression(pattern: ShortestPaths) extends Expression with SimpleTypedExpression {
+  def position = pattern.position
+  protected def possibleTypes = CTCollection(CTPath)
 
   override def semanticCheck(ctx: SemanticContext) =
     pattern.declareIdentifiers(Pattern.SemanticContext.Expression) then
     pattern.semanticCheck(Pattern.SemanticContext.Expression) then
     super.semanticCheck(ctx)
-
-  def toCommand: CommandExpression = commandexpressions.ShortestPathExpression(pattern.toLegacyPatterns(None).head)
 }

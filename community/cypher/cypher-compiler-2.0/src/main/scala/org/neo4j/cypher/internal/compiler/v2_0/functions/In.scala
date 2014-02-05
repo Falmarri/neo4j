@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,22 +20,26 @@
 package org.neo4j.cypher.internal.compiler.v2_0.functions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{expressions => commandexpressions}
-import org.neo4j.cypher.internal.compiler.v2_0.ast.FunctionInvocation
+import ast.convert.ExpressionConverters._
+import commands.{expressions => commandexpressions}
+import symbols._
 
 case object In extends PredicateFunction {
   def name = "IN"
 
-  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation) : SemanticCheck =
+  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation): SemanticCheck =
     checkArgs(invocation, 2) ifOkThen {
-      invocation.arguments(1).constrainType(CollectionType(AnyType()))
-    } then invocation.specifyType(BooleanType())
+      invocation.arguments(0).expectType(CTAny.covariant) then
+      invocation.arguments(1).expectType(invocation.arguments(0).types(_).wrapInCollection)
+    } then invocation.specifyType(CTBoolean)
 
-  protected def internalToPredicate(invocation: FunctionInvocation) = {
-    val left = invocation.arguments(0)
-    val right = invocation.arguments(1)
-    commands.AnyInCollection(right.toCommand, "-_-INNER-_-", commands.Equals(left.toCommand, commandexpressions.Identifier("-_-INNER-_-")))
-  }
+  protected def internalToPredicate(invocation: ast.FunctionInvocation) =
+    commands.AnyInCollection(
+      invocation.arguments(1).asCommandExpression,
+      "-_-INNER-_-",
+      commands.Equals(
+        invocation.arguments(0).asCommandExpression,
+        commandexpressions.Identifier("-_-INNER-_-")
+      )
+    )
 }

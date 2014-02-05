@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -33,6 +33,11 @@ import org.junit.Assert._
 import org.junit.Test
 import org.scalatest.Assertions
 import org.scalatest.junit.JUnitSuite
+
+object CypherParserTest {
+  val cypherParser = CypherParser()
+}
+import CypherParserTest._
 
 class CypherParserTest extends JUnitSuite with Assertions {
   @Test def shouldParseEasiestPossibleQuery() {
@@ -476,7 +481,7 @@ class CypherParserTest extends JUnitSuite with Assertions {
     )
   }
 
-  @Test def djangoRelationshipType() {
+  @Test def djangoCTRelationship {
     test(
       "start a = NODE(1) match a -[r:`<<KNOWS>>`]-> b return b",
       Query.
@@ -2751,6 +2756,20 @@ class CypherParserTest extends JUnitSuite with Assertions {
     )
   }
 
+  @Test def genericCaseCoercesInWhen() {
+    test(
+      """MATCH (a) RETURN CASE WHEN (a)-[:LOVES]->() THEN 1 ELSE 0 END AS result""".stripMargin,
+      Query.
+        matches(SingleNode("a")).
+        returns(
+          ReturnItem(GenericCase(
+            Seq((NonEmpty(PathExpression(Seq(RelatedTo(SingleNode("a"), SingleNode("  UNNAMED42"), "  UNNAMED30", Seq("LOVES"), Direction.OUTGOING, Map.empty)))), Literal(1))),
+            Some(Literal(0))
+          ), "result", true)
+        )
+    )
+  }
+
   @Test def shouldGroupCreateAndCreateUpdate() {
     test(
       """START me=node(0) MATCH p1 = me-[*2]-friendOfFriend CREATE p2 = me-[:MARRIED_TO]->(wife {name:"Gunhild"}) CREATE UNIQUE p3 = wife-[:KNOWS]-friendOfFriend RETURN p1,p2,p3""", {
@@ -2786,6 +2805,28 @@ class CypherParserTest extends JUnitSuite with Assertions {
         matches().
         returns(
         ReturnItem(LiteralMap(Map("key"->Literal("value"))), "{ key: 'value' }"))
+    )
+  }
+
+  @Test def access_nested_properties() {
+    val tail = Query.
+      matches().
+      returns(
+        ReturnItem(Property(Property(Identifier("person"), PropertyKey("address")), PropertyKey("city")), "person.address.city")
+      )
+
+    test(
+      "WITH { name:'Alice', address: { city:'London', residential:true }} AS person RETURN person.address.city",
+      Query.
+        matches().
+        tail(tail).
+        returns(
+          ReturnItem(LiteralMap(
+            Map("name"->Literal("Alice"), "address"->LiteralMap(
+              Map("city"->Literal("London"), "residential"->True())
+            ))
+          ), "person", true)
+        )
     )
   }
 
@@ -2837,7 +2878,7 @@ class CypherParserTest extends JUnitSuite with Assertions {
 
   @Test
   def compileQueryIntegrationTest() {
-    val q = parser.parseToQuery("create (a1) create (a2) create (a3) create (a4) create (a5) create (a6) create (a7)").asInstanceOf[commands.Query]
+    val q = cypherParser.parseToQuery("create (a1) create (a2) create (a3) create (a4) create (a5) create (a6) create (a7)").asInstanceOf[commands.Query]
     assert(q.tail.nonEmpty, "wasn't compacted enough")
     val compacted = q.compact
 
@@ -2855,7 +2896,7 @@ class CypherParserTest extends JUnitSuite with Assertions {
 
   @Test
   def compileQueryIntegrationTest2() {
-    val q = parser.parseToQuery("create (a1) create (a2) create (a3) with a1 create (a4) return a1, a4").asInstanceOf[commands.Query]
+    val q = cypherParser.parseToQuery("create (a1) create (a2) create (a3) with a1 create (a4) return a1, a4").asInstanceOf[commands.Query]
     val compacted = q.compact
     var lastQ = compacted
 
@@ -2893,10 +2934,18 @@ class CypherParserTest extends JUnitSuite with Assertions {
         returns(AllIdentifiers()))
   }
 
-  val parser = CypherParser()
+  @Test def should_allow_whitespace_in_multiple_word_operators() {
+    test(
+      "OPTIONAL\t MATCH (n) WHERE n  IS   NOT\n /* possibly */ NULL    RETURN n",
+      Query.
+        optionalMatches(SingleNode("n")).
+        where(Not(IsNull(Identifier("n")))).
+        returns(ReturnItem(Identifier("n"), "n"))
+    )
+  }
 
   private def test(query: String, expectedQuery: AbstractQuery) {
-    val ast = parser.parseToQuery(query)
+    val ast = cypherParser.parseToQuery(query)
     try {
       assertThat(query, ast, equalTo(expectedQuery))
     } catch {

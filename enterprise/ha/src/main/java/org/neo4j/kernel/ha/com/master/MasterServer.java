@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,7 +19,8 @@
  */
 package org.neo4j.kernel.ha.com.master;
 
-import java.io.IOException;
+import static org.neo4j.helpers.Clock.SYSTEM_CLOCK;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -28,19 +29,17 @@ import java.util.Set;
 import java.util.TreeMap;
 
 import org.jboss.netty.channel.Channel;
-
 import org.neo4j.com.Protocol;
 import org.neo4j.com.RequestContext;
 import org.neo4j.com.RequestType;
 import org.neo4j.com.Server;
 import org.neo4j.com.TransactionNotPresentOnMasterException;
 import org.neo4j.com.TxChecksumVerifier;
-import org.neo4j.kernel.ha.HaRequestType20;
-import org.neo4j.kernel.ha.MasterClient20;
+import org.neo4j.kernel.ha.HaRequestType201;
+import org.neo4j.kernel.ha.MasterClient201;
 import org.neo4j.kernel.impl.transaction.TransactionAlreadyActiveException;
 import org.neo4j.kernel.logging.Logging;
-
-import static org.neo4j.helpers.Clock.SYSTEM_CLOCK;
+import org.neo4j.kernel.monitoring.Monitors;
 
 /**
  * Sits on the master side, receiving serialized requests from slaves (via
@@ -51,16 +50,16 @@ public class MasterServer extends Server<Master, Void>
     public static final int FRAME_LENGTH = Protocol.DEFAULT_FRAME_LENGTH;
 
     public MasterServer( Master requestTarget, Logging logging, Configuration config,
-                         TxChecksumVerifier txVerifier ) throws IOException
+                         TxChecksumVerifier txVerifier, Monitors monitors )
     {
-        super( requestTarget, config, logging, FRAME_LENGTH, MasterClient20.PROTOCOL_VERSION, txVerifier,
-                SYSTEM_CLOCK );
+        super( requestTarget, config, logging, FRAME_LENGTH, MasterClient201.PROTOCOL_VERSION, txVerifier,
+                SYSTEM_CLOCK, monitors );
     }
 
     @Override
     protected RequestType<Master> getRequestContext( byte id )
     {
-        return HaRequestType20.values()[id];
+        return HaRequestType201.values()[id];
     }
 
     @Override

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,9 +20,8 @@
 package org.neo4j.cypher.internal.compiler.v2_0
 
 import commands.expressions.Identifier
-import data.SimpleVal
 import pipes.matching._
-import symbols.{NodeType, NumberType}
+import symbols._
 import org.neo4j.cypher.GraphDatabaseTestBase
 import org.neo4j.graphdb._
 import org.junit.runner.RunWith
@@ -112,7 +111,7 @@ object PipeLazynessTest extends MockitoSugar {
 
   private def distinctPipe = {
     val iter = new LazyIterator[Map[String, Any]](10, (n) => Map("x" -> n))
-    val src = new FakePipe(iter, "x" -> NumberType())
+    val src = new FakePipe(iter, "x" -> CTNumber)
     val pipe = new DistinctPipe(src, Map("x" -> Identifier("x")))
     Seq(pipe, iter)
   }
@@ -137,7 +136,7 @@ object PipeLazynessTest extends MockitoSugar {
 
   private def executeUpdateCommandsPipe = {
     val iter = new LazyIterator[Map[String, Any]](10, (n) => Map("x" -> n))
-    val src = new FakePipe(iter, "x" -> NumberType())
+    val src = new FakePipe(iter, "x" -> CTNumber)
     val pipe = new ExecuteUpdateCommandsPipe(src, Seq.empty)
     Seq(pipe, iter)
   }
@@ -151,7 +150,7 @@ object PipeLazynessTest extends MockitoSugar {
   private def namedPathPipe = {
     val node = mock[Node]
     val iter = new LazyIterator[Map[String, Any]](10, (_) => Map("x" -> node))
-    val src = new FakePipe(iter, "x" -> NodeType())
+    val src = new FakePipe(iter, "x" -> CTNode)
     val pipe = new NamedPathPipe(src, "p", Seq(ParsedEntity("x")))
     Seq(pipe, iter)
   }
@@ -165,7 +164,7 @@ object PipeLazynessTest extends MockitoSugar {
     when(node1.getRelationships(Direction.OUTGOING)).thenReturn(Iterable[Relationship](rel1).asJava)
 
     val iter = new LazyIterator[Map[String, Any]](10, (_, db) => Map("x" -> node1))
-    val src = new FakePipe(iter, "x" -> NodeType())
+    val src = new FakePipe(iter, "x" -> CTNode)
     val x = new PatternNode("x")
     val y = new PatternNode("y")
     val rel = x.relateTo("r", y, Seq.empty, Direction.OUTGOING)
@@ -181,7 +180,7 @@ object PipeLazynessTest extends MockitoSugar {
     val shortestPath = ShortestPath(pathName = "p", left = SingleNode("start"), right = SingleNode("end"), relTypes = Seq.empty,
       dir = Direction.OUTGOING, maxDepth = None, single = true, relIterator = None)
     val iter = new LazyIterator[Map[String, Any]](10, (_) => Map("start" -> null, "end" -> null))
-    val src = new FakePipe(iter, "start" -> NodeType(), "end" -> NodeType())
+    val src = new FakePipe(iter, "start" -> CTNode, "end" -> CTNode)
     val pipe = new ShortestPathPipe(src, shortestPath)
     Seq(pipe, iter)
   }
@@ -204,9 +203,7 @@ object PipeLazynessTest extends MockitoSugar {
     val node = mock[Node]
     val (iter, src) = emptyFakes
     val pipe = new NodeStartPipe(src, "y", new EntityProducer[Node]() {
-      def description: Seq[(String, SimpleVal)] = Seq.empty
-
-      def name: String = ""
+      def producerType: String = "SingleNodeMock"
 
       def apply(v1: ExecutionContext, v2: QueryState): Iterator[Node] = Iterator(node)
     })
@@ -250,7 +247,7 @@ object PipeLazynessTest extends MockitoSugar {
 
   private def emptyFakes: (LazyIterator[Map[String, Any]], FakePipe) = {
     val iter = new LazyIterator[Map[String, Any]](10, (x) => Map("x" -> x))
-    val src = new FakePipe(iter, "x" -> NumberType())
+    val src = new FakePipe(iter, "x" -> CTNumber)
     (iter, src)
   }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,10 +19,9 @@
  */
 package org.neo4j.kernel.impl.api.store;
 
-import org.neo4j.kernel.impl.api.KernelStatement;
 import org.neo4j.kernel.api.exceptions.EntityNotFoundException;
 
 public interface CacheLoader<T>
 {
-    T load( KernelStatement state, long id ) throws EntityNotFoundException;
+    T load( long id ) throws EntityNotFoundException;
 }

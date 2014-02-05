@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -43,7 +43,7 @@ class ShortestPathPipe(source: Pipe, ast: ShortestPath) extends PipeWithSource(s
     result.map(x => ctx.newWith(pathName -> x))
   })
 
-  val symbols = source.symbols.add(pathName, PathType())
+  val symbols = source.symbols.add(pathName, CTPath)
 
   override def executionPlanDescription =
     source.executionPlanDescription.andThen(this, "ShortestPath", "ast" -> ast)

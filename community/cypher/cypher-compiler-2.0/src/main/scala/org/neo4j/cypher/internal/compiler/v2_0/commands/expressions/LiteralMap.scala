@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -36,8 +36,8 @@ case class LiteralMap(data: Map[String, Expression]) extends Expression with Gra
   def arguments = data.values.toSeq
 
   def calculateType(symbols: SymbolTable): CypherType = {
-    data.values.foreach(_.evaluateType(AnyType(), symbols))
-    MapType()
+    data.values.foreach(_.evaluateType(CTAny, symbols))
+    CTMap
   }
 
   def symbolTableDependencies = data.symboltableDependencies

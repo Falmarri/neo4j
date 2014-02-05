@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -645,6 +645,13 @@ public class TestApps extends AbstractShellTest
                 "node = db.createNode()\n" +
                 "node.setProperty( \"name\", \"Mattias\" )\n" +
                 "node.getProperty( \"name\" )\n", "Mattias" );
+    }
+
+    @Test
+    public void commentsAloneAreIgnored() throws Exception
+    {
+        // See GitHub issue #1204
+        executeCommand( "// a comment\n" );
     }
 
     @Test

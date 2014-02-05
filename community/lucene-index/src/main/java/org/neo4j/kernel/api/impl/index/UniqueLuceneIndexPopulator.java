@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -34,8 +34,13 @@ import org.neo4j.kernel.api.index.IndexEntryConflictException;
 import org.neo4j.kernel.api.index.IndexUpdater;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
 import org.neo4j.kernel.api.index.PreexistingIndexEntryConflictException;
+import org.neo4j.kernel.api.index.PropertyAccessor;
 import org.neo4j.kernel.api.index.util.FailureStorage;
 
+/**
+ * @deprecated Use {@link DeferredConstraintVerificationUniqueLuceneIndexPopulator} instead.
+ */
+@Deprecated
 class UniqueLuceneIndexPopulator extends LuceneIndexPopulator
 {
     static final int DEFAULT_BATCH_SIZE = 1024;
@@ -117,7 +122,13 @@ class UniqueLuceneIndexPopulator extends LuceneIndexPopulator
     }
 
     @Override
-    public IndexUpdater newPopulatingUpdater() throws IOException
+    public void verifyDeferredConstraints( PropertyAccessor accessor ) throws IndexEntryConflictException, IOException
+    {
+        // constraints are checked in add() so do nothing
+    }
+
+    @Override
+    public IndexUpdater newPopulatingUpdater( PropertyAccessor propertyAccessor ) throws IOException
     {
         return new IndexUpdater()
         {

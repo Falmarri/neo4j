@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -32,7 +32,7 @@ case class ParameterExpression(parameterName: String) extends Expression {
 
   def arguments = Seq()
 
-  def calculateType(symbols: SymbolTable) = AnyType()
+  def calculateType(symbols: SymbolTable) = CTAny
 
   def symbolTableDependencies = Set()
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -135,10 +135,10 @@ public class BitmapFormatTest
             // when
             BitmapFormat._32.set( bitmap, input, true );
             // then
-            assertThat( BitmapFormat._32.peek( bitmap.bitmap(), input ), is( true ) );
+            assertThat( BitmapFormat._32.hasLabel( bitmap.bitmap(), input ), is( true ) );
             for ( int check = 0; check < 32; check++ )
             {
-                assertThat( BitmapFormat._32.peek( bitmap.bitmap(), check ), is( input == check ) );
+                assertThat( BitmapFormat._32.hasLabel( bitmap.bitmap(), check ), is( input == check ) );
             }
         }
     }
@@ -153,10 +153,10 @@ public class BitmapFormatTest
             // when
             BitmapFormat._64.set( bitmap, input, true );
             // then
-            assertThat( BitmapFormat._64.peek( bitmap.bitmap(), input ), is( true ) );
+            assertThat( BitmapFormat._64.hasLabel( bitmap.bitmap(), input ), is( true ) );
             for ( int check = 0; check < 64; check++ )
             {
-                assertThat( BitmapFormat._64.peek( bitmap.bitmap(), check ), is( input == check ) );
+                assertThat( BitmapFormat._64.hasLabel( bitmap.bitmap(), check ), is( input == check ) );
             }
         }
     }

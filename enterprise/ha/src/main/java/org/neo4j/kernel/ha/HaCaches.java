@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -27,8 +27,8 @@ import org.neo4j.kernel.impl.cache.HighPerformanceCacheProvider;
 import org.neo4j.kernel.impl.core.Caches;
 import org.neo4j.kernel.impl.core.NodeImpl;
 import org.neo4j.kernel.impl.core.RelationshipImpl;
-import org.neo4j.kernel.impl.util.Monitors;
 import org.neo4j.kernel.impl.util.StringLogger;
+import org.neo4j.kernel.monitoring.Monitors;
 
 import static org.neo4j.kernel.impl.cache.HighPerformanceCacheSettings.node_cache_array_fraction;
 import static org.neo4j.kernel.impl.cache.HighPerformanceCacheSettings.node_cache_size;

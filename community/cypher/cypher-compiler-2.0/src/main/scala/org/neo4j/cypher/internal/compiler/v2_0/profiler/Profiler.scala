@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -21,7 +21,7 @@ package org.neo4j.cypher.internal.compiler.v2_0.profiler
 
 import org.neo4j.cypher.internal.compiler.v2_0._
 import data.PrimVal
-import pipes.{QueryState, Pipe, PipeDecorator}
+import pipes.{NullPipe, QueryState, Pipe, PipeDecorator}
 import org.neo4j.cypher.internal.compiler.v2_0.spi.{DelegatingOperations, Operations, QueryContext, DelegatingQueryContext}
 import org.neo4j.cypher.ProfilerStatisticsNotReadyException
 import org.neo4j.graphdb.{PropertyContainer, Direction, Relationship, Node}
@@ -33,19 +33,14 @@ class Profiler extends PipeDecorator {
   val iterStats: mutable.Map[Pipe, ProfilingIterator] = mutable.Map.empty
 
 
-  def decorate(pipe: Pipe, iter: Iterator[ExecutionContext]): Iterator[ExecutionContext] = {
+  def decorate(pipe: Pipe, iter: Iterator[ExecutionContext]): Iterator[ExecutionContext] = decoratePipe(pipe, iter) {
     val resultIter = new ProfilingIterator(iter)
 
-    assert(!iterStats.contains(pipe), "Can't profile the same iterator twice")
-
     iterStats(pipe) = resultIter
-
     resultIter
   }
 
-  def decorate(pipe: Pipe, state: QueryState): QueryState = {
-    assert(!contextStats.contains(pipe), "Can't profile the same pipe twice: " + pipe)
-
+  def decorate(pipe: Pipe, state: QueryState): QueryState = decoratePipe(pipe, state) {
     val decoratedContext = state.query match {
       case p: ProfilingQueryContext => new ProfilingQueryContext(p.inner, pipe)
       case _                        => new ProfilingQueryContext(state.query, pipe)
@@ -53,6 +48,11 @@ class Profiler extends PipeDecorator {
 
     contextStats(pipe) = decoratedContext
     state.copy(inner = decoratedContext)
+  }
+
+  private def decoratePipe[T](pipe: Pipe, default: T)(f: => T): T = pipe match {
+    case _:NullPipe => default
+    case _ => f
   }
 
   def decorate(plan: PlanDescription, isProfileReady: => Boolean): PlanDescription = plan.mapArgs {

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -623,6 +623,21 @@ public final class Iterables
     public static <T> Set<T> toSet( Iterable<T> iterable )
     {
         return addAll( new HashSet<T>(), iterable );
+    }
+
+    public static String toString( Iterable<?> values, String separator )
+    {
+        Iterator<?> it = values.iterator();
+        StringBuilder sb = new StringBuilder();
+        while(it.hasNext())
+        {
+            sb.append( it.next().toString() );
+            if(it.hasNext())
+            {
+                sb.append( separator );
+            }
+        }
+        return sb.toString();
     }
 
     private static class MapIterable<FROM, TO>

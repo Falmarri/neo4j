@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -43,9 +43,9 @@ case class ExtractFunction(collection: Expression, id: String, expression: Expre
   def arguments: Seq[Expression] = Seq(collection)
 
   def calculateType(symbols: SymbolTable): CypherType = {
-    val iteratorType = collection.evaluateType(CollectionType(AnyType()), symbols).iteratedType
+    val iteratorType = collection.evaluateType(CTCollection(CTAny), symbols).legacyIteratedType
     val innerSymbols = symbols.add(id, iteratorType)
-    CollectionType(expression.evaluateType(AnyType(), innerSymbols))
+    CTCollection(expression.evaluateType(CTAny, innerSymbols))
   }
 
   def symbolTableDependencies = symbolTableDependencies(collection, expression, id)

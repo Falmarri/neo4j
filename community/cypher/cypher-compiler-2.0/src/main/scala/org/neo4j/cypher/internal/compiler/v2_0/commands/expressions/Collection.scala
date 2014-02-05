@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -34,8 +34,8 @@ case class Collection(arguments: Expression*) extends Expression {
 
   def calculateType(symbols: SymbolTable): CypherType =
     arguments.map(_.getType(symbols)) match {
-      case Seq() => CollectionType(AnyType())
-      case types => CollectionType(types.reduce(_ mergeDown _))
+      case Seq() => CTCollection(CTAny)
+      case types => CTCollection(types.reduce(_ mergeUp _))
     }
 
   def symbolTableDependencies = arguments.flatMap(_.symbolTableDependencies).toSet

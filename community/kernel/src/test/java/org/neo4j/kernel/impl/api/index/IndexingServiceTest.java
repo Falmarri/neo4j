@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -81,6 +81,7 @@ public class IndexingServiceTest
     private SchemaIndexProvider indexProvider;
     private IndexUpdater updater;
     private IndexAccessor accessor;
+    private IndexStoreView storeView;
 
     @Before
     public void setUp()
@@ -89,7 +90,9 @@ public class IndexingServiceTest
         propertyKeyId = 15;
         populator = mock( IndexPopulator.class );
         updater = mock( IndexUpdater.class );
+        indexProvider = mock( SchemaIndexProvider.class );
         accessor = mock( IndexAccessor.class );
+        storeView  = mock( IndexStoreView.class );
     }
 
     @Test
@@ -119,8 +122,8 @@ public class IndexingServiceTest
         order.verify( populator ).create();
         order.verify( populator ).close( true );
         order.verify( accessor ).newUpdater( IndexUpdateMode.ONLINE );
-        order.verify(updater).process( add( 10, "foo" ) );
-        order.verify(updater).close();
+        order.verify( updater ).process( add( 10, "foo" ) );
+        order.verify( updater ).close();
     }
 
     @Test
@@ -144,7 +147,7 @@ public class IndexingServiceTest
     public void shouldDeliverUpdatesThatOccurDuringPopulationToPopulator() throws Exception
     {
         // given
-        when( populator.newPopulatingUpdater() ).thenReturn(updater);
+        when( populator.newPopulatingUpdater( storeView ) ).thenReturn( updater );
 
         CountDownLatch latch = new CountDownLatch( 1 );
         doAnswer( afterAwaiting( latch ) ).when( populator ).add( anyLong(), any() );
@@ -177,12 +180,13 @@ public class IndexingServiceTest
 
         // this is invoked from indexAllNodes(),
         // empty because the id we added (2) is bigger than the one we indexed (1)
-        order.verify( populator ).newPopulatingUpdater();
-        order.verify(updater).close();
+        order.verify( populator ).newPopulatingUpdater( storeView );
+        order.verify( updater ).close();
+        order.verify( populator ).verifyDeferredConstraints( storeView );
 
-        order.verify( populator ).newPopulatingUpdater();
-        order.verify(updater).process( add( 2, "value2" ) );
-        order.verify(updater).close();
+        order.verify( populator ).newPopulatingUpdater( storeView );
+        order.verify( updater ).process( add( 2, "value2" ) );
+        order.verify( updater ).close();
 
         order.verify( populator ).close( true );
         verifyNoMoreInteractions(updater);
@@ -458,12 +462,10 @@ public class IndexingServiceTest
                                                                       DataUpdates data ) throws IOException
     {
         StringLogger logger = mock( StringLogger.class );
-        indexProvider = mock( SchemaIndexProvider.class );
-        IndexStoreView storeView = mock( IndexStoreView.class );
         UpdateableSchemaState schemaState = mock( UpdateableSchemaState.class );
 
         when( indexProvider.getProviderDescriptor() ).thenReturn( PROVIDER_DESCRIPTOR );
-        when( indexProvider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) ).thenReturn( populator );
+        when( indexProvider.getPopulator( anyLong(), any( IndexDescriptor.class ), any( IndexConfiguration.class ) ) ).thenReturn( populator );
         data.getsProcessedByStoreScanFrom( storeView );
         when( indexProvider.getOnlineAccessor( anyLong(), any( IndexConfiguration.class ) ) ).thenReturn( accessor );
 

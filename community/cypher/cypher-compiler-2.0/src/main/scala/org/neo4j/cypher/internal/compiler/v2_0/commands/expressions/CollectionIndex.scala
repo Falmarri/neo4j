@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -41,11 +41,11 @@ with CollectionSupport {
   }
 
   protected def calculateType(symbols: SymbolTable): CypherType = {
-    index.evaluateType(NumberType(), symbols)
+    index.evaluateType(CTNumber, symbols)
 
-    collection.evaluateType(CollectionType(AnyType()), symbols) match {
-      case collectionType: CollectionType => collectionType.iteratedType
-      case x if x.isInstanceOf[AnyType]   => AnyType()
+    collection.evaluateType(CTCollection(CTAny), symbols) match {
+      case collectionType: CollectionType => collectionType.innerType
+      case x if x.isInstanceOf[AnyType]   => CTAny
       case x                              => throw new CypherTypeException("Expected a collection, but was " + x)
     }
   }

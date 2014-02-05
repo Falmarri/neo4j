@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -33,8 +33,8 @@ case class RelationshipTypeFunction(relationship: Expression) extends NullInNull
   def arguments = Seq(relationship)
 
   def calculateType(symbols: SymbolTable) = {
-    relationship.evaluateType(RelationshipType(), symbols)
-    StringType()
+    relationship.evaluateType(CTRelationship, symbols)
+    CTString
   }
 
   def symbolTableDependencies = relationship.symbolTableDependencies

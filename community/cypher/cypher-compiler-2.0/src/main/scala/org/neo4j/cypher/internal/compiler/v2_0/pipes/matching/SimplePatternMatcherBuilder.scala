@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -122,6 +122,8 @@ class SimplePatternMatcherBuilder(pattern: PatternGraph,
       }
     })
   }
+
+  def name = "SimplePatternMatcher"
 }
 
 object SimplePatternMatcherBuilder {
@@ -130,6 +132,7 @@ object SimplePatternMatcherBuilder {
     val b = !graph.patternRels.keys.exists(graph.boundElements.contains)
     val c = !graph.patternNodes.values.exists(pn => pn.relationships.isEmpty )
     val d = !graph.patternNodes.values.exists(node => node.labels.nonEmpty || node.properties.nonEmpty)
-    a && b && c && d
+    val e = !graph.patternRels.values.exists(rel => rel.properties.nonEmpty)
+    a && b && c && d && e
   }
 }

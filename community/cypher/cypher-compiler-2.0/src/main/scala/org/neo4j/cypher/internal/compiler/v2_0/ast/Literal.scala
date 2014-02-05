@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,35 +19,50 @@
  */
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
+import Expression.SemanticContext
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{expressions => commandexpressions}
+import symbols._
 
-sealed trait Number extends Expression {
-  def value : java.lang.Number
-
-  def toCommand = commandexpressions.Literal(value)
+trait Literal extends Expression {
+  def value: Any
 }
 
-case class SignedInteger(value: java.lang.Long, token: InputToken) extends Number with SimpleTypedExpression {
-  protected def possibleTypes = Set(LongType())
-}
-case class UnsignedInteger(value: java.lang.Long, token: InputToken) extends Number with SimpleTypedExpression {
-  protected def possibleTypes = Set(LongType())
-  if (value < 0)
-    throw new IllegalArgumentException("signed integer used in UnsignedInteger Literal")
-}
+sealed abstract class IntegerLiteral(stringVal: String) extends Literal with SimpleTypedExpression {
+  lazy val value = stringVal.toLong
 
-case class Double(value: java.lang.Double, token: InputToken) extends Number with SimpleTypedExpression {
-  protected def possibleTypes = Set(DoubleType())
-}
+  protected def possibleTypes = CTInteger
 
-case class StringLiteral(value: String, token: InputToken) extends Expression with SimpleTypedExpression {
-  protected def possibleTypes = Set(StringType())
-
-  def toCommand = commandexpressions.Literal(value)
+  override def semanticCheck(ctx: SemanticContext): SemanticCheck =
+    when(!(try {
+      value.isInstanceOf[Any]
+    } catch {
+      case e:java.lang.NumberFormatException => false
+    })) {
+      SemanticError("integer is too large", position)
+    } then super.semanticCheck(ctx)
 }
 
-case class Range(lower: Option[UnsignedInteger], upper: Option[UnsignedInteger], token: InputToken) extends AstNode {
+case class SignedIntegerLiteral(stringVal: String)(val position: InputPosition) extends IntegerLiteral(stringVal)
+case class UnsignedIntegerLiteral(stringVal: String)(val position: InputPosition) extends IntegerLiteral(stringVal)
+
+
+case class DoubleLiteral(stringVal: String)(val position: InputPosition) extends Literal with SimpleTypedExpression {
+  val value = stringVal.toDouble
+
+  protected def possibleTypes = CTDouble
+
+  override def semanticCheck(ctx: SemanticContext): SemanticCheck =
+    when(value.isInfinite) {
+      SemanticError("floating point number is too large", position)
+    } then super.semanticCheck(ctx)
+}
+
+
+case class StringLiteral(value: String)(val position: InputPosition) extends Literal with SimpleTypedExpression {
+  protected def possibleTypes = CTString
+}
+
+
+case class Range(lower: Option[UnsignedIntegerLiteral], upper: Option[UnsignedIntegerLiteral])(val position: InputPosition) extends ASTNode {
   def isSingleLength = lower.isDefined && upper.isDefined && lower.get.value == 1 && upper.get.value == 1
 }

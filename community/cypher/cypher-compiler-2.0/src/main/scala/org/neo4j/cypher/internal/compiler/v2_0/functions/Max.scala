@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,20 +20,21 @@
 package org.neo4j.cypher.internal.compiler.v2_0.functions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
+import ast.convert.ExpressionConverters._
 import commands.{expressions => commandexpressions}
+import commands.expressions.{Expression => CommandExpression}
 import symbols._
 
-case object Max extends AggregatingFunction {
+case object Max extends AggregatingFunction with SimpleTypedFunction {
   def name = "max"
 
-  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation) : SemanticCheck =
-    checkArgs(invocation, 1) ifOkThen {
-      invocation.arguments.constrainType(NumberType()) then
-      invocation.specifyType(invocation.arguments(0).types)
-    }
+  val signatures = Vector(
+    Signature(argumentTypes = Vector(CTInteger), outputType = CTInteger),
+    Signature(argumentTypes = Vector(CTDouble), outputType = CTDouble)
+  )
 
-  def toCommand(invocation: ast.FunctionInvocation) = {
-    val inner = invocation.arguments(0).toCommand
+  def asCommandExpression(invocation: ast.FunctionInvocation) = {
+    val inner = invocation.arguments(0).asCommandExpression
     val command = commandexpressions.Max(inner)
     if (invocation.distinct)
       commandexpressions.Distinct(command, inner)

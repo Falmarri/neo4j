@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -84,8 +84,8 @@ trait StartClause extends Base with Expressions with CreateUnique {
     case ParsedEntity(_, Identifier(name), props, True()) =>
       Yes(Seq(CreateNodeStartItem(CreateNode(name, props))))
 
-    case ParsedEntity(_, p: ParameterExpression, _, True()) =>
-      Yes(Seq(CreateNodeStartItem(CreateNode(namer.name(None), Map[String, Expression]("*" -> p)))))
+    case ParsedEntity(name, p: ParameterExpression, _, True()) =>
+      Yes(Seq(CreateNodeStartItem(CreateNode(name, Map[String, Expression]("*" -> p)))))
 
     case _ => No(Seq(""))
   }

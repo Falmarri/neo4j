@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -28,29 +28,29 @@ import org.scalatest.Assertions
 class FilterExpressionTest extends Assertions {
 
   val dummyExpression = DummyExpression(
-    possibleTypes = TypeSet(CollectionType(NodeType()), BooleanType(), CollectionType(StringType())),
-    token = DummyToken(2, 3))
+    possibleTypes = CTCollection(CTNode) | CTBoolean | CTCollection(CTString)
+  )
 
   @Test
   def shouldHaveCollectionTypesOfInnerExpression() {
     val filter = FilterExpression(
-      identifier = Identifier("x", DummyToken(5, 6)),
+      identifier = Identifier("x")(DummyPosition(5)),
       expression = dummyExpression,
-      innerPredicate = Some(True(DummyToken(5, 6))),
-      token = DummyToken(0, 10))
+      innerPredicate = Some(True()(DummyPosition(5)))
+    )(DummyPosition(0))
     val result = filter.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
     assertEquals(Seq(), result.errors)
-    assertEquals(Set(CollectionType(NodeType()), CollectionType(StringType()), BooleanType()), filter.types(result.state))
+    assertEquals(CTCollection(CTNode) | CTCollection(CTString), filter.types(result.state))
   }
 
   @Test
   def shouldRaiseSyntaxErrorIfMissingPredicate() {
     val filter = FilterExpression(
-      identifier = Identifier("x", DummyToken(5, 6)),
+      identifier = Identifier("x")(DummyPosition(5)),
       expression = dummyExpression,
-      innerPredicate = None,
-      token = DummyToken(0, 10))
+      innerPredicate = None
+    )(DummyPosition(0))
     val result = filter.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
-    assertEquals(Seq(SemanticError("filter(...) requires a WHERE predicate", DummyToken(0, 10))), result.errors)
+    assertEquals(Seq(SemanticError("filter(...) requires a WHERE predicate", DummyPosition(0))), result.errors)
   }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -160,12 +160,6 @@ public abstract class CommonAbstractStore implements IdSequence
             if ( !readOnly || backupSlave )
             {
                 this.fileLock = fileSystemAbstraction.tryLock( storageFileName, fileChannel );
-                if ( fileLock == null )
-                {
-                    throw new IllegalStateException( "Unable to lock store ["
-                                                     + storageFileName + "], this is usually a result of some "
-                                                     + "other Neo4j kernel running using the same store." );
-                }
             }
         }
         catch ( IOException e )

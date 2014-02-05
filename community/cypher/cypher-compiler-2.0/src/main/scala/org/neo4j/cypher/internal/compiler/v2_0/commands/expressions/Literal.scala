@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -39,13 +39,13 @@ case class Literal(v: Any) extends Expression {
   override def toString = "Literal(" + v + ")"
 
   private def deriveType(obj: Any): CypherType = obj match {
-    case _: String                          => StringType()
-    case _: Char                            => StringType()
-    case _: Number                          => NumberType()
-    case _: Boolean                         => BooleanType()
-    case IsMap(_)                           => MapType()
-    case IsCollection(coll) if coll.isEmpty => CollectionType(AnyType())
-    case IsCollection(coll)                 => CollectionType(coll.map(deriveType).reduce(_ mergeDown _))
-    case _                                  => AnyType()
+    case _: String                          => CTString
+    case _: Char                            => CTString
+    case _: Number                          => CTNumber
+    case _: Boolean                         => CTBoolean
+    case IsMap(_)                           => CTMap
+    case IsCollection(coll) if coll.isEmpty => CTCollection(CTAny)
+    case IsCollection(coll)                 => CTCollection(coll.map(deriveType).reduce(_ mergeUp _))
+    case _                                  => CTAny
   }
 }

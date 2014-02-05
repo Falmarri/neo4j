@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -44,6 +44,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import static org.neo4j.helpers.collection.IteratorUtil.count;
+import static org.neo4j.test.ha.ClusterManager.allAvailabilityGuardsReleased;
 import static org.neo4j.test.ha.ClusterManager.allSeesAllAsAvailable;
 
 public class LabelScanStoreHaIT
@@ -141,6 +142,7 @@ public class LabelScanStoreHaIT
         life.start();
         cluster = clusterManager.getDefaultCluster();
         cluster.await( allSeesAllAsAvailable() );
+        cluster.await( allAvailabilityGuardsReleased() );
     }
 
     @After

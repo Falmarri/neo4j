@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -59,7 +59,7 @@ class DistinctPipe(source: Pipe, expressions: Map[String, Expression]) extends P
   override def executionPlanDescription = source.executionPlanDescription.andThen(this, "Distinct")
 
   def symbols: SymbolTable = {
-    val identifiers = Materialized.mapValues(expressions, (e: Expression) => e.evaluateType(AnyType(), source.symbols))
+    val identifiers = Materialized.mapValues(expressions, (e: Expression) => e.evaluateType(CTAny, source.symbols))
     SymbolTable(identifiers)
   }
 }

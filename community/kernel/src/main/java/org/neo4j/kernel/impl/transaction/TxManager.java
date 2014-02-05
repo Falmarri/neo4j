@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -55,6 +55,7 @@ import org.neo4j.kernel.impl.util.ExceptionCauseSetter;
 import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.kernel.impl.util.ThreadLocalWithSize;
 import org.neo4j.kernel.lifecycle.Lifecycle;
+import org.neo4j.kernel.monitoring.Monitors;
 
 /**
  * Default transaction manager implementation
@@ -123,6 +124,7 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
     private Throwable recoveryError;
     private final TransactionStateFactory stateFactory;
     private final Factory<byte[]> xidGlobalIdFactory;
+    private final Monitors monitors;
 
     private final Monitor monitor;
 
@@ -132,11 +134,12 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
                       StringLogger log,
                       FileSystemAbstraction fileSystem,
                       TransactionStateFactory stateFactory,
-                      Factory<byte[]> xidGlobalIdFactory
+                      Factory<byte[]> xidGlobalIdFactory,
+                      Monitors monitors
     )
     {
         this( txLogDir, xaDataSourceManager, kpe, log, fileSystem, stateFactory, new Monitor.Adapter(),
-              xidGlobalIdFactory
+              xidGlobalIdFactory, monitors
         );
     }
 
@@ -147,7 +150,8 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
                       FileSystemAbstraction fileSystem,
                       TransactionStateFactory stateFactory,
                       Monitor monitor,
-                      Factory<byte[]> xidGlobalIdFactory
+                      Factory<byte[]> xidGlobalIdFactory,
+                      Monitors monitors
     )
     {
         this.txLogDir = txLogDir;
@@ -158,6 +162,7 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
         this.stateFactory = stateFactory;
         this.monitor = monitor;
         this.xidGlobalIdFactory = xidGlobalIdFactory;
+        this.monitors = monitors;
     }
 
     int getNextEventIdentifier()
@@ -322,7 +327,7 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
         if ( tx != null )
         {
             throw logAndReturn( "TM error tx begin", new NotSupportedException(
-                    "Nested transactions not supported" ) );
+                    "Nested transactions not supported. Thread: " + Thread.currentThread() ) );
         }
         tx = new TransactionImpl( xidGlobalIdFactory.newInstance(), this, forceMode, stateFactory, log );
         txThreadMap.set( tx );
@@ -375,7 +380,8 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
         TransactionImpl tx = txThreadMap.get();
         if ( tx == null )
         {
-            throw logAndReturn( "TM error tx commit", new IllegalStateException( "Not in transaction" ) );
+            throw logAndReturn( "TM error tx commit",
+                    new IllegalStateException( "Not in transaction. Thread: " + Thread.currentThread() ) );
         }
 
         boolean successful = false;
@@ -438,134 +444,131 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
         // mark as commit in log done TxImpl.doCommit()
         Throwable commitFailureCause = null;
         int xaErrorCode = -1;
-        synchronized (this)
+       /*
+        * The attempt to commit and the corresponding rollback in case of failure happens under the same lock.
+        * This is necessary for a transaction to be able to cleanup its state in case it fails to commit
+        * without any other transaction coming in and disrupting things. Hooks will be called under this
+        * lock in case of rollback but not if commit succeeds, which should be ok throughput wise. There is
+        * some performance degradation related to this, since now we hold a lock over commit() for
+        * (potentially) all resource managers, while without this monitor each commit() on each
+        * XaResourceManager locks only that.
+        */
+        if ( tx.getResourceCount() == 0 )
         {
-           /*
-            * The attempt to commit and the corresponding rollback in case of failure happens under the same lock.
-            * This is necessary for a transaction to be able to cleanup its state in case it fails to commit
-            * without any other transaction coming in and disrupting things. Hooks will be called under this
-            * lock in case of rollback but not if commit succeeds, which should be ok throughput wise. There is
-            * some performance degradation related to this, since now we hold a lock over commit() for
-            * (potentially) all resource managers, while without this monitor each commit() on each
-            * XaResourceManager locks only that.
-            */
-            if ( tx.getResourceCount() == 0 )
+            tx.setStatus( Status.STATUS_COMMITTED );
+        }
+        else
+        {
+            try
             {
-                tx.setStatus( Status.STATUS_COMMITTED );
+                tx.doCommit();
             }
-            else
+            catch ( XAException e )
             {
-                try
+                // Behold, the error handling decision maker of great power.
+                //
+                // The thinking behind the code below is that there are certain types of errors that we understand,
+                // and know that we can safely roll back after they occur. An example would be a user trying to delete
+                // a node that still has relationships. For these errors, we keep a whitelist (the switch below),
+                // and roll back when they occur.
+                //
+                // For *all* errors that we don't know exactly what they mean, we panic and run around in circles.
+                // Other errors could involve out of disk space (can't recover) or out of memory (can't recover)
+                // or anything else. The point is that there is no way for us to trust the state of the system any
+                // more, so we set transaction manager to not ok and expect the user to fix the problem and do recovery.
+                switch(e.errorCode)
                 {
-                    tx.doCommit();
-                }
-                catch ( XAException e )
-                {
-                    // Behold, the error handling decision maker of great power.
-                    //
-                    // The thinking behind the code below is that there are certain types of errors that we understand,
-                    // and know that we can safely roll back after they occur. An example would be a user trying to delete
-                    // a node that still has relationships. For these errors, we keep a whitelist (the switch below),
-                    // and roll back when they occur.
-                    //
-                    // For *all* errors that we don't know exactly what they mean, we panic and run around in circles.
-                    // Other errors could involve out of disk space (can't recover) or out of memory (can't recover)
-                    // or anything else. The point is that there is no way for us to trust the state of the system any
-                    // more, so we set transaction manager to not ok and expect the user to fix the problem and do recovery.
-                    switch(e.errorCode)
-                    {
-                        // These are error states that we can safely recover from
+                    // These are error states that we can safely recover from
 
-                        /*
-                         * User tried to delete a node that still had relationships, or in some other way violated
-                         * data model constraints.
-                         */
-                        case XAException.XA_RBINTEGRITY:
+                    /*
+                     * User tried to delete a node that still had relationships, or in some other way violated
+                     * data model constraints.
+                     */
+                    case XAException.XA_RBINTEGRITY:
 
-                        /*
-                         *  A network error occurred.
-                         */
-                        case XAException.XA_HEURCOM:
-                            xaErrorCode = e.errorCode;
-                            commitFailureCause = e;
-                            log.error( "Commit failed, status=" + getTxStatusAsString( tx.getStatus() ) +
-                                    ", errorCode=" + xaErrorCode, e );
-                            break;
+                    /*
+                     *  A network error occurred.
+                     */
+                    case XAException.XA_HEURCOM:
+                        xaErrorCode = e.errorCode;
+                        commitFailureCause = e;
+                        log.error( "Commit failed, status=" + getTxStatusAsString( tx.getStatus() ) +
+                                ", errorCode=" + xaErrorCode, e );
+                        break;
 
-                        // Error codes where we are not *certain* that we still know the state of the system
-                        default:
-                            setTmNotOk( e );
-                            throw logAndReturn("TM error tx commit",new TransactionFailureException(
-                                    "commit threw exception", e ));
-                    }
-                }
-                catch ( Throwable t )
-                {
-                    setTmNotOk( t );
-                    // this should never be
-                    throw logAndReturn("Commit failed for " + tx, new TransactionFailureException(
-                            "commit threw exception but status is committed?", t ));
+                    // Error codes where we are not *certain* that we still know the state of the system
+                    default:
+                        setTmNotOk( e );
+                        throw logAndReturn("TM error tx commit",new TransactionFailureException(
+                                "commit threw exception", e ));
                 }
             }
-
-            if ( tx.getStatus() != Status.STATUS_COMMITTED )
+            catch ( Throwable t )
             {
-                try
+                setTmNotOk( t );
+                // this should never be
+                throw logAndReturn("Commit failed for " + tx, new TransactionFailureException(
+                        "commit threw exception but status is committed?", t ));
+            }
+        }
+
+        if ( tx.getStatus() != Status.STATUS_COMMITTED )
+        {
+            try
+            {
+                tx.doRollback();
+            }
+            catch ( Throwable e )
+            {
+                setTmNotOk( e );
+                String commitError;
+                if ( commitFailureCause != null )
                 {
-                    tx.doRollback();
-                }
-                catch ( Throwable e )
-                {
-                    setTmNotOk( e );
-                    String commitError;
-                    if ( commitFailureCause != null )
-                    {
-                        commitError = "error in commit: " + commitFailureCause;
-                    }
-                    else
-                    {
-                        commitError = "error code in commit: " + xaErrorCode;
-                    }
-                    String rollbackErrorCode = "Unknown error code";
-                    if ( e instanceof XAException )
-                    {
-                        rollbackErrorCode = Integer.toString( ((XAException) e).errorCode );
-                    }
-                    throw logAndReturn( "Unable to rollback transaction "+ tx +". "
-                            + "Some resources may be commited others not. "
-                            + "Neo4j kernel should be SHUTDOWN for "
-                            + "resource maintance and transaction recovery ---->", Exceptions.withCause(
-                            new HeuristicMixedException( "Unable to rollback "+tx+" ---> " + commitError
-                            + " ---> error code for rollback: " + rollbackErrorCode ), e ) );
-                }
-                tx.doAfterCompletion();
-                try
-                {
-                    if ( tx.isGlobalStartRecordWritten() )
-                    {
-                        getTxLog().txDone( tx.getGlobalId() );
-                    }
-                }
-                catch ( IOException e )
-                {
-                    setTmNotOk( e );
-                    throw logAndReturn( "Error writing transaction log for " + tx, Exceptions.withCause(
-                            new SystemException( "TM encountered a problem, while committing transaction  " + tx
-                            + ", error writing transaction log" ), e ) );
-                }
-                tx.setStatus( Status.STATUS_NO_TRANSACTION );
-                if ( commitFailureCause == null )
-                {
-                    throw logAndReturn( "TM error tx commit", new HeuristicRollbackException(
-                            "Failed to commit, transaction  "+ tx +" rolled back ---> "
-                                    + "error code was: " + xaErrorCode ) );
+                    commitError = "error in commit: " + commitFailureCause;
                 }
                 else
                 {
-                    throw logAndReturn( "TM error tx commit", Exceptions.withCause( new HeuristicRollbackException(
-                            "Failed to commit transaction "+ tx +", transaction rolled back ---> " +
-                                    commitFailureCause ), commitFailureCause ) );
+                    commitError = "error code in commit: " + xaErrorCode;
                 }
+                String rollbackErrorCode = "Unknown error code";
+                if ( e instanceof XAException )
+                {
+                    rollbackErrorCode = Integer.toString( ((XAException) e).errorCode );
+                }
+                throw logAndReturn( "Unable to rollback transaction "+ tx +". "
+                        + "Some resources may be commited others not. "
+                        + "Neo4j kernel should be SHUTDOWN for "
+                        + "resource maintance and transaction recovery ---->", Exceptions.withCause(
+                        new HeuristicMixedException( "Unable to rollback "+tx+" ---> " + commitError
+                        + " ---> error code for rollback: " + rollbackErrorCode ), e ) );
+            }
+            tx.doAfterCompletion();
+            try
+            {
+                if ( tx.isGlobalStartRecordWritten() )
+                {
+                    getTxLog().txDone( tx.getGlobalId() );
+                }
+            }
+            catch ( IOException e )
+            {
+                setTmNotOk( e );
+                throw logAndReturn( "Error writing transaction log for " + tx, Exceptions.withCause(
+                        new SystemException( "TM encountered a problem, while committing transaction  " + tx
+                        + ", error writing transaction log" ), e ) );
+            }
+            tx.setStatus( Status.STATUS_NO_TRANSACTION );
+            if ( commitFailureCause == null )
+            {
+                throw logAndReturn( "TM error tx commit", new HeuristicRollbackException(
+                        "Failed to commit, transaction  "+ tx +" rolled back ---> "
+                                + "error code was: " + xaErrorCode ) );
+            }
+            else
+            {
+                throw logAndReturn( "TM error tx commit", Exceptions.withCause( new HeuristicRollbackException(
+                        "Failed to commit transaction "+ tx +", transaction rolled back ---> " +
+                                commitFailureCause ), commitFailureCause ) );
             }
         }
         tx.doAfterCompletion();
@@ -632,7 +635,8 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
         TransactionImpl tx = txThreadMap.get();
         if ( tx == null )
         {
-            throw logAndReturn( "TM error tx commit", new IllegalStateException( "Not in transaction" ) );
+            throw logAndReturn( "TM error tx commit",
+                    new IllegalStateException( "Not in transaction. Thread: " + Thread.currentThread() ) );
         }
 
         try
@@ -755,7 +759,7 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
         TransactionImpl tx = txThreadMap.get();
         if ( tx == null )
         {
-            throw new IllegalStateException( "Not in transaction" );
+            throw new IllegalStateException( "Not in transaction. Thread: " + Thread.currentThread() );
         }
         tx.setRollbackOnly();
     }
@@ -789,7 +793,7 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
                                     "Unable to start TM, " + "active tx log file[" +
                                             currentTxLog + "] not found." ) );
                 }
-                txLog = new TxLog( currentTxLog, fileSystem );
+                txLog = new TxLog( currentTxLog, fileSystem, monitors );
                 log.info( "TM opening log: " + currentTxLog );
             }
             else
@@ -809,7 +813,7 @@ public class TxManager extends AbstractTransactionManager implements Lifecycle
                         .getBytes( "UTF-8" ) );
                 FileChannel fc = fileSystem.open( logSwitcherFileName, "rw" );
                 fc.write( buf );
-                txLog = new TxLog( new File( txLogDir, txLog1FileName), fileSystem );
+                txLog = new TxLog( new File( txLogDir, txLog1FileName), fileSystem, monitors );
                 log.info( "TM new log: " + txLog1FileName );
                 fc.force( true );
                 fc.close();

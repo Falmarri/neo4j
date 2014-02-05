@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,25 +20,24 @@
 package org.neo4j.cypher.internal.compiler.v2_0.functions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{expressions => commandexpressions}
-import org.neo4j.cypher.internal.compiler.v2_0.commands.values.TokenType.PropertyKey
-import org.neo4j.cypher.internal.compiler.v2_0.ast.FunctionInvocation
+import ast.convert.ExpressionConverters._
+import commands.values.TokenType.PropertyKey
+import symbols._
 
 case object Has extends PredicateFunction {
   def name = "HAS"
 
-  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation) : SemanticCheck =
+  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation): SemanticCheck =
     checkArgs(invocation, 1) ifOkThen {
-      invocation.arguments(0) match {
+      invocation.arguments(0).expectType(CTAny.covariant) then
+      (invocation.arguments(0) match {
         case _: ast.Property => None
-        case e => Some(SemanticError(s"Argument to ${invocation.name} is not a property", e.token, invocation.token))
-      }
-    } then invocation.specifyType(BooleanType())
+        case e => Some(SemanticError(s"Argument to ${invocation.name} is not a property", e.position, invocation.position))
+      })
+    } then invocation.specifyType(CTBoolean)
 
-  protected def internalToPredicate(invocation: FunctionInvocation) = {
+  protected def internalToPredicate(invocation: ast.FunctionInvocation) = {
     val property = invocation.arguments(0).asInstanceOf[ast.Property]
-    commands.Has(property.map.toCommand, PropertyKey(property.identifier.name))
+    commands.Has(property.map.asCommandExpression, PropertyKey(property.identifier.name))
   }
 }

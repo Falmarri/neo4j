@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -137,9 +137,7 @@ import org.neo4j.kernel.impl.transaction.TransactionManagerProvider;
 import org.neo4j.kernel.impl.transaction.TransactionStateFactory;
 import org.neo4j.kernel.impl.transaction.TxManager;
 import org.neo4j.kernel.impl.transaction.XaDataSourceManager;
-import org.neo4j.kernel.impl.transaction.xaframework.DefaultLogBufferFactory;
 import org.neo4j.kernel.impl.transaction.xaframework.ForceMode;
-import org.neo4j.kernel.impl.transaction.xaframework.LogBufferFactory;
 import org.neo4j.kernel.impl.transaction.xaframework.LogPruneStrategies;
 import org.neo4j.kernel.impl.transaction.xaframework.RecoveryVerifier;
 import org.neo4j.kernel.impl.transaction.xaframework.TransactionInterceptorProvider;
@@ -149,7 +147,6 @@ import org.neo4j.kernel.impl.traversal.BidirectionalTraversalDescriptionImpl;
 import org.neo4j.kernel.impl.traversal.MonoDirectionalTraversalDescription;
 import org.neo4j.kernel.impl.util.AbstractPrimitiveLongIterator;
 import org.neo4j.kernel.impl.util.JobScheduler;
-import org.neo4j.kernel.impl.util.Monitors;
 import org.neo4j.kernel.impl.util.Neo4jJobScheduler;
 import org.neo4j.kernel.impl.util.PrimitiveLongIterator;
 import org.neo4j.kernel.impl.util.StringLogger;
@@ -164,6 +161,7 @@ import org.neo4j.kernel.lifecycle.LifecycleListener;
 import org.neo4j.kernel.lifecycle.LifecycleStatus;
 import org.neo4j.kernel.logging.LogbackWeakDependency;
 import org.neo4j.kernel.logging.Logging;
+import org.neo4j.kernel.monitoring.Monitors;
 import org.neo4j.tooling.GlobalGraphOperations;
 
 import static java.lang.String.format;
@@ -235,7 +233,6 @@ public abstract class InternalAbstractGraphDatabase
     protected PropertyKeyTokenHolder propertyKeyTokenHolder;
     protected LabelTokenHolder labelTokenHolder;
     protected IndexStore indexStore;
-    protected LogBufferFactory logBufferFactory;
     protected AbstractTransactionManager txManager;
     protected TxIdGenerator txIdGenerator;
     protected StoreFactory storeFactory;
@@ -402,12 +399,9 @@ public abstract class InternalAbstractGraphDatabase
 
         // Create logger
         this.logging = createLogging();
-        
-        // Component monitoring
-        this.monitors = new Monitors( logging.getMessagesLog( Monitors.class ) );
 
         // Component monitoring
-        this.monitors = new Monitors( logging.getMessagesLog( Monitors.class ) );
+        this.monitors = new Monitors();
 
         // Apply autoconfiguration for memory settings
         AutoConfigurator autoConfigurator = new AutoConfigurator( fileSystem,
@@ -489,7 +483,7 @@ public abstract class InternalAbstractGraphDatabase
             {
                 txManager = new TxManager( this.storeDir, xaDataSourceManager, kernelPanicEventGenerator,
                         logging.getMessagesLog( TxManager.class ), fileSystem, stateFactory,
-                        xidGlobalIdFactory );
+                        xidGlobalIdFactory, monitors );
             }
             else
             {
@@ -544,13 +538,6 @@ public abstract class InternalAbstractGraphDatabase
         // after we've instantiated Config.
         params = config.getParams();
 
-        /*
-         *  LogBufferFactory needs access to the parameters so it has to be added after the default and
-         *  user supplied configurations are consolidated
-         */
-
-        logBufferFactory = new DefaultLogBufferFactory();
-
         extensions = life.add( createKernelData() );
 
         life.add( kernelExtensions );
@@ -570,8 +557,8 @@ public abstract class InternalAbstractGraphDatabase
         // Factories for things that needs to be created later
         storeFactory = createStoreFactory();
         String keepLogicalLogsConfig = config.get( GraphDatabaseSettings.keep_logical_logs );
-        xaFactory = new XaFactory( config, txIdGenerator, txManager, logBufferFactory, fileSystem,
-                logging, recoveryVerifier, LogPruneStrategies.fromConfigValue(
+        xaFactory = new XaFactory( config, txIdGenerator, txManager, fileSystem,
+                monitors, logging, recoveryVerifier, LogPruneStrategies.fromConfigValue(
                 fileSystem, keepLogicalLogsConfig ) );
 
         createNeoDataSource();
@@ -888,10 +875,11 @@ public abstract class InternalAbstractGraphDatabase
     // This is here until we've moved all operations into the kernel, which handles this check on it's own.
     private void assertDatabaseRunning()
     {
-        if(life.getStatus() == LifecycleStatus.SHUTDOWN)
+        if( life.isRunning() )
         {
-            throw new DatabaseShutdownException();
+            return;
         }
+        throw new DatabaseShutdownException();
     }
 
     protected RemoteTxHook createTxHook()
@@ -1351,6 +1339,10 @@ public abstract class InternalAbstractGraphDatabase
             else if ( LifeSupport.class.isAssignableFrom( type ) )
             {
                 return type.cast( life );
+            }
+            else if ( Monitors.class.isAssignableFrom( type ) )
+            {
+                return (T) monitors;
             }
             else if ( PersistenceManager.class.isAssignableFrom( type ) && type.isInstance( persistenceManager ) )
             {

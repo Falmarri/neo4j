@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -28,6 +28,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Random;
 
 import org.neo4j.kernel.GraphDatabaseAPI;
 import org.neo4j.server.database.GraphDatabaseFactory;
@@ -66,6 +67,7 @@ public class ServerTestUtils
         {
             throw new RuntimeException( "temp config directory not created" );
         }
+        d.deleteOnExit();
         return d;
     }
 
@@ -168,6 +170,8 @@ public class ServerTestUtils
 
     public static File createTempPropertyFile( File parentDir ) throws IOException
     {
-        return File.createTempFile( "neo4j", "properties", parentDir );
+        File file = new File( parentDir, "test-" + new Random().nextInt() + ".properties" );
+        file.deleteOnExit();
+        return file;
     }
 }

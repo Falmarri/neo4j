@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -216,8 +216,7 @@ The Neo4j Team""")
     def myBuilders: Seq[PlanBuilder] = Seq(
       new NamedPathBuilder,
       new MergePatternBuilder(prepare andThen matching),
-      new UpdateActionBuilder,
-      new MergeErrorReporter
+      new UpdateActionBuilder
     )
   }
 

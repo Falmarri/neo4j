@@ -1,5 +1,5 @@
 ###!
-Copyright (c) 2002-2013 "Neo Technology,"
+Copyright (c) 2002-2014 "Neo Technology,"
 Network Engine for Objects in Lund AB [http://neotechnology.com]
 
 This file is part of Neo4j.
@@ -27,13 +27,13 @@ angular.module('neo4jApp.controllers')
     '$rootScope'
     '$timeout'
     '$dialog'
-    '$route'
     'Editor'
     'Frame'
     'GraphStyle'
     'Utils'
-    ($scope, $timeout, $dialog, $route, Editor, Frame, GraphStyle, Utils) ->
+    ($scope, $timeout, $dialog, Editor, Frame, GraphStyle, Utils) ->
 
+      _codeMirror = null
       dialog = null
       dialogOptions =
         backdrop: yes
@@ -50,7 +50,21 @@ angular.module('neo4jApp.controllers')
 
       $scope.focusEditor = (ev) ->
         ev?.preventDefault()
-        $('#editor textarea').focus()
+        _codeMirror?.focus()
+
+      $scope.codemirrorLoaded = (_editor) ->
+        _codeMirror = _editor
+        _codeMirror.focus()
+
+        # Hack for initializing cursor properly in IE
+        _codeMirror.setValue(' ')
+        _codeMirror.setCursor(1, 1)
+        _codeMirror.setValue('')
+
+        _codeMirror.on "change", (cm) ->
+          $scope.editorChanged(cm)
+        _codeMirror.on "focus", (cm) ->
+          $scope.editorChanged(cm)
 
       $scope.isEditorFocused = () ->
         $('.CodeMirror-focused').length > 0
@@ -121,7 +135,7 @@ angular.module('neo4jApp.controllers')
           unless $scope.isEditorFocused()
             e.preventDefault()
             $scope.focusEditor()
-        # else 
+        # else
         #   console.debug(e)
 
       # we need set a max-height to make the stream scrollable, but since it's

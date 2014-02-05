@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -40,7 +40,8 @@ import org.neo4j.cypher.ProfilerStatisticsNotReadyException;
 import org.neo4j.cypher.SyntaxException;
 import org.neo4j.cypher.UniquePathNotUniqueException;
 import org.neo4j.helpers.Function;
-import org.neo4j.server.rest.transactional.error.Status;
+import org.neo4j.kernel.api.exceptions.KernelException;
+import org.neo4j.kernel.api.exceptions.Status;
 
 public class CypherExceptionMapping implements Function<CypherException, Status>
 {
@@ -61,8 +62,9 @@ public class CypherExceptionMapping implements Function<CypherException, Status>
         }
         if ( CypherExecutionException.class.isInstance( e ) )
         {
-            // TODO: map the causing KernelException further...
-            return Status.Statement.ExecutionFailure;
+            // These are always caused by KernelException's, so just map to the status code from the kernel exception.
+            CypherExecutionException c = (CypherExecutionException)e;
+            return c.getCause() == null ? Status.Statement.ExecutionFailure : ((KernelException)c.getCause()).status();
         }
         if ( UniquePathNotUniqueException.class.isInstance( e ) )
         {

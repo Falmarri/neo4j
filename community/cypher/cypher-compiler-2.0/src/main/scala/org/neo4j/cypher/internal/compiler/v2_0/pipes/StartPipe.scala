@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -41,16 +41,16 @@ abstract class StartPipe[T <: PropertyContainer](source: Pipe, name: String, cre
   override def executionPlanDescription = {
     val description = createSource.description :+ (("identifier" -> fromStr(name)))
     source.executionPlanDescription
-      .andThen(this, s"${createSource.name}", description: _*)
+      .andThen(this, s"${createSource.producerType}", description: _*)
   }
 }
 
 class NodeStartPipe(source: Pipe, name: String, createSource: EntityProducer[Node])
   extends StartPipe[Node](source, name, createSource) {
-  def identifierType = NodeType()
+  def identifierType = CTNode
 }
 
 class RelationshipStartPipe(source: Pipe, name: String, createSource: EntityProducer[Relationship])
   extends StartPipe[Relationship](source, name, createSource) {
-  def identifierType = RelationshipType()
+  def identifierType = CTRelationship
 }

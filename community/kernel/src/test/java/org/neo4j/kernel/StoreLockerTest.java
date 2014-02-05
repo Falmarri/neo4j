@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -23,13 +23,17 @@ import java.io.File;
 import java.io.IOException;
 
 import org.junit.Test;
+
 import org.neo4j.kernel.impl.nioneo.store.FileSystemAbstraction;
 import org.neo4j.test.TargetDirectory;
 
 import static java.lang.String.format;
+
+import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
+
 import static org.neo4j.kernel.CannedFileSystemAbstraction.NOTHING;
 import static org.neo4j.kernel.StoreLocker.STORE_LOCK_FILENAME;
 
@@ -126,7 +130,7 @@ public class StoreLockerTest
         }
         catch ( StoreLockException e )
         {
-            assertThat( e.getMessage(), is( "Could not create lock file" ) );
+            assertThat( e.getMessage(), containsString( "Unable to obtain lock on store lock file" ) );
         }
     }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -36,7 +36,6 @@ with Updates
 with ActualParser {
   @throws(classOf[SyntaxException])
   def parse(text: String): Query = {
-    namer = new NodeNamer
     parseAll(query, text) match {
       case Success(r, q) => ReattachAliasedExpressions(r.copy(queryString = text))
       case NoSuccess(message, input) => {

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -110,7 +110,7 @@ public class ClusterJoin
 
         try
         {
-            if ( !semaphore.tryAcquire( 5, TimeUnit.SECONDS ) )
+            if ( !semaphore.tryAcquire( 60, TimeUnit.SECONDS ) )
             {
                 logger.info( "Unable to leave cluster, timeout" );
             }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,40 +19,12 @@
  */
 package org.neo4j.cypher.internal.compiler.v2_0.symbols
 
-
 object NumberType {
-  val instance = new NumberType()
-
-  def apply(): NumberType = instance
+  val instance = new NumberType() {
+    val parentType = CTAny
+    override val isAbstract = true
+    override val toString = "Number"
+  }
 }
 
-class NumberType extends AnyType {
-  override def parentType: CypherType = AnyType()
-  override def toString = "Number"
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+sealed abstract class NumberType extends CypherType

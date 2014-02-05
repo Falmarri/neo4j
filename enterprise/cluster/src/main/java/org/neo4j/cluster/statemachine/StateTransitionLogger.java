@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,13 +19,13 @@
  */
 package org.neo4j.cluster.statemachine;
 
-import static org.neo4j.cluster.com.message.Message.CONVERSATION_ID;
-import static org.neo4j.cluster.com.message.Message.FROM;
-import static org.neo4j.cluster.protocol.atomicbroadcast.multipaxos.InstanceId.INSTANCE;
-
 import org.neo4j.cluster.protocol.heartbeat.HeartbeatState;
 import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.kernel.logging.Logging;
+
+import static org.neo4j.cluster.com.message.Message.CONVERSATION_ID;
+import static org.neo4j.cluster.com.message.Message.FROM;
+import static org.neo4j.cluster.protocol.atomicbroadcast.multipaxos.InstanceId.INSTANCE;
 
 /**
  * Logs state transitions in {@link StateMachine}s. Use this for debugging mainly.
@@ -33,13 +33,14 @@ import org.neo4j.kernel.logging.Logging;
 public class StateTransitionLogger
         implements StateTransitionListener
 {
-    private Logging logging;
+    private final Logging logging;
 
     public StateTransitionLogger( Logging logging )
     {
         this.logging = logging;
     }
 
+    @Override
     public void stateTransition( StateTransition transition )
     {
         StringLogger logger = logging.getMessagesLog( transition.getOldState().getClass() );
@@ -71,6 +72,8 @@ public class StateTransitionLogger
             {
                 line.append( " conversation-id:" + transition.getMessage().getHeader( CONVERSATION_ID ) );
             }
+            
+            line.append( " payload:" + transition.getMessage().getPayload() );
 
             // Log it
             logger.debug( line.toString() );

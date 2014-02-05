@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -46,10 +46,12 @@ import org.neo4j.kernel.api.impl.index.DirectoryFactory;
 import org.neo4j.kernel.api.impl.index.LuceneSchemaIndexProvider;
 import org.neo4j.kernel.api.index.IndexAccessor;
 import org.neo4j.kernel.api.index.IndexConfiguration;
+import org.neo4j.kernel.api.index.IndexDescriptor;
 import org.neo4j.kernel.api.index.IndexEntryConflictException;
 import org.neo4j.kernel.api.index.IndexPopulator;
 import org.neo4j.kernel.api.index.IndexUpdater;
 import org.neo4j.kernel.api.index.InternalIndexState;
+import org.neo4j.kernel.api.index.PropertyAccessor;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
 import org.neo4j.kernel.configuration.Config;
 import org.neo4j.kernel.extension.KernelExtensionFactory;
@@ -440,9 +442,15 @@ public class SchemaIndexHaIT
         }
 
         @Override
-        public IndexUpdater newPopulatingUpdater() throws IOException
+        public void verifyDeferredConstraints( PropertyAccessor propertyAccessor ) throws Exception
         {
-            return delegate.newPopulatingUpdater();
+            delegate.verifyDeferredConstraints( propertyAccessor );
+        }
+
+        @Override
+        public IndexUpdater newPopulatingUpdater( PropertyAccessor propertyAccessor ) throws IOException
+        {
+            return delegate.newPopulatingUpdater( propertyAccessor );
         }
 
         @Override
@@ -476,9 +484,9 @@ public class SchemaIndexHaIT
         }
         
         @Override
-        public IndexPopulator getPopulator( long indexId, IndexConfiguration config )
+        public IndexPopulator getPopulator( long indexId, IndexDescriptor descriptor, IndexConfiguration config )
         {
-            return new ControlledIndexPopulator( delegate.getPopulator( indexId, config ), latch );
+            return new ControlledIndexPopulator( delegate.getPopulator( indexId, descriptor, config ), latch );
         }
 
         @Override

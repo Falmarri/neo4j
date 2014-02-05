@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -28,8 +28,9 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.rules.ExternalResource;
-import org.neo4j.helpers.Pair;
+
 import org.neo4j.helpers.Predicate;
+import org.neo4j.kernel.logging.SystemOutLogging;
 
 public class DumpProcessInformationRule extends ExternalResource
 {
@@ -57,10 +58,7 @@ public class DumpProcessInformationRule extends ExternalResource
             @Override
             public void dump() throws Exception
             {
-                for ( Pair<Long, String> pair : DumpProcessInformation.getJPids( processFilter ) )
-                {
-                    DumpProcessInformation.doThreadDump( pair, baseDir );
-                }
+                new DumpProcessInformation( new SystemOutLogging(), baseDir ).doThreadDump( processFilter );
             }
         };
     }
@@ -98,14 +96,18 @@ public class DumpProcessInformationRule extends ExternalResource
             }, duration, timeUnit );
         }
         else
+        {
             throw new IllegalStateException( "process dumping thunk already started" );
+        }
     }
 
     @Override
     protected synchronized void after()
     {
         if ( null != thunk && !thunk.isDone() )
+        {
             thunk.cancel( true );
+        }
         thunk = null;
         super.after();
     }

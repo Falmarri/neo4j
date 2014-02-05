@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -509,10 +509,10 @@ public class NeoStoreXaDataSource extends LogBackedXaDataSource implements NeoSt
     private class InterceptingTransactionFactory extends TransactionFactory
     {
         @Override
-        public XaTransaction create( int identifier, long lastCommittedTxWhenTransactionStarted, TransactionState state)
+        public XaTransaction create( long lastCommittedTxWhenTransactionStarted, TransactionState state )
         {
             TransactionInterceptor first = providers.resolveChain( NeoStoreXaDataSource.this );
-            return new InterceptingWriteTransaction( identifier, lastCommittedTxWhenTransactionStarted, getLogicalLog(),
+            return new InterceptingWriteTransaction( lastCommittedTxWhenTransactionStarted, getLogicalLog(),
                     neoStore, state, cacheAccess, indexingService, labelScanStore, first, integrityValidator,
                     (KernelTransactionImplementation)kernel.newTransaction(), locks );
         }
@@ -521,9 +521,9 @@ public class NeoStoreXaDataSource extends LogBackedXaDataSource implements NeoSt
     private class TransactionFactory extends XaTransactionFactory
     {
         @Override
-        public XaTransaction create( int identifier, long lastCommittedTxWhenTransactionStarted, TransactionState state)
+        public XaTransaction create( long lastCommittedTxWhenTransactionStarted, TransactionState state )
         {
-            return new WriteTransaction( identifier, lastCommittedTxWhenTransactionStarted, getLogicalLog(), state,
+            return new NeoStoreTransaction( lastCommittedTxWhenTransactionStarted, getLogicalLog(), state,
                 neoStore, cacheAccess, indexingService, labelScanStore, integrityValidator,
                 (KernelTransactionImplementation)kernel.newTransaction(), locks );
         }
@@ -683,6 +683,18 @@ public class NeoStoreXaDataSource extends LogBackedXaDataSource implements NeoSt
     public ResourceIterator<File> listStoreFiles( boolean includeLogicalLogs ) throws IOException
     {
         return fileListing.listStoreFiles( includeLogicalLogs );
+    }
+
+    @Override
+    public ResourceIterator<File> listStoreFiles() throws IOException
+    {
+        return fileListing.listStoreFiles();
+    }
+
+    @Override
+    public ResourceIterator<File> listLogicalLogs() throws IOException
+    {
+        return fileListing.listLogicalLogs();
     }
 
     public void registerDiagnosticsWith( DiagnosticsManager manager )

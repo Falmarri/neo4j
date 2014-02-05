@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,38 +20,23 @@
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.helpers.ThisShouldNotHappenError
 import Expression._
 
 object FunctionInvocation {
-  def apply(identifier: Identifier, distinct: Boolean, arguments: Seq[Expression], token: InputToken) : FunctionInvocation =
-      FunctionInvocation(identifier, distinct, arguments.toIndexedSeq, token)
-  def apply(identifier: Identifier, argument: Expression, token: InputToken) : FunctionInvocation =
-      FunctionInvocation(identifier, false, IndexedSeq(argument), token)
-  def apply(left: Expression, identifier: Identifier, right: Expression) : FunctionInvocation =
-      FunctionInvocation(identifier, false, IndexedSeq(left, right), identifier.token)
-  def apply(expression: Expression, identifier: Identifier) : FunctionInvocation =
-      FunctionInvocation(identifier, false, IndexedSeq(expression), identifier.token)
-  def apply(identifier: Identifier, expression: Expression) : FunctionInvocation =
-    FunctionInvocation(identifier, false, IndexedSeq(expression), identifier.token)
+  def apply(identifier: Identifier, argument: Expression)(position: InputPosition): FunctionInvocation =
+    FunctionInvocation(identifier, distinct = false, IndexedSeq(argument))(position)
+  def apply(left: Expression, identifier: Identifier, right: Expression): FunctionInvocation =
+    FunctionInvocation(identifier, distinct = false, IndexedSeq(left, right))(identifier.position)
+  def apply(expression: Expression, identifier: Identifier): FunctionInvocation =
+    FunctionInvocation(identifier, distinct = false, IndexedSeq(expression))(identifier.position)
 }
-case class FunctionInvocation(identifier: Identifier, distinct: Boolean, arguments: IndexedSeq[Expression], token: InputToken) extends Expression {
+
+case class FunctionInvocation(identifier: Identifier, distinct: Boolean, arguments: IndexedSeq[Expression])(val position: InputPosition) extends Expression {
   val name = identifier.name
-  private val function = Function.lookup.get(name.toLowerCase)
+  val function = Function.lookup.get(name.toLowerCase)
 
   def semanticCheck(ctx: SemanticContext) = function match {
-    case None    => SemanticError(s"Unknown function '${name}'", token)
+    case None    => SemanticError(s"Unknown function '$name'", position)
     case Some(f) => f.semanticCheckHook(ctx, this)
   }
-
-  def toCommand = function match {
-    case None    => throw new ThisShouldNotHappenError("cleishm", "Unknown function should have failed semantic check")
-    case Some(f) => f.toCommand(this)
-  }
-
-  override def toPredicate = function match {
-    case None    => throw new ThisShouldNotHappenError("cleishm", "Unknown function should have failed semantic check")
-    case Some(f) => f.toPredicate(this)
-  }
-
 }

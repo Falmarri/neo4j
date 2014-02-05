@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,16 +19,15 @@
  */
 package org.neo4j.cypher.internal.compiler.v2_0.executionplan.builders
 
-import org.neo4j.cypher.internal.compiler.v2_0.executionplan.{Phase, PartiallySolvedQuery, PlanBuilder}
-import org.neo4j.cypher.internal.compiler.v2_0.spi.PlanContext
-import org.neo4j.cypher.internal.compiler.v2_0.mutation._
-import org.neo4j.cypher.internal.compiler.v2_0.pipes._
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{Pattern, Query}
-import org.neo4j.cypher.internal.compiler.v2_0.commands.expressions.Identifier
-import org.neo4j.cypher.internal.compiler.v2_0.symbols.{CypherType, NodeType, SymbolTable}
-import org.neo4j.cypher.internal.compiler.v2_0.executionplan.ExecutionPlanInProgress
-import org.neo4j.cypher.internal.compiler.v2_0.commands.AllIdentifiers
-import org.neo4j.cypher.InternalException
+import org.neo4j.cypher.internal.compiler.v2_0._
+import commands.{AllIdentifiers, Pattern, Query}
+import commands.expressions.Identifier
+import executionplan.{ExecutionPlanInProgress, Phase, PartiallySolvedQuery, PlanBuilder}
+import mutation._
+import pipes._
+import spi.PlanContext
+import symbols._
+import org.neo4j.cypher.internal.helpers.CollectionSupport
 
 /*
 This class solves MERGE for patterns. It does this by creating an execution plan that uses normal pattern matching
@@ -38,77 +37,52 @@ By doing it this way, we rely on already existing code to both match and create 
 
 This class prepares MergePatternAction objects to be run by creating the match pipe
 */
-case class MergePatternBuilder(matching: Phase) extends PlanBuilder {
+case class MergePatternBuilder(matching: Phase) extends PlanBuilder with CollectionSupport {
   def canWorkWith(plan: ExecutionPlanInProgress, ctx: PlanContext): Boolean =
-    plan.query.updates.exists {
-      case Unsolved(x: MergePatternAction)  => !x.readyToExecute && x.symbolDependenciesMet(plan.pipe.symbols)
-      case Unsolved(foreach: ForeachAction) => interesting(foreach, plan.pipe.symbols)
-      case _                                => false
+    apply(plan, ctx) != apply(plan, ctx)
+
+  def apply(plan: ExecutionPlanInProgress, ctx: PlanContext): ExecutionPlanInProgress = {
+    def prepareMergeAction(symbols: SymbolTable, originalMerge: MergePatternAction): (SymbolTable, MergePatternAction) = {
+      val (newSymbols,updateActions) = MergePatternBuilder.createActions(symbols, originalMerge.actions)
+      val matchPipe = solveMatchQuery(symbols, originalMerge).pipe
+      val preparedMerge = originalMerge.copy(maybeMatchPipe = Some(matchPipe), maybeUpdateActions = Some(updateActions))
+      (newSymbols, preparedMerge)
     }
 
-  def apply(in: ExecutionPlanInProgress, ctx: PlanContext): ExecutionPlanInProgress = {
+    def solveMatchQuery(symbols: SymbolTable, patternAction: MergePatternAction): ExecutionPlanInProgress = {
+      val pipe = NullPipe(symbols, plan.pipe.executionPlanDescription)
+      val matchQuery = createMatchQueryFor(patternAction.patterns)
+      var planInProgress = plan.copy(query = matchQuery, pipe = pipe)
 
-    extractFrom(in.query.updates, in.pipe.symbols) match {
-      case originalMerge: MergePatternAction =>
-        val preparedMerge: MergePatternAction = prepareMergeAction(in, originalMerge, ctx, in.pipe.symbols)
-        val newQuery = in.query.copy(updates = in.query.updates.replace(Unsolved(originalMerge), Unsolved(preparedMerge)))
+      planInProgress = matching(planInProgress, ctx)
 
-        in.copy(query = newQuery)
+      if (patternAction.onMatch.nonEmpty)
+        planInProgress = planInProgress.copy(pipe = new ExecuteUpdateCommandsPipe(planInProgress.pipe, patternAction.onMatch))
 
-      case originalForeach: ForeachAction =>
-        val originalMerge: MergePatternAction = extractMergeAction(originalForeach.actions)
-        val symbols: SymbolTable = collectSymbols(originalForeach, originalMerge, in)
-
-        val preparedMerge: MergePatternAction = prepareMergeAction(in, originalMerge, ctx, symbols)
-        val preparedForeach = originalForeach.copy(actions = originalForeach.actions.replace(originalMerge, preparedMerge))
-        val newQuery = in.query.copy(updates = in.query.updates.replace(Unsolved(originalForeach), Unsolved(preparedForeach)))
-
-        in.copy(query = newQuery)
+      planInProgress
     }
-  }
 
-  private def collectSymbolsFromResolvedUpdateActions(actions: Seq[UpdateAction], originalMerge: UpdateAction): Seq[(String, CypherType)] =
-    actions.
-    takeWhile(action => action != originalMerge). // Find all UpdateActions up to the one we are looking for
-    flatMap(action => action.identifiers) // Get all symbol table changes from these actions
+    def unsolved(pair: (SymbolTable, UpdateAction)) = (pair._1, Unsolved(pair._2))
 
-  private def collectSymbols(originalForeach: ForeachAction, originalMerge: MergePatternAction, in: ExecutionPlanInProgress): SymbolTable = {
-    val symbolsInLoop = collectSymbolsFromResolvedUpdateActions(originalForeach.actions, originalMerge).toMap
-    var symbols: SymbolTable = originalForeach.addInnerIdentifier(in.pipe.symbols)
-    symbols = symbols.add(symbolsInLoop)
-    symbols
-  }
+    def rewrite(symbols: SymbolTable, inAction: UpdateAction): (SymbolTable, UpdateAction) = inAction match {
+      case mergeAction: MergePatternAction if mergeAction.maybeMatchPipe.isEmpty =>
+        prepareMergeAction(symbols, mergeAction)
 
-  private def prepareMergeAction(in: ExecutionPlanInProgress,
-                         originalMerge: MergePatternAction,
-                         ctx: PlanContext,
-                         symbols:SymbolTable): MergePatternAction = {
-    val updateActions: Seq[UpdateAction] = MergePatternBuilder.createActions(symbols, originalMerge.actions)
-    val matchPipe = solveMatchQuery(in, ctx, originalMerge, symbols).pipe
-    val preparedMerge = originalMerge.copy(maybeMatchPipe = Some(matchPipe), maybeUpdateActions = Some(updateActions))
-    preparedMerge
-  }
+      case foreachAction: ForeachAction =>
+        val innerSymbols = foreachAction.addInnerIdentifier(symbols)
+        val (_, newActions) = foreachAction.actions.foldMap(innerSymbols)(rewrite)
+        (symbols, foreachAction.copy(actions = newActions))
 
-  private def extractMergeAction(actions: Seq[UpdateAction]) = actions.find(validAction) match {
-    case Some(e: MergePatternAction) => e
-    case _                           => throw new InternalException("Query plan went wrong solving MERGE inside a foreach")
-  }
+      case action =>
+        (symbols.add(action.identifiers.toMap), action)
+    }
 
+    val (_, newUpdates) = plan.query.updates.foldMap(plan.pipe.symbols) {
+      case (symbols, Unsolved(action)) if action.symbolDependenciesMet(symbols) => unsolved(rewrite(symbols, action))
+      case (symbols, qt) => (symbols.add(qt.token.identifiers.toMap), qt)
+    }
 
-  private def validAction: (UpdateAction) => Boolean = {
-    case m: MergePatternAction => !m.readyToExecute
-    case _                     => false
-  }
-
-  private def extractFrom(updates: Seq[QueryToken[UpdateAction]], symbols: SymbolTable): UpdateAction = updates.collect {
-    case Unsolved(action: MergePatternAction) if !action.readyToExecute => action
-  }.headOption.getOrElse(updates.collect {
-    case Unsolved(foreach: ForeachAction) if interesting(foreach, symbols) => foreach
-  }.head)
-
-  private def interesting(x: ForeachAction, symbols: SymbolTable) = x.actions.exists {
-    case (x: MergePatternAction) => !x.readyToExecute && x.symbolDependenciesMet(symbols)
-    case _                       => false
+    plan.copy(query = plan.query.copy(updates = newUpdates))
   }
 
   private def createMatchQueryFor(patterns: Seq[Pattern]): PartiallySolvedQuery = PartiallySolvedQuery.apply(
@@ -116,41 +90,24 @@ case class MergePatternBuilder(matching: Phase) extends PlanBuilder {
       matches(patterns: _*).
       returns(AllIdentifiers())
   )
-
-  private def solveMatchQuery(plan: ExecutionPlanInProgress,
-                              ctx: PlanContext,
-                              patternAction: MergePatternAction,
-                              symbols:SymbolTable): ExecutionPlanInProgress = {
-    val pipe = NullPipe(symbols, plan.pipe.executionPlanDescription)
-    val matchQuery = createMatchQueryFor(patternAction.patterns)
-    var planInProgress = plan.copy(query = matchQuery, pipe = pipe)
-
-    planInProgress = matching(planInProgress, ctx)
-
-    if (patternAction.onMatch.nonEmpty)
-      planInProgress = planInProgress.copy(pipe = new ExecuteUpdateCommandsPipe(planInProgress.pipe, patternAction.onMatch))
-
-    planInProgress
-  }
 }
 
 object MergePatternBuilder {
-  def createActions(in: SymbolTable, createRels: Seq[UpdateAction]): Seq[UpdateAction] = {
+  def createActions(in: SymbolTable, createRels: Seq[UpdateAction]): (SymbolTable, Seq[UpdateAction]) =
+    createRels.foldLeft((in, Seq[UpdateAction]())) {
+      case ((s0, acc), rel@CreateRelationship(_, lhs, rhs, _, _)) =>
+        val (s1, r1) = optCreateNode(s0, lhs) 
+        val (s2, r2) = optCreateNode(s1, rhs)
+        (s2, acc ++ r1 ++ r2 :+ rel)
 
-    var symbol = in
-
-    createRels.flatMap {
-      case rel@CreateRelationship(_, RelationshipEndpoint(Identifier(name), props, labels), _, _, _)
-        if !symbol.hasIdentifierNamed(name) =>
-        symbol = symbol.add(name, NodeType())
-        Seq(CreateNode(name, props, labels), rel)
-
-      case rel@CreateRelationship(_, _, RelationshipEndpoint(Identifier(name), props, labels), _, _)
-        if !symbol.hasIdentifierNamed(name) =>
-        symbol = symbol.add(name, NodeType())
-        Seq(CreateNode(name, props, labels), rel)
-
-      case x => Some(x)
+      case ((symbols, acc), action) =>
+        (symbols, acc :+ action)
     }
+
+  def optCreateNode(symbols: SymbolTable, ep: RelationshipEndpoint): (SymbolTable, Option[CreateNode]) = ep match {
+    case RelationshipEndpoint(Identifier(name), props, labels) if !symbols.hasIdentifierNamed(name) => 
+      (symbols.add(name, CTNode), Some(CreateNode(name, props, labels)))
+    case _ =>
+      (symbols, None)
   }
 }

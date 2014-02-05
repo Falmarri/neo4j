@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -24,14 +24,15 @@ import java.awt.event.ActionListener;
 import java.io.File;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
-import javax.swing.JOptionPane;
 import javax.swing.JTextField;
 
 import static javax.swing.JFileChooser.APPROVE_OPTION;
 import static javax.swing.JFileChooser.CUSTOM_DIALOG;
 import static javax.swing.JFileChooser.DIRECTORIES_ONLY;
 import static javax.swing.JOptionPane.CANCEL_OPTION;
-import static javax.swing.JOptionPane.showConfirmDialog;
+import static javax.swing.JOptionPane.ERROR_MESSAGE;
+import static javax.swing.JOptionPane.OK_CANCEL_OPTION;
+import static org.neo4j.desktop.ui.ScrollableOptionPane.showWrappedConfirmDialog;
 
 class BrowseForDatabaseActionListener implements ActionListener
 {
@@ -73,9 +74,9 @@ class BrowseForDatabaseActionListener implements ActionListener
             }
             catch ( UnsuitableDirectoryException error )
             {
-                int result = showConfirmDialog(
+                int result = showWrappedConfirmDialog(
                         frame, error.getMessage() + "\nPlease choose a different folder.",
-                        "Invalid folder selected", JOptionPane.OK_CANCEL_OPTION );
+                        "Invalid folder selected", OK_CANCEL_OPTION, ERROR_MESSAGE );
                 if ( result == CANCEL_OPTION )
                 {
                     return;

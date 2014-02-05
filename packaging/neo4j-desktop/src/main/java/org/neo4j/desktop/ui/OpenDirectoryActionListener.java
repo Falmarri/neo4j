@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -26,7 +26,7 @@ import java.io.File;
 import java.io.IOException;
 
 import static javax.swing.JOptionPane.ERROR_MESSAGE;
-import static javax.swing.JOptionPane.showMessageDialog;
+import static org.neo4j.desktop.ui.ScrollableOptionPane.showWrappedMessageDialog;
 
 public class OpenDirectoryActionListener implements ActionListener
 {
@@ -66,7 +66,7 @@ public class OpenDirectoryActionListener implements ActionListener
 
     private void showError( String message )
     {
-        showMessageDialog( parent, message, "Error", ERROR_MESSAGE );
+        showWrappedMessageDialog( parent, message, "Error", ERROR_MESSAGE );
     }
 
     private boolean isExistingDirectory( File directory )

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,21 +20,21 @@
 package org.neo4j.cypher.internal.compiler.v2_0.functions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands
-import org.neo4j.cypher.internal.compiler.v2_0.ast.FunctionInvocation
+import ast.convert.ExpressionConverters._
+import symbols._
 
-case object LessThanOrEqual extends PredicateFunction {
+case object LessThanOrEqual extends PredicateFunction with SimpleTypedFunction {
   def name = "<="
 
-  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation) : SemanticCheck =
-    checkArgs(invocation, 2) then
-//    invocation.arguments.constrainType(???) then // TODO: should constrain types
-    invocation.specifyType(BooleanType())
+  val signatures = Vector(
+    Signature(argumentTypes = Vector(CTInteger, CTInteger), outputType = CTBoolean),
+    Signature(argumentTypes = Vector(CTDouble, CTDouble), outputType = CTBoolean),
+    Signature(argumentTypes = Vector(CTString, CTString), outputType = CTBoolean)
+  )
 
-  protected def internalToPredicate(invocation: FunctionInvocation) = {
-    val left = invocation.arguments(0)
-    val right = invocation.arguments(1)
-    commands.LessThanOrEqual(left.toCommand, right.toCommand)
-  }
+  protected def internalToPredicate(invocation: ast.FunctionInvocation) =
+    commands.LessThanOrEqual(
+      invocation.arguments(0).asCommandExpression,
+      invocation.arguments(1).asCommandExpression
+    )
 }

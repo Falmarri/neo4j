@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,21 +20,14 @@
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.commands
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
+import symbols._
 
-sealed trait Hint extends AstNode with SemanticCheckable {
-  def toLegacySchemaIndex : commands.StartItem with commands.Hint
+sealed trait Hint extends ASTNode with SemanticCheckable
+
+case class UsingIndexHint(identifier: Identifier, label: Identifier, property: Identifier)(val position: InputPosition) extends Hint {
+  def semanticCheck = identifier.ensureDefined then identifier.expectType(CTNode.covariant)
 }
 
-case class UsingIndexHint(identifier: Identifier, label: Identifier, property: Identifier, token: InputToken) extends Hint {
-  def semanticCheck = identifier.ensureDefined then identifier.constrainType(NodeType())
-
-  def toLegacySchemaIndex = commands.SchemaIndex(identifier.name, label.name, property.name, commands.AnyIndex, None)
-}
-
-case class UsingScanHint(identifier: Identifier, label: Identifier, token: InputToken) extends Hint {
-  def semanticCheck = identifier.ensureDefined then identifier.constrainType(NodeType())
-
-  def toLegacySchemaIndex = commands.NodeByLabel(identifier.name, label.name)
+case class UsingScanHint(identifier: Identifier, label: Identifier)(val position: InputPosition) extends Hint {
+  def semanticCheck = identifier.ensureDefined then identifier.expectType(CTNode.covariant)
 }

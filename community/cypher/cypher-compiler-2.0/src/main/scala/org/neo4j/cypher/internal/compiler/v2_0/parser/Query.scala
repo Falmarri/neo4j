@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -26,15 +26,15 @@ trait Query extends Parser
   with Clauses
   with Base {
 
-  def Query : Rule1[ast.Query] = rule {
+  def Query: Rule1[ast.Query] = rule {
     SingleQuery ~~ zeroOrMore(Union ~ WS)
   }
 
-  def SingleQuery : Rule1[ast.SingleQuery] = rule {
-    oneOrMore(Clause, separator = WS) ~>> token ~~> ast.SingleQuery
+  def SingleQuery: Rule1[ast.SingleQuery] = rule {
+    oneOrMore(Clause, separator = WS) ~~>> (ast.SingleQuery(_))
   }
 
-  def Clause : Rule1[ast.Clause] = (
+  def Clause: Rule1[ast.Clause] = (
       Start
     | Match
     | Merge
@@ -47,8 +47,8 @@ trait Query extends Parser
     | Return
   )
 
-  def Union : ReductionRule1[ast.Query, ast.Union] = rule("UNION") (
-      keyword("UNION", "ALL") ~>> token ~~ SingleQuery ~~> ast.UnionAll
-    | keyword("UNION") ~>> token ~~ SingleQuery ~~> ast.UnionDistinct
+  def Union: ReductionRule1[ast.Query, ast.Union] = rule("UNION") (
+      keyword("UNION", "ALL") ~>> position ~~ SingleQuery ~~> ((q: ast.Query, p, sq) => ast.UnionAll(q, sq)(p))
+    | keyword("UNION") ~>> position ~~ SingleQuery ~~> ((q: ast.Query, p, sq) => ast.UnionDistinct(q, sq)(p))
   )
 }

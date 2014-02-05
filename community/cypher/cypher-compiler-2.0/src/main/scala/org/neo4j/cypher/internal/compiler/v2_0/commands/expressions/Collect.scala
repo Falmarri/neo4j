@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,15 +19,16 @@
  */
 package org.neo4j.cypher.internal.compiler.v2_0.commands.expressions
 
-import org.neo4j.cypher.internal.compiler.v2_0.symbols.{SymbolTable, AnyType, CollectionType}
-import org.neo4j.cypher.internal.compiler.v2_0.pipes.aggregation.CollectFunction
+import org.neo4j.cypher.internal.compiler.v2_0._
+import pipes.aggregation.CollectFunction
+import symbols._
 
 case class Collect(anInner: Expression) extends AggregationWithInnerExpression(anInner) {
   def createAggregationFunction = new CollectFunction(anInner)
 
-  def expectedInnerType = AnyType()
+  val expectedInnerType = CTAny
 
   def rewrite(f: (Expression) => Expression) = f(Collect(anInner.rewrite(f)))
 
-  def calculateType(symbols: SymbolTable) = CollectionType(anInner.getType(symbols))
+  def calculateType(symbols: SymbolTable) = CTCollection(anInner.getType(symbols))
 }

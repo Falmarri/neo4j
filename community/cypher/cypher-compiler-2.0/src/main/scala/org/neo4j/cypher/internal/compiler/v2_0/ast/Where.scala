@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -22,10 +22,8 @@ package org.neo4j.cypher.internal.compiler.v2_0.ast
 import org.neo4j.cypher.internal.compiler.v2_0._
 import symbols._
 
-case class Where(expression: Expression, token: InputToken) extends AstNode with SemanticCheckable {
+case class Where(expression: Expression)(val position: InputPosition) extends ASTNode with SemanticCheckable {
   def semanticCheck =
-    expression.semanticCheck(Expression.SemanticContext.Simple) //then
-//    expression.constrainType(BooleanType()) // TODO: should constrain to boolean, when coercion is possible
-
-  def toLegacyPredicate = expression.toPredicate
+    expression.semanticCheck(Expression.SemanticContext.Simple) then
+    expression.expectType(CTBoolean.covariant)
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,25 +20,24 @@
 package org.neo4j.cypher.internal.compiler.v2_0.functions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{expressions => commandexpressions}
-import org.neo4j.cypher.internal.compiler.v2_0.ast.FunctionInvocation
+import ast.convert.ExpressionConverters._
+import commands.{expressions => commandexpressions}
+import commands.expressions.{Expression => CommandExpression}
+import symbols._
 
-case object RegularExpression extends PredicateFunction {
+case object RegularExpression extends PredicateFunction with SimpleTypedFunction {
   def name = "=~"
 
-  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation) : SemanticCheck =
-    checkArgs(invocation, 2) then
-    invocation.arguments.constrainType(StringType()) then
-    invocation.specifyType(BooleanType())
+  val signatures = Vector(
+    Signature(argumentTypes = Vector(CTString, CTString), outputType = CTBoolean)
+  )
 
-  protected def internalToPredicate(invocation: FunctionInvocation) = {
-    val left = invocation.arguments(0)
-    val right = invocation.arguments(1)
-    right.toCommand match {
-      case literal: commandexpressions.Literal => commands.LiteralRegularExpression(left.toCommand, literal)
-      case command                             => commands.RegularExpression(left.toCommand, command)
+  protected def internalToPredicate(invocation: ast.FunctionInvocation) = {
+    val left = invocation.arguments(0).asCommandExpression
+    val right = invocation.arguments(1).asCommandExpression
+    right match {
+      case literal: commandexpressions.Literal => commands.LiteralRegularExpression(left, literal)
+      case command                             => commands.RegularExpression(left, command)
     }
   }
 }

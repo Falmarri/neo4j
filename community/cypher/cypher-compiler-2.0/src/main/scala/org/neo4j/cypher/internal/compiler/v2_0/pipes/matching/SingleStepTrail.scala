@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,10 +19,10 @@
  */
 package org.neo4j.cypher.internal.compiler.v2_0.pipes.matching
 
+import org.neo4j.cypher.internal.compiler.v2_0._
+import commands._
+import symbols._
 import org.neo4j.graphdb.{PropertyContainer, Direction}
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{True, Pattern, Predicate}
-import org.neo4j.graphdb.DynamicRelationshipType._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols.{RelationshipType, NodeType, SymbolTable}
 
 final case class SingleStepTrail(next: Trail,
                                  dir: Direction,
@@ -68,7 +68,7 @@ final case class SingleStepTrail(next: Trail,
   }
 
   def symbols(table: SymbolTable): SymbolTable =
-    next.symbols(table).add(start, NodeType()).add(relName, RelationshipType())
+    next.symbols(table).add(start, CTNode).add(relName, CTRelationship)
 
   def contains(target: String): Boolean = next.contains(target) || target == end
 

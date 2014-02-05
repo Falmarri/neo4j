@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -230,7 +230,12 @@ public class CannedFileSystemAbstraction implements FileSystemAbstraction
     @Override
     public FileLock tryLock( File fileName, FileChannel channel ) throws IOException
     {
-        return lockSuccess ? SYMBOLIC_FILE_LOCK : null;
+        if ( !lockSuccess )
+        {
+            throw new IOException( "Unable to create lock file " + fileName );
+        }
+        
+        return SYMBOLIC_FILE_LOCK;
     }
 
     @Override

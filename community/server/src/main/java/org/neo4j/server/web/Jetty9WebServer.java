@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -135,6 +135,7 @@ public class Jetty9WebServer implements WebServer
 
             HttpConfiguration httpConfig = new HttpConfiguration();
             httpConfig.setRequestHeaderSize( 20 * 1024 );
+            httpConfig.setResponseHeaderSize( 20 * 1024 );
             HttpConnectionFactory httpFactory = new HttpConnectionFactory( httpConfig );
 
             ServerConnector connector = new ServerConnector(jetty, httpFactory);

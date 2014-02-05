@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -34,14 +34,15 @@ import org.neo4j.com.TargetCaller;
 import org.neo4j.com.ToNetworkStoreWriter;
 import org.neo4j.kernel.impl.nioneo.store.StoreId;
 import org.neo4j.kernel.logging.Logging;
+import org.neo4j.kernel.monitoring.Monitors;
 
 class BackupClient extends Client<TheBackupInterface> implements TheBackupInterface
 {
-    public BackupClient( String hostNameOrIp, int port, Logging logging, StoreId storeId )
+    public BackupClient( String hostNameOrIp, int port, Logging logging, Monitors monitors, StoreId storeId )
     {
-        super( hostNameOrIp, port, logging, storeId, FRAME_LENGTH, PROTOCOL_VERSION, 40 * 1000,
+        super( hostNameOrIp, port, logging, monitors, storeId, FRAME_LENGTH, PROTOCOL_VERSION, 40 * 1000,
                 Client.DEFAULT_MAX_NUMBER_OF_CONCURRENT_CHANNELS_PER_CLIENT,
-                Client.DEFAULT_MAX_NUMBER_OF_CONCURRENT_CHANNELS_PER_CLIENT, FRAME_LENGTH );
+                FRAME_LENGTH );
     }
 
     public Response<Void> fullBackup( StoreWriter storeWriter )
@@ -69,7 +70,7 @@ class BackupClient extends Client<TheBackupInterface> implements TheBackupInterf
             public Response<Void> call( TheBackupInterface master, RequestContext context,
                     ChannelBuffer input, ChannelBuffer target )
             {
-                return master.fullBackup( new ToNetworkStoreWriter( target ) );
+                return master.fullBackup( new ToNetworkStoreWriter( target, new Monitors() ) );
             }
         }, Protocol.VOID_SERIALIZER ),
         INCREMENTAL_BACKUP( new TargetCaller<TheBackupInterface, Void>()

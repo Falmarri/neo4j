@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,7 +20,7 @@
 package org.neo4j.cypher.internal.compiler.v2_0.commands.expressions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import commands.AstNode
+import commands.{CoercedPredicate, Predicate, AstNode}
 import pipes.QueryState
 import symbols._
 import org.neo4j.cypher.internal.helpers._
@@ -28,6 +28,12 @@ import org.neo4j.cypher.CypherTypeException
 
 abstract class Expression extends Typed with TypeSafe with AstNode[Expression] {
   def rewrite(f: Expression => Expression): Expression
+
+  def rewriteAsPredicate(f: Expression => Expression): Predicate = rewrite(f) match {
+    case pred: Predicate => pred
+    case e               => CoercedPredicate(e)
+  }
+
 
   def subExpressions: Seq[Expression] = {
     def expandAll(e: AstNode[_]): Seq[AstNode[_]] = e.children ++ e.children.flatMap(expandAll)
@@ -62,7 +68,7 @@ abstract class Expression extends Typed with TypeSafe with AstNode[Expression] {
   }
 
   protected def calculateUpperTypeBound(expectedType: CypherType, symbols: SymbolTable, exprs: Seq[Expression]): CypherType =
-    exprs.map(_.evaluateType(expectedType, symbols)).reduce(_ mergeDown _)
+    exprs.map(_.evaluateType(expectedType, symbols)).reduce(_ mergeUp _)
 
   override def toString = this match {
     case p: Product => scala.runtime.ScalaRunTime._toString(p)
@@ -111,9 +117,9 @@ abstract class Arithmetics(left: Expression, right: Expression)
   def calc(a: Number, b: Number): Any
 
   def calculateType(symbols: SymbolTable): CypherType = {
-    left.evaluateType(NumberType(), symbols)
-    right.evaluateType(NumberType(), symbols)
-    NumberType()
+    left.evaluateType(CTNumber, symbols)
+    right.evaluateType(CTNumber, symbols)
+    CTNumber
   }
 
   def arguments = Seq(left, right)

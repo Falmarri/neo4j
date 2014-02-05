@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,20 +20,16 @@
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import commands.{expressions => commandexpressions}
-import org.neo4j.cypher.internal.compiler.v2_0.mutation.{CreateNode, UpdateAction, ForeachAction}
 import symbols._
-import org.neo4j.helpers.ThisShouldNotHappenError
 
-sealed trait Clause extends AstNode with SemanticCheckable {
+sealed trait Clause extends ASTNode with SemanticCheckable {
   def name: String
 }
 
-sealed trait UpdateClause extends Clause {
-  def legacyUpdateActions: Seq[UpdateAction]
-}
+sealed trait UpdateClause extends Clause
 
 sealed trait ClosingClause extends Clause {
+  def distinct: Boolean
   def returnItems: ReturnItems
   def orderBy: Option[OrderBy]
   def skip: Option[Skip]
@@ -45,263 +41,114 @@ sealed trait ClosingClause extends Clause {
     checkSkipLimit
 
   // use a scoped state containing the aliased return items for the sort expressions
-  private def checkSortItems : SemanticCheck = s => {
+  private def checkSortItems: SemanticCheck = s => {
     val result = (returnItems.declareIdentifiers(s) then orderBy.semanticCheck)(s.newScope)
     SemanticCheckResult(result.state.popScope, result.errors)
   }
 
   // use an empty state when checking skip & limit, as these have isolated scope
-  private def checkSkipLimit : SemanticState => Seq[SemanticError] =
+  private def checkSkipLimit: SemanticState => Seq[SemanticError] =
     s => (skip ++ limit).semanticCheck(SemanticState.clean).errors
-
-  def closeLegacyQueryBuilder(builder: commands.QueryBuilder) : commands.Query = {
-    val returns = returnItems.toCommands
-    extractAggregationExpressions(returns).foreach { builder.aggregation(_:_*) }
-    skip.foreach { s => builder.skip(s.toCommand) }
-    limit.foreach { l => builder.limit(l.toCommand) }
-    orderBy.foreach { o => builder.orderBy(o.sortItems.map(_.toCommand):_*) }
-    builder.returns(returns:_*)
-  }
-
-  protected def extractAggregationExpressions(items: Seq[commands.ReturnColumn]) = {
-    val aggregationExpressions = items.collect {
-      case commands.ReturnItem(expression, _, _) => (expression.subExpressions :+ expression).collect {
-        case agg: commandexpressions.AggregationExpression => agg
-      }
-    }.flatten
-
-    aggregationExpressions match {
-      case Seq() => None
-      case _     => Some(aggregationExpressions)
-    }
-  }
-}
-
-trait DistinctClosingClause extends ClosingClause {
-  abstract override def extractAggregationExpressions(items: Seq[commands.ReturnColumn]) = {
-    Some(super.extractAggregationExpressions(items).getOrElse(Seq()))
-  }
 }
 
 
-case class Start(items: Seq[StartItem], where: Option[Where], token: InputToken) extends Clause {
+case class Start(items: Seq[StartItem], where: Option[Where])(val position: InputPosition) extends Clause {
   val name = "START"
 
   def semanticCheck = items.semanticCheck then where.semanticCheck
-
-  def addToLegacyQuery(builder: commands.QueryBuilder) = {
-    val startItems = items.map(_.toCommand)
-    val wherePredicate = (builder.where, where) match {
-      case (p, None)                  => p
-      case (commands.True(), Some(w)) => w.toLegacyPredicate
-      case (p, Some(w))               => commands.And(p, w.toLegacyPredicate)
-    }
-
-    builder.startItems((builder.startItems ++ startItems): _*).where(wherePredicate)
-  }
 }
 
-case class Match(optional: Boolean, pattern: Pattern, hints: Seq[Hint], where: Option[Where], token: InputToken) extends Clause with SemanticChecking {
+case class Match(optional: Boolean, pattern: Pattern, hints: Seq[Hint], where: Option[Where])(val position: InputPosition) extends Clause with SemanticChecking {
   def name = "MATCH"
 
   def semanticCheck =
       pattern.semanticCheck(Pattern.SemanticContext.Match) then
       hints.semanticCheck then
       where.semanticCheck
-
-  def addToLegacyQuery(builder: commands.QueryBuilder) = {
-    val matches = builder.matching ++ pattern.toLegacyPatterns
-    val namedPaths = builder.namedPaths ++ pattern.toLegacyNamedPaths
-    val indexHints = builder.using ++ hints.map(_.toLegacySchemaIndex)
-    val wherePredicate = (builder.where, where) match {
-      case (p, None)                  => p
-      case (commands.True(), Some(w)) => w.toLegacyPredicate
-      case (p, Some(w))               => commands.And(p, w.toLegacyPredicate)
-    }
-
-    builder.
-      matches(matches: _*).
-      namedPaths(namedPaths: _*).
-      using(indexHints: _*).
-      where(wherePredicate).
-      isOptional(optional)
-  }
 }
 
-case class Merge(pattern: Pattern, actions: Seq[MergeAction], token: InputToken) extends UpdateClause {
+case class Merge(pattern: Pattern, actions: Seq[MergeAction])(val position: InputPosition) extends UpdateClause {
   def name = "MERGE"
 
   def semanticCheck =
     pattern.semanticCheck(Pattern.SemanticContext.Merge) then
     actions.semanticCheck
-
-  def legacyUpdateActions = toCommand.nextStep()
-  def toCommand = {
-    val toAbstractPatterns = pattern.toAbstractPatterns
-    val map = actions.map(_.toAction)
-    val legacyPatterns = pattern.toLegacyPatterns.filterNot(_.isInstanceOf[commands.SingleNode])
-    val creates = pattern.toLegacyCreates.filterNot(_.isInstanceOf[CreateNode])
-    commands.MergeAst(toAbstractPatterns, map, legacyPatterns, creates)
-  }
-
-  def addToLegacyQuery(builder: commands.QueryBuilder) = {
-    val updates = builder.updates ++ legacyUpdateActions
-    val namedPaths = builder.namedPaths ++ pattern.toLegacyNamedPaths
-    builder.
-      updates(updates: _*).
-      namedPaths(namedPaths: _*)
-  }
 }
 
-case class Create(pattern: Pattern, token: InputToken) extends UpdateClause {
+case class Create(pattern: Pattern)(val position: InputPosition) extends UpdateClause {
   def name = "CREATE"
 
   def semanticCheck = pattern.semanticCheck(Pattern.SemanticContext.Create)
-
-  lazy val legacyUpdateActions = pattern.toLegacyCreates
-
-  def addToLegacyQuery(builder: commands.QueryBuilder) = {
-    val startItems = builder.startItems ++ legacyUpdateActions.map {
-      case createNode: mutation.CreateNode                 => commands.CreateNodeStartItem(createNode)
-      case createRelationship: mutation.CreateRelationship => commands.CreateRelationshipStartItem(createRelationship)
-    }
-    val namedPaths = builder.namedPaths ++ pattern.toLegacyNamedPaths
-
-    builder.startItems(startItems: _*).namedPaths(namedPaths: _*)
-  }
 }
 
-case class CreateUnique(pattern: Pattern, token: InputToken) extends UpdateClause {
+case class CreateUnique(pattern: Pattern)(val position: InputPosition) extends UpdateClause {
   def name = "CREATE UNIQUE"
 
   def semanticCheck = pattern.semanticCheck(Pattern.SemanticContext.Create)
-
-  def legacyUpdateActions = toCommand.nextStep()._1.map(_.inner)
-
-  def addToLegacyQuery(builder: commands.QueryBuilder) = {
-    val startItems = builder.startItems ++ toCommand.nextStep()._1
-    val namedPaths = builder.namedPaths ++ toCommand.nextStep()._2
-
-    builder.startItems(startItems: _*).namedPaths(namedPaths: _*)
-  }
-
-  private lazy val toCommand = {
-    val abstractPatterns: Seq[AbstractPattern] = pattern.toAbstractPatterns.map(_.makeOutgoing)
-    commands.CreateUniqueAst(abstractPatterns)
-  }
 }
 
-case class SetClause(items: Seq[SetItem], token: InputToken) extends UpdateClause {
+case class SetClause(items: Seq[SetItem])(val position: InputPosition) extends UpdateClause {
   def name = "SET"
 
   def semanticCheck = items.semanticCheck
-
-  def legacyUpdateActions = items.map(_.toLegacyUpdateAction)
-
-  def addToLegacyQuery(b: commands.QueryBuilder) = {
-    val updates = b.updates ++ legacyUpdateActions
-    b.updates(updates: _*)
-  }
 }
 
-case class Delete(expressions: Seq[Expression], token: InputToken) extends UpdateClause {
+case class Delete(expressions: Seq[Expression])(val position: InputPosition) extends UpdateClause {
   def name = "DELETE"
 
   def semanticCheck =
     expressions.semanticCheck(Expression.SemanticContext.Simple) then
-      warnAboutDeletingLabels then
-      expressions.constrainType(NodeType(), RelationshipType(), PathType())
+    warnAboutDeletingLabels then
+    expressions.expectType(CTNode.covariant | CTRelationship.covariant | CTPath.covariant)
 
   def warnAboutDeletingLabels =
     expressions.filter(_.isInstanceOf[HasLabels]) map {
-      e => SemanticError("DELETE doesn't support removing labels from a node. Try REMOVE.", e.token)
+      e => SemanticError("DELETE doesn't support removing labels from a node. Try REMOVE.", e.position)
     }
-
-  def legacyUpdateActions = expressions.map(e => mutation.DeleteEntityAction(e.toCommand))
-
-  def addToLegacyQuery(builder: commands.QueryBuilder) = {
-    val updates = builder.updates ++ legacyUpdateActions
-    builder.updates(updates: _*)
-  }
 }
 
-case class Remove(items: Seq[RemoveItem], token: InputToken) extends UpdateClause {
+case class Remove(items: Seq[RemoveItem])(val position: InputPosition) extends UpdateClause {
   def name = "REMOVE"
 
   def semanticCheck = items.semanticCheck
-
-  def legacyUpdateActions = items.map(_.toLegacyUpdateAction)
-
-  def addToLegacyQuery(builder: commands.QueryBuilder) = {
-    val updates = builder.updates ++ legacyUpdateActions
-    builder.updates(updates: _*)
-  }
 }
 
-case class Foreach(identifier: Identifier, expression: Expression, updates: Seq[Clause], token: InputToken) extends UpdateClause with SemanticChecking {
+case class Foreach(identifier: Identifier, expression: Expression, updates: Seq[Clause])(val position: InputPosition) extends UpdateClause with SemanticChecking {
   def name = "FOREACH"
 
   def semanticCheck =
     expression.semanticCheck(Expression.SemanticContext.Simple) then
-      expression.constrainType(CollectionType(AnyType())) then withScopedState {
-        val innerTypes: TypeGenerator = expression.types(_).map(_.iteratedType)
-        identifier.declare(innerTypes) then updates.semanticCheck
-      } then updates.filter(!_.isInstanceOf[UpdateClause]).map(c => SemanticError(s"Invalid use of ${c.name} inside FOREACH", c.token))
-
-  def legacyUpdateActions = Seq(ForeachAction(expression.toCommand, identifier.name, updates.flatMap {
-    case update: UpdateClause => update.legacyUpdateActions
-    case _                    => throw new ThisShouldNotHappenError("cleishm", "a non update clause in FOREACH didn't fail semantic check")
-  }))
-
-  def addToLegacyQuery(builder: commands.QueryBuilder) = {
-    val updateActions = builder.updates ++ legacyUpdateActions
-    builder.updates(updateActions: _*)
-  }
+    expression.expectType(CTCollection(CTAny).covariant) then withScopedState {
+      val possibleInnerTypes: TypeGenerator = expression.types(_).unwrapCollections
+      identifier.declare(possibleInnerTypes) then updates.semanticCheck
+    } then updates.filter(!_.isInstanceOf[UpdateClause]).map(c => SemanticError(s"Invalid use of ${c.name} inside FOREACH", c.position))
 }
 
 case class With(
+    distinct: Boolean,
     returnItems: ReturnItems,
     orderBy: Option[OrderBy],
     skip: Option[Skip],
     limit: Option[Limit],
-    where: Option[Where],
-    token: InputToken) extends ClosingClause
+    where: Option[Where])(val position: InputPosition) extends ClosingClause
 {
   def name = "WITH"
 
   override def semanticCheck =
     super.semanticCheck then
-      checkAliasedReturnItems
+    checkAliasedReturnItems
 
-  private def checkAliasedReturnItems: SemanticState => Seq[SemanticError] = state => {
-    returnItems match {
-      case li: ListedReturnItems => li.items.filter(!_.alias.isDefined).map(i => SemanticError("Expression in WITH must be aliased (use AS)", i.token))
-      case _                     => Seq()
-    }
-  }
-
-  def closeLegacyQueryBuilder(builder: commands.QueryBuilder, close: commands.QueryBuilder => commands.Query): commands.Query = {
-    val subBuilder = where.foldLeft(new commands.QueryBuilder())((b, w) => b.where(w.toLegacyPredicate))
-    val tailQueryBuilder = builder.tail.fold(subBuilder)(t => subBuilder.tail(t))
-    builder.tail(close(tailQueryBuilder))
-    super.closeLegacyQueryBuilder(builder)
-  }
-
-  override def closeLegacyQueryBuilder(builder: commands.QueryBuilder): commands.Query = {
-    val builderToClose = where.fold(builder) { w =>
-      val subBuilder = new commands.QueryBuilder().where(w.toLegacyPredicate)
-      val tailQueryBuilder = builder.tail.fold(subBuilder)(t => subBuilder.tail(t))
-      builder.tail(tailQueryBuilder.returns(commands.AllIdentifiers()))
-    }
-    super.closeLegacyQueryBuilder(builderToClose)
+  private def checkAliasedReturnItems: SemanticState => Seq[SemanticError] = state => returnItems match {
+    case li: ListedReturnItems => li.items.filter(!_.alias.isDefined).map(i => SemanticError("Expression in WITH must be aliased (use AS)", i.position))
+    case _                     => Seq()
   }
 }
 
 case class Return(
+    distinct: Boolean,
     returnItems: ReturnItems,
     orderBy: Option[OrderBy],
     skip: Option[Skip],
-    limit: Option[Limit],
-    token: InputToken) extends ClosingClause {
+    limit: Option[Limit])(val position: InputPosition) extends ClosingClause {
   def name = "RETURN"
 }

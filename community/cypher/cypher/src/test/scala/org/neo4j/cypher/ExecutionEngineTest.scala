@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -2331,7 +2331,7 @@ RETURN x0.name""")
     createNode()
     createNode()
     createNode()
-    val result = engine.profile("""START n=node(*) RETURN n LIMIT 1""")
+    val result = profile("""START n=node(*) RETURN n LIMIT 1""")
 
     // WHEN
     result.toList
@@ -2589,7 +2589,7 @@ RETURN x0.name""")
     relate(g, b)
     relate(t, b)
 
-    val result = engine.profile("START h=node(1),g=node(2) MATCH h-[r1]-n-[r2]-g-[r3]-o-[r4]-h, n-[r]-o RETURN o")
+    val result = profile("START h=node(1),g=node(2) MATCH h-[r1]-n-[r2]-g-[r3]-o-[r4]-h, n-[r]-o RETURN o")
 
     // then
     assert(!result.columnAs[Node]("o").exists(_ == null), "Result should not contain nulls")
@@ -2600,6 +2600,15 @@ RETURN x0.name""")
     val n = createLabeledNode(Map("coll" -> Array(1, 2, 3), "bool" -> true), "LABEL")
 
     val foundNode = execute("match (n:LABEL) where n.coll and n.bool return n").columnAs[Node]("n").next()
+
+    assert(foundNode === n)
+  }
+
+  @Test
+  def should_be_able_to_coerce_literal_collections_to_predicates() {
+    val n = createLabeledNode(Map("coll" -> Array(1, 2, 3), "bool" -> true), "LABEL")
+
+    val foundNode = execute("match (n:LABEL) where [1,2,3] and n.bool return n").columnAs[Node]("n").next()
 
     assert(foundNode === n)
   }
@@ -2660,5 +2669,45 @@ RETURN x0.name""")
       Map("a"->b, "b"->a),
       Map("a"->e, "b"->e)
     ))
+  }
+
+  @Test
+  def should_not_mind_rewriting_NOT_queries() {
+    val result = execute(" create (a {x: 1}) return a.x is not null as A, a.y is null as B, a.x is not null as C, a.y is not null as D")
+    assert(result.toList === List(Map("A" -> true, "B" -> true, "C" -> true, "D" -> false)))
+  }
+
+  @Test
+  def should_not_mind_profiling_union_queries() {
+    val result = profile("return 1 as A union return 2 as A")
+    assert(result.toList === List(Map("A" -> 1), Map("A" -> 2)))
+  }
+
+  @Test
+  def should_not_mind_profiling_merge_queries() {
+    val result = profile("merge (a {x: 1}) return a.x as A")
+    assert(result.toList.head("A") === 1)
+  }
+
+  @Test
+  def should_not_mind_profiling_optional_match_queries() {
+    createLabeledNode(Map("x" -> 1), "Label")
+    val result = profile("match (a:Label {x: 1}) optional match (a)-[:REL]->(b) return a.x as A, b.x as B").toList.head
+    assert(result("A") === 1)
+    assert(result("B") === null)
+  }
+
+  @Test
+  def should_not_mind_profiling_optional_match_and_with() {
+    createLabeledNode(Map("x" -> 1), "Label")
+    val result = profile("match (n) optional match (n)--(m) with n, m where m is null return n.x as A").toList.head
+    assert(result("A") === 1)
+  }
+
+  @Test
+  def should_be_able_to_alias_expressions() {
+    createNode("id" -> 42)
+    val result = execute("match (a) return a.id as a, a.id")
+    assert(result.toList === List(Map("a" -> 42, "a.id" -> 42)))
   }
 }

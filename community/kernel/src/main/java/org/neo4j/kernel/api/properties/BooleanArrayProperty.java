@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -49,24 +49,7 @@ class BooleanArrayProperty extends DefinedProperty
         {
             return Arrays.equals( this.value, (boolean[]) value );
         }
-
-        if ( value instanceof Boolean[] )
-        {
-            Boolean[] otherValue = (Boolean[]) value;
-            if ( this.value.length != otherValue.length )
-            {
-                return false;
-            }
-            for (int i = 0; i < otherValue.length; i++ )
-            {
-                if ( otherValue[i] == null || this.value[i] != otherValue[i] )
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-        return false;
+        return valueCompare( this.value, value );
     }
 
     @Override

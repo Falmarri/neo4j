@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,10 +19,11 @@
  */
 package org.neo4j.cypher.internal.compiler.v2_0.pipes
 
+import org.neo4j.cypher.internal.compiler.v2_0._
+import commands.expressions.{Literal, Multiply, Expression, Identifier}
+import symbols._
 import org.junit.Test
 import org.scalatest.Assertions
-import org.neo4j.cypher.internal.compiler.v2_0.commands.expressions.{Literal, Multiply, Expression, Identifier}
-import org.neo4j.cypher.internal.compiler.v2_0.symbols.NumberType
 
 class DistinctPipeTest extends Assertions {
 
@@ -61,7 +62,7 @@ class DistinctPipeTest extends Assertions {
   }
 
   def createDistinctPipe(input: List[Map[String, Int]], expressions: Map[String, Expression] = Map("x" -> Identifier("x"))) = {
-    val source = new FakePipe(input, "x" -> NumberType())
+    val source = new FakePipe(input, "x" -> CTNumber)
     new DistinctPipe(source, expressions)
   }
 }

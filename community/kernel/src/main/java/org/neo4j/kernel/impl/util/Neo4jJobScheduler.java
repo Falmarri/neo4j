@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -57,13 +57,13 @@ public class Neo4jJobScheduler extends LifecycleAdapter implements JobScheduler
     }
 
     @Override
-    public void schedule( Runnable job )
+    public void schedule( Group group, Runnable job )
     {
         this.executor.submit( job );
     }
 
     @Override
-    public void scheduleRecurring( final Runnable runnable, long period, TimeUnit timeUnit )
+    public void scheduleRecurring( Group group, final Runnable runnable, long period, TimeUnit timeUnit )
     {
         timer.schedule( new TimerTask()
         {

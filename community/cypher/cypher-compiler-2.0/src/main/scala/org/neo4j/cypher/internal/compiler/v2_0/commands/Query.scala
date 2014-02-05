@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,16 +19,16 @@
  */
 package org.neo4j.cypher.internal.compiler.v2_0.commands
 
-import org.neo4j.cypher.internal.compiler.v2_0.mutation.{CreateUniqueAction, UniqueLink, UpdateAction}
+import org.neo4j.cypher.internal.compiler.v2_0.mutation._
 import expressions.{Expression, AggregationExpression}
 import org.neo4j.cypher.internal.compiler.v2_0.commands
 
 object Query {
-  def start(startItems: StartItem*) = new QueryBuilder(startItems)
-  def matches(patterns:Pattern*) = new QueryBuilder(Seq.empty).matches(patterns:_*)
-  def optionalMatches(patterns:Pattern*) = new QueryBuilder(Seq.empty).matches(patterns:_*).makeOptional()
-  def updates(cmds:UpdateAction*) = new QueryBuilder(Seq()).updates(cmds:_*)
-  def unique(cmds:UniqueLink*) = new QueryBuilder(Seq(CreateUniqueStartItem(CreateUniqueAction(cmds:_*))))
+  def start(startItems: StartItem*) = new QueryBuilder().startItems(startItems:_*)
+  def matches(patterns:Pattern*) = new QueryBuilder().matches(patterns:_*)
+  def optionalMatches(patterns:Pattern*) = new QueryBuilder().matches(patterns:_*).makeOptional()
+  def updates(cmds:UpdateAction*) = new QueryBuilder().updates(cmds:_*)
+  def unique(cmds:UniqueLink*) = new QueryBuilder().startItems(Seq(CreateUniqueStartItem(CreateUniqueAction(cmds:_*))):_*)
 
   def empty = Query(
     start = Seq.empty,
@@ -86,7 +86,9 @@ case class Query(returns: Return,
       tailQ.hints.isEmpty &&
       tailQ.sort.isEmpty &&
       tailQ.slice.isEmpty &&
-      tailQ.aggregation.isEmpty
+      tailQ.aggregation.isEmpty &&
+      !tailQ.updatedCommands.exists(containsMergeForPattern)
+      
 
     // If we have updating actions, we can't merge with a tail part that has updating start items
     // That would mess with the order of actions
@@ -110,6 +112,12 @@ case class Query(returns: Return,
       result
     } else this
 
+  }
+
+  private def containsMergeForPattern(action: UpdateAction): Boolean = action match {
+    case _: MergePatternAction => true
+    case ForeachAction(_, _, actions) => actions.exists(containsMergeForPattern)
+    case _ => false
   }
 
   def includeIfNotEmpty(title:String, objects:Iterable[_]):String = if(objects.isEmpty) "" else

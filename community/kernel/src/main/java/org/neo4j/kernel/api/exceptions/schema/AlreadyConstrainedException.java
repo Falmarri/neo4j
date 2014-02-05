@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,8 +19,9 @@
  */
 package org.neo4j.kernel.api.exceptions.schema;
 
-import org.neo4j.kernel.api.constraints.UniquenessConstraint;
 import org.neo4j.kernel.api.TokenNameLookup;
+import org.neo4j.kernel.api.constraints.UniquenessConstraint;
+import org.neo4j.kernel.api.exceptions.Status;
 
 import static java.lang.String.format;
 
@@ -31,7 +32,7 @@ public class AlreadyConstrainedException extends SchemaKernelException
 
     public AlreadyConstrainedException( UniquenessConstraint constraint )
     {
-        super( format( message, constraint ) );
+        super( Status.Schema.ConstraintAlreadyExists, format( message, constraint ) );
         this.constraint = constraint;
     }
 

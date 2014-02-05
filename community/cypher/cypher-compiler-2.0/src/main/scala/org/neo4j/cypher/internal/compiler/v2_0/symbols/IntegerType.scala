@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,40 +19,12 @@
  */
 package org.neo4j.cypher.internal.compiler.v2_0.symbols
 
-
 object IntegerType {
-  lazy val instance = new IntegerType()
-
-  def apply() = instance
+  val instance = new IntegerType() {
+    val parentType = CTNumber
+    override lazy val coercibleTo: Set[CypherType] = Set(CTBoolean, CTDouble)
+    override val toString = "Integer"
+  }
 }
 
-class IntegerType extends NumberType {
-  override def parentType:CypherType = NumberType()
-  override def toString = "Integer"
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+sealed abstract class IntegerType extends CypherType

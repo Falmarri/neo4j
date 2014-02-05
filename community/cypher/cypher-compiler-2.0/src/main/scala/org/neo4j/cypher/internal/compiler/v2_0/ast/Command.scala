@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,38 +20,21 @@
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.commands
 
 sealed trait Command extends Statement
 
-case class CreateIndex(label: Identifier, property: Identifier, token: InputToken) extends Command {
+case class CreateIndex(label: Identifier, property: Identifier)(val position: InputPosition) extends Command {
   def semanticCheck = Seq()
-
-  def toLegacyQuery = commands.CreateIndex(label.name, Seq(property.name))
 }
 
-case class DropIndex(label: Identifier, property: Identifier, token: InputToken) extends Command {
+case class DropIndex(label: Identifier, property: Identifier)(val position: InputPosition) extends Command {
   def semanticCheck = Seq()
-
-  def toLegacyQuery = commands.DropIndex(label.name, Seq(property.name))
 }
 
-case class CreateUniqueConstraint(id: Identifier, label: Identifier, idForProperty: Identifier, propertyKey: Identifier, token: InputToken) extends Command {
+case class CreateUniqueConstraint(id: Identifier, label: Identifier, idForProperty: Identifier, propertyKey: Identifier)(val position: InputPosition) extends Command {
   def semanticCheck = Seq()
-
-  def toLegacyQuery = commands.CreateUniqueConstraint(
-    id = id.name,
-    label = label.name,
-    idForProperty = idForProperty.name,
-    propertyKey = propertyKey.name)
 }
 
-case class DropUniqueConstraint(id: Identifier, label: Identifier, idForProperty: Identifier, propertyKey: Identifier, token: InputToken) extends Command {
+case class DropUniqueConstraint(id: Identifier, label: Identifier, idForProperty: Identifier, propertyKey: Identifier)(val position: InputPosition) extends Command {
   def semanticCheck = Seq()
-
-  def toLegacyQuery = commands.DropUniqueConstraint(
-    id = id.name,
-    label = label.name,
-    idForProperty = idForProperty.name,
-    propertyKey = propertyKey.name)
 }

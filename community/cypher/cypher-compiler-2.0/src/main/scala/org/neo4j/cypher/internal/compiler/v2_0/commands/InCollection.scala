@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -22,7 +22,6 @@ package org.neo4j.cypher.internal.compiler.v2_0.commands
 import org.neo4j.cypher.internal.compiler.v2_0._
 import expressions.{Closure, Expression}
 import pipes.QueryState
-import symbols._
 import collection.Seq
 import org.neo4j.cypher.internal.helpers.CollectionSupport
 
@@ -74,7 +73,11 @@ case class AllInCollection(collection: Expression, symbolName: String, inner: Pr
   def seqMethod[U](value: Seq[U]): CollectionPredicate[U] = forAll(value)
   def name = "all"
 
-  def rewrite(f: (Expression) => Expression) = AllInCollection(collection.rewrite(f), symbolName, inner.rewrite(f))
+  def rewrite(f: (Expression) => Expression) =
+    f(AllInCollection(
+      collection = collection.rewrite(f),
+      symbolName = symbolName,
+      inner = inner.rewriteAsPredicate(f)))
 }
 
 case class AnyInCollection(collection: Expression, symbolName: String, inner: Predicate)
@@ -98,7 +101,11 @@ case class AnyInCollection(collection: Expression, symbolName: String, inner: Pr
 
   def name = "any"
 
-  def rewrite(f: (Expression) => Expression) = AnyInCollection(collection.rewrite(f), symbolName, inner.rewrite(f))
+  def rewrite(f: (Expression) => Expression) =
+    f(AnyInCollection(
+      collection = collection.rewrite(f),
+      symbolName = symbolName,
+      inner = inner.rewriteAsPredicate(f)))
 }
 
 case class NoneInCollection(collection: Expression, symbolName: String, inner: Predicate)
@@ -122,7 +129,11 @@ case class NoneInCollection(collection: Expression, symbolName: String, inner: P
 
   def name = "none"
 
-  def rewrite(f: (Expression) => Expression) = NoneInCollection(collection.rewrite(f), symbolName, inner.rewrite(f))
+  def rewrite(f: (Expression) => Expression) =
+    f(NoneInCollection(
+      collection = collection.rewrite(f),
+      symbolName = symbolName,
+      inner = inner.rewriteAsPredicate(f)))
 }
 
 case class SingleInCollection(collection: Expression, symbolName: String, inner: Predicate)
@@ -147,5 +158,9 @@ case class SingleInCollection(collection: Expression, symbolName: String, inner:
 
   def name = "single"
 
-  def rewrite(f: (Expression) => Expression) = SingleInCollection(collection.rewrite(f), symbolName, inner.rewrite(f))
+  def rewrite(f: (Expression) => Expression) =
+    f(SingleInCollection(
+      collection = collection.rewrite(f),
+      symbolName = symbolName,
+      inner = inner.rewriteAsPredicate(f)))
 }

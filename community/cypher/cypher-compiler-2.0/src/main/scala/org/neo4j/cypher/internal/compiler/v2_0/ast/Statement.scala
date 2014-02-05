@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,10 +20,7 @@
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.commands
 
-trait Statement extends AstNode {
-  def semanticCheck : SemanticCheck
-
-  def toLegacyQuery : commands.AbstractQuery
+trait Statement extends ASTNode {
+  def semanticCheck: SemanticCheck
 }

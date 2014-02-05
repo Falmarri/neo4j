@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -622,6 +622,17 @@ public class Neo4jMatchers
         try ( Transaction ignored = beansAPI.beginTx() )
         {
             return beansAPI.schema().getIndexState( indexDef );
+        }
+    }
+
+    public static ConstraintDefinition createConstraint( GraphDatabaseService db, Label label, String propertyKey )
+    {
+        try ( Transaction tx = db.beginTx() )
+        {
+            ConstraintDefinition constraint =
+                    db.schema().constraintFor( label ).assertPropertyIsUnique( propertyKey ).create();
+            tx.success();
+            return constraint;
         }
     }
 }

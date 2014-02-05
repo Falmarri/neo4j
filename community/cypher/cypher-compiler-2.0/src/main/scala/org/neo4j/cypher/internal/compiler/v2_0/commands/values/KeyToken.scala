@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -47,7 +47,7 @@ sealed abstract class KeyToken(typ: TokenType) extends Expression {
 
   def apply(ctx: ExecutionContext)(implicit state: QueryState) = ???
 
-  protected def calculateType(symbols: SymbolTable) = StringType()
+  protected def calculateType(symbols: SymbolTable) = CTString
 }
 
 object KeyToken {

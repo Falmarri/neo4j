@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -83,6 +83,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 import static org.neo4j.helpers.Clock.SYSTEM_CLOCK;
 import static org.neo4j.helpers.collection.Iterables.option;
+import static org.neo4j.kernel.impl.util.JobScheduler.Group.serverTransactionTimeout;
 import static org.neo4j.server.configuration.Configurator.DEFAULT_SCRIPT_SANDBOXING_ENABLED;
 import static org.neo4j.server.configuration.Configurator.DEFAULT_TRANSACTION_TIMEOUT;
 import static org.neo4j.server.configuration.Configurator.SCRIPT_SANDBOXING_ENABLED_KEY;
@@ -93,6 +94,13 @@ public abstract class AbstractNeoServer implements NeoServer
 {
     @Deprecated // Please use #logging instead of this.
     public static final Logger log = Logger.getLogger( AbstractNeoServer.class );
+    private static final long MINIMUM_TIMEOUT = 1000L;
+    /**
+     * We add a second to the timeout if the user configures a 1-second timeout.
+     *
+     * This ensures the expiry time displayed to the user is always at least 1 second, even after it is rounded down.
+     */
+    private static final long ROUNDING_SECOND = 1000L;
 
     protected Database database;
     protected CypherExecutor cypherExecutor;
@@ -106,7 +114,7 @@ public abstract class AbstractNeoServer implements NeoServer
     private InterruptThreadTimer interruptStartupTimer;
     private DatabaseActions databaseActions;
 
-    private RoundRobinJobScheduler rrdDbScheduler = new RoundRobinJobScheduler();
+    private RoundRobinJobScheduler rrdDbScheduler;
     private RrdDbWrapper rrdDbWrapper;
 
     private TransactionFacade transactionFacade;
@@ -158,8 +166,9 @@ public abstract class AbstractNeoServer implements NeoServer
                 databaseActions = createDatabaseActions();
 
                 // TODO: RrdDb is not needed once we remove the old webadmin
+                rrdDbScheduler = new RoundRobinJobScheduler();
                 rrdDbWrapper = new RrdFactory( configurator.configuration() )
-                        .createRrdDbAndSampler( database, new RoundRobinJobScheduler() );
+                        .createRrdDbAndSampler( database, rrdDbScheduler );
     
                 transactionFacade = createTransactionalActions();
     
@@ -236,7 +245,7 @@ public abstract class AbstractNeoServer implements NeoServer
         // ensure that this is > 0
         long runEvery = round( timeoutMillis / 2.0 );
 
-        resolveDependency( JobScheduler.class ).scheduleRecurring( new Runnable()
+        resolveDependency( JobScheduler.class ).scheduleRecurring( serverTransactionTimeout, new Runnable()
         {
             @Override
             public void run()
@@ -254,10 +263,15 @@ public abstract class AbstractNeoServer implements NeoServer
         );
     }
 
+    /**
+     * We are going to ensure the minimum timeout is 2 seconds. The timeout value is communicated to the user in
+     * seconds rounded down, meaning if a user set a 1 second timeout, he would be told there was less than 1 second
+     * remaining before he would need to renew the timeout.
+     */
     private long getTransactionTimeoutMillis()
     {
         final int timeout = configurator.configuration().getInt( TRANSACTION_TIMEOUT, DEFAULT_TRANSACTION_TIMEOUT );
-        return Math.max( SECONDS.toMillis( timeout ), 1000L );
+        return Math.max( SECONDS.toMillis( timeout ), MINIMUM_TIMEOUT + ROUNDING_SECOND);
     }
 
     protected InterruptThreadTimer createInterruptStartupTimer()

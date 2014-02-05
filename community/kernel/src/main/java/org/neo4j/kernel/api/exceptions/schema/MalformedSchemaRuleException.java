@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,6 +19,8 @@
  */
 package org.neo4j.kernel.api.exceptions.schema;
 
+import org.neo4j.kernel.api.exceptions.Status;
+
 /**
  * Signals that a schema rule in the schema store was malformed, i.e. contained corrupted data and could not
  * be parsed.
@@ -27,16 +29,16 @@ public class MalformedSchemaRuleException extends SchemaKernelException
 {
     public MalformedSchemaRuleException( Throwable cause, String message, Object... parameters )
     {
-        super( cause, message, parameters );
+        super( Status.General.CorruptSchemaRule, cause, message, parameters );
     }
 
     public MalformedSchemaRuleException( String message, Throwable cause )
     {
-        super( message, cause );
+        super( Status.General.CorruptSchemaRule, message, cause );
     }
 
     public MalformedSchemaRuleException( String message )
     {
-        super( message );
+        super( Status.General.CorruptSchemaRule, message );
     }
 }

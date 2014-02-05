@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -22,8 +22,10 @@ package org.neo4j.kernel;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArraySet;
+
 import javax.transaction.Status;
 import javax.transaction.TransactionManager;
+
 import org.neo4j.graphdb.event.TransactionData;
 import org.neo4j.graphdb.event.TransactionEventHandler;
 import org.neo4j.kernel.lifecycle.Lifecycle;
@@ -38,7 +40,7 @@ public class TransactionEventHandlers
     implements Lifecycle
 {
     protected final Collection<TransactionEventHandler> transactionEventHandlers = new CopyOnWriteArraySet<TransactionEventHandler>();
-    private TransactionManager txManager;
+    private final TransactionManager txManager;
 
     public TransactionEventHandlers(
         TransactionManager txManager
@@ -163,7 +165,6 @@ public class TransactionEventHandlers
 
     public static class HandlerAndState
     {
-        @SuppressWarnings("unchecked")
         private final TransactionEventHandler handler;
         private final Object state;
 

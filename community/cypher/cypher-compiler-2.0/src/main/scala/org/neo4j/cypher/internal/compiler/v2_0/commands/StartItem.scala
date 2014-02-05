@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -22,26 +22,38 @@ package org.neo4j.cypher.internal.compiler.v2_0.commands
 import org.neo4j.cypher.internal.compiler.v2_0.commands.expressions._
 import org.neo4j.cypher.internal.compiler.v2_0.mutation._
 import org.neo4j.cypher.internal.compiler.v2_0.symbols._
+import org.neo4j.cypher.internal.compiler.v2_0.data.SimpleVal
+import org.neo4j.cypher.internal.helpers.Materialized
+import org.neo4j.cypher.internal.compiler.v2_0.data.SimpleVal._
 import org.neo4j.cypher.internal.compiler.v2_0.mutation.MergeNodeAction
 import org.neo4j.cypher.internal.compiler.v2_0.mutation.CreateUniqueAction
 import org.neo4j.cypher.internal.compiler.v2_0.commands.expressions.Literal
 import org.neo4j.cypher.internal.compiler.v2_0.mutation.CreateNode
-import org.neo4j.cypher.internal.compiler.v2_0.symbols.SymbolTable
+import org.neo4j.cypher.internal.compiler.v2_0.data.SeqVal
 import org.neo4j.cypher.internal.compiler.v2_0.mutation.CreateRelationship
 
 trait NodeStartItemIdentifiers extends StartItem {
-  def identifiers: Seq[(String, CypherType)] = Seq(identifierName -> NodeType())
+  def identifiers: Seq[(String, CypherType)] = Seq(identifierName -> CTNode)
 }
 
 trait RelationshipStartItemIdentifiers extends StartItem {
-  def identifiers: Seq[(String, CypherType)] = Seq(identifierName -> RelationshipType())
+  def identifiers: Seq[(String, CypherType)] = Seq(identifierName -> CTRelationship)
 }
 
 abstract class StartItem(val identifierName: String, val args: Map[String, String])
   extends TypeSafe with AstNode[StartItem] {
   def mutating: Boolean
-  def name: String = getClass.getSimpleName
+  def producerType: String = getClass.getSimpleName
   def identifiers: Seq[(String, CypherType)]
+
+  def description: Seq[(String, SimpleVal)] = {
+    val argValues = Materialized.mapValues(args, fromStr).toSeq
+    val otherValues = Seq(
+      "producer" -> SimpleVal.fromStr(producerType),
+      "identifiers" -> SeqVal(identifiers.toMap.keys.map(SimpleVal.fromStr).toSeq)
+    )
+    argValues ++ otherValues
+  }
 }
 
 trait ReadOnlyStartItem {

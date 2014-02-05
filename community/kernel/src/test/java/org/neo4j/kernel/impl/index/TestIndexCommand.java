@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,6 +19,12 @@
  */
 package org.neo4j.kernel.impl.index;
 
+import static java.io.File.createTempFile;
+import static org.junit.Assert.assertEquals;
+import static org.neo4j.helpers.collection.MapUtil.stringMap;
+import static org.neo4j.kernel.impl.index.IndexCommand.readCommand;
+import static org.neo4j.kernel.impl.util.FileUtils.copyFile;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -31,21 +37,19 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.junit.Rule;
 import org.junit.Test;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.helpers.Pair;
-import org.neo4j.kernel.impl.transaction.xaframework.DefaultLogBufferFactory;
+import org.neo4j.kernel.impl.transaction.xaframework.DirectMappedLogBuffer;
 import org.neo4j.kernel.impl.transaction.xaframework.LogBuffer;
 import org.neo4j.kernel.impl.transaction.xaframework.XaCommand;
 import org.neo4j.kernel.impl.util.FileUtils;
+import org.neo4j.kernel.monitoring.ByteCounterMonitor;
+import org.neo4j.kernel.monitoring.Monitors;
+import org.neo4j.test.TargetDirectory;
 
-import static java.io.File.createTempFile;
-
-import static org.junit.Assert.assertEquals;
-import static org.neo4j.helpers.collection.MapUtil.stringMap;
-import static org.neo4j.kernel.impl.index.IndexCommand.readCommand;
-import static org.neo4j.kernel.impl.util.FileUtils.copyFile;
 
 public class TestIndexCommand
 {
@@ -63,6 +67,9 @@ public class TestIndexCommand
     private static final int INT_VALUE = 345;
     private static final Map<String, String> SOME_CONFIG = stringMap( "type", "exact", "provider", "lucene" );
     
+    @Rule
+    public TargetDirectory.TestDirectory directory = TargetDirectory.forTest( TestIndexCommand.class ).testDirectory();
+
     @Test
     public void testWriteReadTruncate() throws Exception
     {
@@ -98,7 +105,7 @@ public class TestIndexCommand
 
     private File copyAndTruncateFile( File file, long fileSize ) throws IOException
     {
-        File copy = createTempFile( "index", "copy" );
+        File copy = createTempFile( "index", "copy", directory.directory() );
         copyFile( file, copy );
         RandomAccessFile raFile = new RandomAccessFile( copy, "rw" );
         try
@@ -165,7 +172,7 @@ public class TestIndexCommand
         try
         {
             FileChannel fileChannel = randomAccessFile.getChannel();
-            LogBuffer writeBuffer = new DefaultLogBufferFactory().create( fileChannel );
+            LogBuffer writeBuffer = new DirectMappedLogBuffer( fileChannel, new Monitors().newMonitor( ByteCounterMonitor.class ) );
             startPositions = new ArrayList<Long>();
             for ( XaCommand command : commands )
             {

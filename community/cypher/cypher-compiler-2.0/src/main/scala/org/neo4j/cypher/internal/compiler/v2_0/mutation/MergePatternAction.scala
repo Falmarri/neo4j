@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -35,6 +35,8 @@ case class MergePatternAction(patterns: Seq[Pattern],
   def children: Seq[AstNode[_]] = patterns ++ actions ++ onMatch
 
   def readyToExecute = maybeMatchPipe.nonEmpty && maybeUpdateActions.nonEmpty
+
+  def readyToUpdate(symbols: SymbolTable) = !readyToExecute && symbolDependenciesMet(symbols)
 
   def exec(context: ExecutionContext, state: QueryState): Iterator[ExecutionContext] = {
     state.initialContext = Some(context)
@@ -93,13 +95,13 @@ case class MergePatternAction(patterns: Seq[Pattern],
       maybeMatchPipe = maybeMatchPipe)
 
   def symbolTableDependencies: Set[String] = {
-    val dependencies = (patterns.flatMap(_.symbolTableDependencies) ++ actions.flatMap(_.symbolTableDependencies)).toSet
-    val introducedIdentifiers = actions.flatMap(_.identifiers.map(_._1))
+    val dependencies = (
+      patterns.flatMap(_.symbolTableDependencies) ++
+      actions.flatMap(_.symbolTableDependencies) ++
+      onMatch.flatMap(_.symbolTableDependencies)).toSet
+
+    val introducedIdentifiers = patterns.flatMap(_.identifiers).toSet
+
     dependencies -- introducedIdentifiers
   }
-
-  override def symbolDependenciesMet(symbols: SymbolTable): Boolean =
-    patterns.exists {
-      pattern => pattern.possibleStartPoints.exists { case (k, _) => symbols.hasIdentifierNamed(k) }
-    }
 }

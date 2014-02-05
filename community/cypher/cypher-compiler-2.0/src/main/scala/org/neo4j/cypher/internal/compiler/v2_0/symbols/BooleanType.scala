@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,12 +20,10 @@
 package org.neo4j.cypher.internal.compiler.v2_0.symbols
 
 object BooleanType {
-  val instance = new BooleanType()
-
-  def apply() = instance
+  val instance = new BooleanType() {
+    val parentType = CTAny
+    override val toString = "Boolean"
+  }
 }
 
-class BooleanType extends AnyType {
-  override def parentType: CypherType = AnyType()
-  override def toString = "Boolean"
-}
+sealed abstract class BooleanType extends CypherType

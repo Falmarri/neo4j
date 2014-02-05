@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -31,6 +31,7 @@ public class LuceneSchemaIndexProviderTest extends IndexProviderCompatibilityTes
     protected LuceneSchemaIndexProvider createIndexProvider()
     {
         return new LuceneSchemaIndexProvider( new DirectoryFactory.InMemoryDirectoryFactory(),
-                new Config( stringMap( "store_dir", forTest( getClass() ).graphDbDir( true ).getAbsolutePath() ) ) );
+                new Config( stringMap( "store_dir", forTest( getClass() ).graphDbDir( true ).getAbsolutePath() ) )
+        );
     }
 }

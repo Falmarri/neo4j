@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -25,11 +25,11 @@ public class EntityNotFoundException extends KernelException
 {
     public EntityNotFoundException( EntityType entityType, long entityId, Throwable cause )
     {
-        super( cause, "Unable to load %s with id %s.", entityType.name(), entityId );
+        super( Status.Statement.EntityNotFound, cause, "Unable to load %s with id %s.", entityType.name(), entityId );
     }
 
     public EntityNotFoundException( EntityType entityType, long entityId )
     {
-        super( "Unable to load %s with id %s.", entityType.name(), entityId );
+        super( Status.Statement.EntityNotFound, "Unable to load %s with id %s.", entityType.name(), entityId );
     }
 }

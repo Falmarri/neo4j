@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,58 +20,45 @@
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.commands
 
-sealed trait ReturnItems extends AstNode with SemanticCheckable {
-  def toCommands : Seq[commands.ReturnColumn]
-  def declareIdentifiers(currentState: SemanticState) : SemanticCheck
+sealed trait ReturnItems extends ASTNode with SemanticCheckable {
+  def declareIdentifiers(currentState: SemanticState): SemanticCheck
 }
 
-case class ListedReturnItems(items: Seq[ReturnItem], token: InputToken) extends ReturnItems {
+case class ListedReturnItems(items: Seq[ReturnItem])(val position: InputPosition) extends ReturnItems {
   def semanticCheck = items.semanticCheck
 
-  def declareIdentifiers(currentState: SemanticState) = {
-    items.foldLeft(SemanticCheckResult.success)((sc, item) => item.alias match {
-      case Some(identifier) => sc then identifier.declare(item.expression.types(currentState))
-      case None => sc
+  def declareIdentifiers(currentState: SemanticState) =
+    items.foldSemanticCheck(item => item.alias match {
+      case Some(identifier) => identifier.declare(item.expression.types(currentState))
+      case None             => SemanticCheckResult.success
     })
-  }
-
-  def toCommands = items.map(_.toCommand)
 }
 
-case class ReturnAll(token: InputToken) extends ReturnItems {
+case class ReturnAll()(val position: InputPosition) extends ReturnItems {
   def semanticCheck = SemanticCheckResult.success
 
   def declareIdentifiers(currentState: SemanticState) = s => SemanticCheckResult.success(s.importSymbols(currentState.symbolTable))
-
-  def toCommands = Seq(commands.AllIdentifiers())
 }
 
 
-sealed trait ReturnItem extends AstNode with SemanticCheckable {
+sealed trait ReturnItem extends ASTNode with SemanticCheckable {
   def expression: Expression
   def alias: Option[Identifier]
   def name: String
 
   def semanticCheck = expression.semanticCheck(Expression.SemanticContext.Results)
-
-  def toCommand : commands.ReturnItem
 }
 
-case class UnaliasedReturnItem(expression: Expression, token: InputToken) extends ReturnItem {
+case class UnaliasedReturnItem(expression: Expression, inputText: String)(val position: InputPosition) extends ReturnItem {
   val alias = expression match {
     case i: Identifier => Some(i)
     case _ => None
   }
-  val name = alias.map(_.name) getOrElse { token.toString.trim }
-
-  def toCommand = commands.ReturnItem(expression.toCommand, name)
+  val name = alias.map(_.name) getOrElse { inputText.trim }
 }
 
-case class AliasedReturnItem(expression: Expression, identifier: Identifier, token: InputToken) extends ReturnItem {
+case class AliasedReturnItem(expression: Expression, identifier: Identifier)(val position: InputPosition) extends ReturnItem {
   val alias = Some(identifier)
   val name = identifier.name
-
-  def toCommand = commands.ReturnItem(expression.toCommand, name, true)
 }

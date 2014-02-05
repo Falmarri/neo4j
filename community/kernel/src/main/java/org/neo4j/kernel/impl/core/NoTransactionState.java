@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -26,6 +26,7 @@ import org.neo4j.graphdb.NotInTransactionException;
 import org.neo4j.graphdb.event.TransactionData;
 import org.neo4j.helpers.collection.Iterables;
 import org.neo4j.kernel.api.properties.DefinedProperty;
+import org.neo4j.kernel.impl.persistence.PersistenceManager.ResourceHolder;
 import org.neo4j.kernel.impl.transaction.RemoteTxHook;
 import org.neo4j.kernel.impl.transaction.xaframework.TxIdGenerator;
 import org.neo4j.kernel.impl.util.ArrayMap;
@@ -207,6 +208,17 @@ public class NoTransactionState implements TransactionState
 
     @Override
     public void markAsRemotelyInitialized()
+    {
+    }
+
+    @Override
+    public ResourceHolder getNeoStoreTransaction()
+    {
+        return null;
+    }
+
+    @Override
+    public void setNeoStoreTransaction( ResourceHolder neoStoreTransaction )
     {
     }
 }

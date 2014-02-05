@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -33,27 +33,21 @@ import java.util.Set;
 import org.codehaus.jackson.JsonNode;
 import org.junit.Test;
 import org.mockito.internal.stubbing.answers.ThrowsException;
-
 import org.neo4j.cypher.javacompat.ExecutionResult;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Path;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.ResourceIterator;
+import org.neo4j.kernel.api.exceptions.Status;
 import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.kernel.impl.util.TestLogger;
 import org.neo4j.server.rest.transactional.error.Neo4jError;
-import org.neo4j.server.rest.transactional.error.Status;
 import org.neo4j.test.mocking.GraphMock;
 import org.neo4j.test.mocking.Link;
 
 import static java.util.Arrays.asList;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
+import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
 import static org.neo4j.helpers.collection.MapUtil.map;
 import static org.neo4j.kernel.impl.util.TestLogger.LogCall.error;
 import static org.neo4j.server.rest.domain.JsonHelper.jsonNode;
@@ -300,6 +294,34 @@ public class ExecutionResultSerializerTest
         String result = output.toString( "UTF-8" );
         assertEquals( "{\"results\":[{\"columns\":[\"node\"]," +
                       "\"data\":[{\"row\":[{\"d\":[1,0,1,2],\"e\":[\"a\",\"b\",\"ääö\"],\"b\":true,\"c\":[1,0,1,2],\"a\":12}]}]}]," +
+                      "\"errors\":[]}", result );
+    }
+
+    @Test
+    public void shouldSerializeNestedEntities() throws Exception
+    {
+        // given
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ExecutionResultSerializer serializer = new ExecutionResultSerializer( output, null, StringLogger.DEV_NULL );
+
+        Node a = node( 1, properties( property( "foo", 12 ) ) );
+        Node b = node( 2, properties( property( "bar", false ) ) );
+        Relationship r = relationship( 1, properties( property( "baz", "quux" ) ), a, "FRAZZLE", b );
+        ExecutionResult executionResult = mockExecutionResult( map(
+                "nested", map(
+                "node", a,
+                "edge", r,
+                "path", path( a, link(r, b) )
+        ) ) );
+
+        // when
+        serializer.statementResult( executionResult, false );
+        serializer.finish();
+
+        // then
+        String result = output.toString( "UTF-8" );
+        assertEquals( "{\"results\":[{\"columns\":[\"nested\"]," +
+                      "\"data\":[{\"row\":[{\"node\":{\"foo\":12},\"edge\":{\"baz\":\"quux\"},\"path\":[{\"foo\":12},{\"baz\":\"quux\"},{\"bar\":false}]}]}]}]," +
                       "\"errors\":[]}", result );
     }
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -43,8 +43,8 @@ case class CoalesceFunction(arguments: Expression*) extends Expression {
 
   def calculateType(symbols: SymbolTable) = {
     arguments.map(_.getType(symbols)) match {
-      case Seq() => AnyType()
-      case types => types.reduceLeft(_ mergeDown _)
+      case Seq() => CTAny
+      case types => types.reduceLeft(_ mergeUp _)
     }
   }
 

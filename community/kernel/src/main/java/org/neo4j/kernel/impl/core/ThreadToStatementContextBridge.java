@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -50,7 +50,7 @@ public class ThreadToStatementContextBridge extends LifecycleAdapter implements 
     private KernelTransaction transaction()
     {
         checkIfShutdown();
-        KernelTransaction transaction = persistenceManager.currentKernelTransaction();
+        KernelTransaction transaction = persistenceManager.currentKernelTransactionForReading();
         if ( transaction == null )
         {
             throw new NotInTransactionException();
@@ -76,6 +76,6 @@ public class ThreadToStatementContextBridge extends LifecycleAdapter implements 
     {
         checkIfShutdown();
         // Contract: Persistence manager throws NotInTransactionException if we are not in a transaction.
-        persistenceManager.currentKernelTransaction();
+        persistenceManager.getCurrentTransaction();
     }
 }

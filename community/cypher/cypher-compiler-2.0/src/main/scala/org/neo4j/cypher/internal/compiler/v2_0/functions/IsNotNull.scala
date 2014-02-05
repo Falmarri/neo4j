@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,18 +20,16 @@
 package org.neo4j.cypher.internal.compiler.v2_0.functions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands
-import org.neo4j.cypher.internal.compiler.v2_0.ast.FunctionInvocation
+import ast.convert.ExpressionConverters._
+import symbols._
 
-case object IsNotNull extends PredicateFunction {
+case object IsNotNull extends PredicateFunction with SimpleTypedFunction {
   def name = "IS NOT NULL"
 
-  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation) : SemanticCheck =
-    checkArgs(invocation, 1) then
-    invocation.specifyType(BooleanType())
+  val signatures = Vector(
+    Signature(argumentTypes = Vector(CTAny), outputType = CTBoolean)
+  )
 
-
-  protected def internalToPredicate(invocation: FunctionInvocation) =
-    commands.Not(commands.IsNull(invocation.arguments(0).toCommand))
+  protected def internalToPredicate(invocation: ast.FunctionInvocation) =
+    commands.Not(commands.IsNull(invocation.arguments(0).asCommandExpression))
 }

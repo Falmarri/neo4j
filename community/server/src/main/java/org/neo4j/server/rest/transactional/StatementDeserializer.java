@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -32,20 +32,17 @@ import org.codehaus.jackson.JsonParseException;
 import org.codehaus.jackson.JsonParser;
 import org.codehaus.jackson.JsonToken;
 import org.codehaus.jackson.map.JsonMappingException;
-
 import org.neo4j.helpers.collection.PrefetchingIterator;
+import org.neo4j.kernel.api.exceptions.Status;
 import org.neo4j.server.rest.transactional.error.Neo4jError;
-import org.neo4j.server.rest.transactional.error.Status;
 
 import static java.util.Arrays.asList;
 import static java.util.Collections.unmodifiableMap;
-
 import static org.codehaus.jackson.JsonToken.END_ARRAY;
 import static org.codehaus.jackson.JsonToken.END_OBJECT;
 import static org.codehaus.jackson.JsonToken.FIELD_NAME;
 import static org.codehaus.jackson.JsonToken.START_ARRAY;
 import static org.codehaus.jackson.JsonToken.START_OBJECT;
-
 import static org.neo4j.helpers.collection.IteratorUtil.emptyIterator;
 import static org.neo4j.helpers.collection.MapUtil.map;
 

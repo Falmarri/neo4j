@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -94,4 +94,21 @@ trait CollectionSupport {
       case y                => y
     }
   }
+
+  implicit class RichSeq[T](inner: Seq[T]) {
+    def foldMap[A](acc: A)(f: (A, T) => (A, T)): (A, Seq[T]) = {
+      val builder = Seq.newBuilder[T]
+      var current = acc
+
+      for (element <- inner) {
+        val (newAcc, newElement) = f(current, element)
+        current = newAcc
+        builder += newElement
+      }
+
+      (current, builder.result())
+    }
+  }
+
+
 }

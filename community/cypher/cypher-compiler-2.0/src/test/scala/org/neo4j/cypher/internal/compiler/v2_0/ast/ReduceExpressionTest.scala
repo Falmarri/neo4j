@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -29,28 +29,23 @@ class ReduceExpressionTest extends Assertions {
 
   @Test
   def shouldEvaluateReduceExpressionWithTypedIdentifiers() {
-    val accumulatorType = TypeSet(StringType())
-    val collectionType = CollectionType(IntegerType())
-    val error = SemanticError("dummy error", DummyToken(10,11))
+    val error = SemanticError("dummy error", DummyPosition(10))
 
-    val reduceExpression = new Expression {
-      def token = DummyToken(10,12)
-      def semanticCheck(ctx: SemanticContext) = s => {
-        assert(s.symbolTypes("x") === accumulatorType)
-        assert(s.symbolTypes("y") === TypeSet(collectionType.iteratedType))
-        (this.specifyType(StringType()) then error)(s)
+    val reduceExpression = new DummyExpression(CTAny, DummyPosition(10)) {
+      override def semanticCheck(ctx: SemanticContext) = s => {
+        assert(s.symbolTypes("x") === CTString.invariant)
+        assert(s.symbolTypes("y") === CTInteger.invariant)
+        (this.specifyType(CTString) then error)(s)
       }
-
-      def toCommand = ???
     }
 
     val filter = ReduceExpression(
-      accumulator = Identifier("x", DummyToken(2,3)),
-      init = DummyExpression(accumulatorType, DummyToken(4, 5)),
-      id = Identifier("y", DummyToken(6, 7)),
-      collection = DummyExpression(TypeSet(collectionType), DummyToken(8,9)),
-      expression = reduceExpression,
-      token = DummyToken(0, 12))
+      accumulator = Identifier("x")(DummyPosition(2)),
+      init = DummyExpression(CTString),
+      identifier = Identifier("y")(DummyPosition(6)),
+      collection = DummyExpression(CTCollection(CTInteger)),
+      expression = reduceExpression
+    )(DummyPosition(0))
 
     val result = filter.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
     assert(result.errors === Seq(error))
@@ -60,61 +55,55 @@ class ReduceExpressionTest extends Assertions {
 
   @Test
   def shouldReturnMinimalTypeOfAccumulatorAndReduceFunction() {
-    val accumulatorType = TypeSet(StringType(), NumberType())
-    val collectionType = CollectionType(IntegerType())
+    val initType = CTString.covariant | CTDouble.covariant
+    val collectionType = CTCollection(CTInteger)
 
-    val reduceExpression = new Expression {
-      def token = DummyToken(10,12)
-      def semanticCheck(ctx: SemanticContext) = s => {
-        assert(s.symbolTypes("x") === accumulatorType)
-        assert(s.symbolTypes("y") === TypeSet(collectionType.iteratedType))
-        (this.specifyType(DoubleType()) then SemanticCheckResult.success)(s)
+    val reduceExpression = new DummyExpression(CTAny, DummyPosition(10)) {
+      override def semanticCheck(ctx: SemanticContext) = s => {
+        assert(s.symbolTypes("x") === (CTString | CTDouble))
+        assert(s.symbolTypes("y") === collectionType.innerType.invariant)
+        (this.specifyType(CTDouble) then SemanticCheckResult.success)(s)
       }
-
-      def toCommand = ???
     }
 
     val filter = ReduceExpression(
-      accumulator = Identifier("x", DummyToken(2,3)),
-      init = DummyExpression(accumulatorType, DummyToken(4, 5)),
-      id = Identifier("y", DummyToken(6, 7)),
-      collection = DummyExpression(TypeSet(collectionType), DummyToken(8,9)),
-      expression = reduceExpression,
-      token = DummyToken(0, 12))
+      accumulator = Identifier("x")(DummyPosition(2)),
+      init = DummyExpression(initType),
+      identifier = Identifier("y")(DummyPosition(6)),
+      collection = DummyExpression(collectionType),
+      expression = reduceExpression
+    )(DummyPosition(0))
 
     val result = filter.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
     assert(result.errors === Seq())
-    assert(filter.types(result.state) === TypeSet(NumberType()))
+    assert(filter.types(result.state) === (CTAny | CTDouble))
   }
 
   @Test
   def shouldFailSemanticCheckIfReduceFunctionTypeDiffersFromAccumulator() {
-    val accumulatorType = TypeSet(StringType(), NumberType())
-    val collectionType = CollectionType(IntegerType())
+    val accumulatorType = CTString | CTNumber
+    val collectionType = CTCollection(CTInteger)
 
-    val reduceExpression = new Expression {
-      def token = DummyToken(10,12)
-      def semanticCheck(ctx: SemanticContext) = s => {
+    val reduceExpression = new DummyExpression(CTAny, DummyPosition(10)) {
+      override def semanticCheck(ctx: SemanticContext) = s => {
         assert(s.symbolTypes("x") === accumulatorType)
-        assert(s.symbolTypes("y") === TypeSet(collectionType.iteratedType))
-        (this.specifyType(NodeType()) then SemanticCheckResult.success)(s)
+        assert(s.symbolTypes("y") === collectionType.innerType.invariant)
+        (this.specifyType(CTNode) then SemanticCheckResult.success)(s)
       }
-
-      def toCommand = ???
     }
 
     val filter = ReduceExpression(
-      accumulator = Identifier("x", DummyToken(2,3)),
-      init = DummyExpression(accumulatorType, DummyToken(4, 5)),
-      id = Identifier("y", DummyToken(6, 7)),
-      collection = DummyExpression(TypeSet(collectionType), DummyToken(8,9)),
-      expression = reduceExpression,
-      token = DummyToken(0, 12))
+      accumulator = Identifier("x")(DummyPosition(2)),
+      init = DummyExpression(accumulatorType),
+      identifier = Identifier("y")(DummyPosition(6)),
+      collection = DummyExpression(collectionType),
+      expression = reduceExpression
+    )(DummyPosition(0))
 
     val result = filter.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
     assert(result.errors.size === 1)
-    assert(result.errors.head.msg === "Type mismatch: expected String or Number but was Node")
-    assert(result.errors.head.token === reduceExpression.token)
+    assert(result.errors.head.msg === "Type mismatch: expected Number or String but was Node")
+    assert(result.errors.head.position === reduceExpression.position)
   }
 
 }

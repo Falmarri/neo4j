@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -64,7 +64,7 @@ trait RelationshipPattern {
 case class SingleNode(name: String,
                       labels: Seq[KeyToken] = Seq.empty,
                       properties: Map[String, Expression]=Map.empty) extends Pattern with GraphElementPropertyFunctions {
-  def possibleStartPoints = Seq(name -> NodeType())
+  def possibleStartPoints = Seq(name -> CTNode)
 
   def predicate = True()
 
@@ -76,7 +76,7 @@ case class SingleNode(name: String,
 
   def children = Seq.empty
 
-  def symbolTableDependencies = Set.empty
+  def symbolTableDependencies = properties.symboltableDependencies
 
   override def toString: String = {
     val namePart = if (notNamed(name)) s"${name.drop(9)}" else name
@@ -111,14 +111,17 @@ case class RelatedTo(left: SingleNode,
     if (info == "") "" else "[" + info + "]"
   }
 
-  val possibleStartPoints: Seq[(String, MapType)] = left.possibleStartPoints ++ right.possibleStartPoints :+ relName->RelationshipType()
+  val possibleStartPoints: Seq[(String, CypherType)] = left.possibleStartPoints ++ right.possibleStartPoints :+ relName->CTRelationship
 
   def rewrite(f: (Expression) => Expression) =
     new RelatedTo(left.rewrite(f), right.rewrite(f), relName, relTypes, direction, properties.rewrite(f))
 
   def rels = Seq(relName)
 
-  def symbolTableDependencies = Set.empty
+  def symbolTableDependencies =
+      properties.symboltableDependencies ++
+      left.symbolTableDependencies ++
+      right.symbolTableDependencies
 
   def children = Seq.empty
 
@@ -152,7 +155,10 @@ case class VarLengthRelatedTo(pathName: String,
 
   override def toString: String = pathName + "=" + left + leftArrow(direction) + relInfo + rightArrow(direction) + right
 
-  def symbolTableDependencies = Set.empty
+  def symbolTableDependencies =
+    properties.symboltableDependencies ++
+      left.symbolTableDependencies ++
+      right.symbolTableDependencies
 
   def cloneWithOtherName(newName: String) = copy(pathName = newName)
 
@@ -176,10 +182,10 @@ case class VarLengthRelatedTo(pathName: String,
     new VarLengthRelatedTo(pathName, left.rewrite(f), right.rewrite(f),
       minHops, maxHops, relTypes, direction, relIterator, properties.rewrite(f))
 
-  lazy val possibleStartPoints: Seq[(String, AnyType)] =
+  lazy val possibleStartPoints: Seq[(String, CypherType)] =
     left.possibleStartPoints ++
       right.possibleStartPoints :+
-      pathName -> PathType()
+      pathName -> CTPath
 
   def rels = Seq()
 
@@ -205,7 +211,9 @@ case class ShortestPath(pathName: String,
 
   def cloneWithOtherName(newName: String) = copy(pathName = newName)
 
-  def symbolTableDependencies = Set(left.name, right.name)
+  def symbolTableDependencies =
+      left.symbolTableDependencies ++
+      right.symbolTableDependencies
 
   private def relInfo: String = {
     var info = "["

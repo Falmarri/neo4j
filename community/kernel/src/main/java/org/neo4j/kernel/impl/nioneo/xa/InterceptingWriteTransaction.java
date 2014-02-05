@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -31,17 +31,17 @@ import org.neo4j.kernel.impl.nioneo.store.NeoStore;
 import org.neo4j.kernel.impl.transaction.xaframework.TransactionInterceptor;
 import org.neo4j.kernel.impl.transaction.xaframework.XaLogicalLog;
 
-public class InterceptingWriteTransaction extends WriteTransaction
+public class InterceptingWriteTransaction extends NeoStoreTransaction
 {
     private final TransactionInterceptor interceptor;
 
-    InterceptingWriteTransaction( int identifier, long lastCommittedTxWhenTransactionStarted, XaLogicalLog log,
+    InterceptingWriteTransaction( long lastCommittedTxWhenTransactionStarted, XaLogicalLog log,
                                   NeoStore neoStore, TransactionState state, CacheAccessBackDoor cacheAccess,
                                   IndexingService indexingService, LabelScanStore labelScanStore,
                                   TransactionInterceptor interceptor, IntegrityValidator validator,
                                   KernelTransactionImplementation kernelTransaction, LockService locks )
     {
-        super( identifier, lastCommittedTxWhenTransactionStarted, log, state, neoStore, cacheAccess, indexingService,
+        super( lastCommittedTxWhenTransactionStarted, log, state, neoStore, cacheAccess, indexingService,
                 labelScanStore, validator, kernelTransaction, locks );
         this.interceptor = interceptor;
     }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -29,13 +29,13 @@ class IdentifierTest extends Assertions {
 
   @Test
   def shouldDefineIdentifierDuringSemanticCheckWhenUndefined() {
-    val token = DummyToken(0, 1)
-    val identifier = Identifier("x", token)
+    val position = DummyPosition(0)
+    val identifier = Identifier("x")(position)
 
     val result = identifier.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
     assertEquals(1, result.errors.size)
-    assertEquals(token, result.errors.head.token)
+    assertEquals(position, result.errors.head.position)
     assertTrue(result.state.symbol("x").isDefined)
-    assertEquals(Set(AnyType()), result.state.symbolTypes("x"))
+    assertEquals(CTAny.covariant, result.state.symbolTypes("x"))
   }
 }

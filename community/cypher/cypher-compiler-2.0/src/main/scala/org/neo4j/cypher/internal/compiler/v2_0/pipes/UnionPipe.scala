@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -22,15 +22,13 @@ package org.neo4j.cypher.internal.compiler.v2_0.pipes
 import org.neo4j.cypher.internal.compiler.v2_0._
 import symbols._
 
-class UnionPipe(in: Seq[Pipe], columns:List[String]) extends Pipe {
+case class UnionPipe(in: Seq[Pipe], columns:List[String]) extends Pipe {
   protected def internalCreateResults(state: QueryState): Iterator[ExecutionContext] = new UnionIterator(in, state)
 
   def executionPlanDescription: PlanDescription = PlanDescription(this, "Union").
     withChildren(in.map(_.executionPlanDescription): _*)
 
-  def symbols: SymbolTable = new SymbolTable(columns.map(k => k -> AnyType()).toMap)
-
-  override val sources: Seq[Pipe] = in
+  def symbols: SymbolTable = new SymbolTable(columns.map(k => k -> CTAny).toMap)
 
   def exists(pred: Pipe => Boolean) = pred(this) || in.exists(_.exists(pred))
 }

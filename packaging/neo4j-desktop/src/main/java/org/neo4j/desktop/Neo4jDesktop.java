@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -61,7 +61,7 @@ public final class Neo4jDesktop
             DatabaseActions databaseActions = new DatabaseActions( model );
             addShutdownHook( databaseActions );
 
-            MainWindow window = new MainWindow( databaseActions, installation, model );
+            MainWindow window = new MainWindow( databaseActions, model );
             window.display();
         }
         catch ( Exception e )

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -37,6 +37,12 @@ trait ParserTest[T, J] extends Assertions {
         actual => assert(actual === expected, s"'$text' was not parsed successfully")
       }
     }
+
+    def shouldMatch(expected: PartialFunction[J, Unit]) {
+      actuals foreach {
+        actual => assert(expected.isDefinedAt(actual), s"'$text' was not parsed successfully")
+      }
+    }
   }
 
   def parsing(s: String)(implicit p: Rule1[T]): ResultCheck = convertResult(parseRule(p ~ EOI, s), s)
@@ -55,9 +61,13 @@ trait ParserTest[T, J] extends Assertions {
 
   private def convertResult(r: ParsingResult[T], input: String) = r.result match {
     case Some(t) => new ResultCheck(Seq(convert(t)), input)
-    case None    => fail(s"'${input}' failed with " + r.parseErrors.map {
-      case invalidInput: InvalidInputError => new InvalidInputErrorFormatter().format(invalidInput)
-      case error                           => error.getClass.getSimpleName
+    case None    => fail(s"'$input' failed with: " + r.parseErrors.map {
+      case error: InvalidInputError =>
+        val position = BufferPosition(error.getInputBuffer, error.getStartIndex)
+        val message = new InvalidInputErrorFormatter().format(error)
+        s"$message ($position)"
+      case error                    =>
+        error.getClass.getSimpleName
     }.mkString(","))
   }
 }

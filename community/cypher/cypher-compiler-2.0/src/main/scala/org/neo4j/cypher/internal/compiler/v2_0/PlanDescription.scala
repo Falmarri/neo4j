@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -32,6 +32,11 @@ import java.util
  * Abstract description of an execution plan
  */
 trait PlanDescription extends cypher.PlanDescription {
+
+  def arguments: Map[String, SimpleVal] = args.toMap
+
+  def cd(name: String): PlanDescription = children.find(_.name == name).get
+
   def pipe: Pipe
 
   def args: Seq[(String, SimpleVal)]
@@ -204,5 +209,6 @@ object NullPlanDescription extends PlanDescription {
 
   def andThen(inner: PlanDescription): PlanDescription = inner
 
-  def andThenWrap(pipe: Pipe, name: String, inner: PlanDescription, args: (String, SimpleVal)*): PlanDescription = ???
+  def andThenWrap(pipe: Pipe, name: String, inner: PlanDescription, args: (String, SimpleVal)*): PlanDescription =
+    new PlanDescriptionImpl(pipe, name, Seq(inner), args)
 }

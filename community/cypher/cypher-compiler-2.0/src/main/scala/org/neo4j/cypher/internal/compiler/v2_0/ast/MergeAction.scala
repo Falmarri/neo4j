@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,26 +20,13 @@
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import symbols._
 
-sealed trait MergeAction extends AstNode with SemanticCheckable {
-  def name: String
-  def action: SetClause
+sealed trait MergeAction extends ASTNode with SemanticCheckable
 
-  def verb: Action
-  def toAction = OnAction(verb, action.legacyUpdateActions)
-
+case class OnCreate(action: SetClause)(val position: InputPosition) extends MergeAction {
   def semanticCheck: SemanticCheck = action.semanticCheck
 }
 
-case class OnCreate(action: SetClause, token: InputToken) extends MergeAction {
-  val name = "ON CREATE"
-
-  def verb: Action = On.Create
-}
-
-case class OnMatch(action: SetClause, token: InputToken) extends MergeAction {
-  val name = "ON MATCH"
-
-  def verb: Action = On.Match
+case class OnMatch(action: SetClause)(val position: InputPosition) extends MergeAction {
+  def semanticCheck: SemanticCheck = action.semanticCheck
 }

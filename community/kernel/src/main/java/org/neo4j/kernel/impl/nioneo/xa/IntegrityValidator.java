@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -34,7 +34,7 @@ import org.neo4j.kernel.impl.nioneo.store.SchemaRule;
 import org.neo4j.kernel.impl.nioneo.store.UniquenessConstraintRule;
 
 /**
- * Validates data integrity during the prepare phase of {@link WriteTransaction}.
+ * Validates data integrity during the prepare phase of {@link NeoStoreTransaction}.
  */
 public class IntegrityValidator
 {

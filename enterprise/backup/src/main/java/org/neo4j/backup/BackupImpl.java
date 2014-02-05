@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -24,6 +24,7 @@ import org.neo4j.com.Response;
 import org.neo4j.com.ServerUtil;
 import org.neo4j.com.StoreWriter;
 import org.neo4j.helpers.Settings;
+import org.neo4j.kernel.DefaultFileSystemAbstraction;
 import org.neo4j.kernel.impl.core.KernelPanicEventGenerator;
 import org.neo4j.kernel.impl.nioneo.store.StoreId;
 import org.neo4j.kernel.impl.transaction.XaDataSourceManager;
@@ -54,7 +55,7 @@ class BackupImpl implements TheBackupInterface
     {
         RequestContext context = ServerUtil.rotateLogsAndStreamStoreFiles( spi.getStoreDir(),
                 xaDataSourceManager,
-                kpeg, logger, false, writer );
+                kpeg, logger, false, writer, new DefaultFileSystemAbstraction() );
         writer.done();
         return packResponse( context );
     }

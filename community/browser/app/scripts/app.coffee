@@ -1,5 +1,5 @@
 ###!
-Copyright (c) 2002-2013 "Neo Technology,"
+Copyright (c) 2002-2014 "Neo Technology,"
 Network Engine for Objects in Lund AB [http://neotechnology.com]
 
 This file is part of Neo4j.
@@ -26,6 +26,7 @@ angular.module('neo4jApp.filters', [])
 angular.module('neo4jApp.services', ['LocalStorageModule', 'neo4jApp.settings', 'neo4jApp.utils'])
 
 app = angular.module('neo4jApp', [
+  'ngAnimate'
   'neo4jApp.controllers'
   'neo4jApp.directives'
   'neo4jApp.filters'

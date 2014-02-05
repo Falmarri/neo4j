@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -21,8 +21,6 @@ package org.neo4j.cypher.internal.compiler.v2_0.ast
 
 import Expression.SemanticContext
 import org.neo4j.cypher.internal.compiler.v2_0._
-import commands.{expressions => commandexpressions, Predicate => CommandPredicate, NonEmpty}
-import commands.expressions.{Expression => CommandExpression}
 import symbols._
 
 trait FilteringExpression extends Expression {
@@ -33,57 +31,38 @@ trait FilteringExpression extends Expression {
 
   def semanticCheck(ctx: SemanticContext) =
     expression.semanticCheck(ctx) then
-      expression.constrainType(CollectionType(AnyType())) then
-      checkInnerPredicate
+    expression.expectType(CTCollection(CTAny).covariant) then
+    checkInnerPredicate
 
   protected def checkPredicateDefined =
     when (innerPredicate.isEmpty) {
-      SemanticError(s"${name}(...) requires a WHERE predicate", token)
+      SemanticError(s"$name(...) requires a WHERE predicate", position)
     }
 
   protected def checkPredicateNotDefined =
     when (innerPredicate.isDefined) {
-      SemanticError(s"${name}(...) should not contain a WHERE predicate", token)
+      SemanticError(s"$name(...) should not contain a WHERE predicate", position)
     }
 
-  private def checkInnerPredicate : SemanticCheck = {
-    innerPredicate match {
-      case Some(e) => withScopedState {
-        val innerTypes : TypeGenerator = expression.types(_).map(_.iteratedType)
-        identifier.declare(innerTypes) then e.semanticCheck(SemanticContext.Simple)
-      }
-      case None    => SemanticCheckResult.success
+  protected def possibleInnerTypes: TypeGenerator = s =>
+    (expression.types(s) constrain CTCollection(CTAny)).unwrapCollections
+
+  private def checkInnerPredicate: SemanticCheck = innerPredicate match {
+    case Some(e) => withScopedState {
+      identifier.declare(possibleInnerTypes) then e.semanticCheck(SemanticContext.Simple)
     }
-  }
-
-  def toCommand(command: CommandExpression, name: String, inner: commands.Predicate) : CommandExpression
-  def toPredicate(command: CommandExpression, name: String, inner: commands.Predicate) : CommandPredicate
-
-  override def toCommand = {
-    val command = expression.toCommand
-    val inner: CommandPredicate = innerPredicate.map(_.toPredicate).getOrElse(commands.True())
-    toCommand(command, identifier.name, inner)
-  }
-
-  override def toPredicate = {
-    val command = expression.toCommand
-    val inner = innerPredicate.map(_.toPredicate).getOrElse(commands.True())
-    toPredicate(command, identifier.name, inner)
+    case None    => SemanticCheckResult.success
   }
 }
 
 
-case class FilterExpression(identifier: Identifier, expression: Expression, innerPredicate: Option[Expression], token: InputToken) extends FilteringExpression {
+case class FilterExpression(identifier: Identifier, expression: Expression, innerPredicate: Option[Expression])(val position: InputPosition) extends FilteringExpression {
   val name = "filter"
 
   override def semanticCheck(ctx: SemanticContext) =
     checkPredicateDefined then
-      super.semanticCheck(ctx) then
-      this.specifyType(expression.types)
-
-  def toCommand(command: CommandExpression, name: String, inner: commands.Predicate) = commandexpressions.FilterFunction(command, name, inner)
-
-  def toPredicate(command: CommandExpression, name: String, inner: CommandPredicate) = NonEmpty(toCommand(command, name, inner))
+    super.semanticCheck(ctx) then
+    this.specifyType(expression.types)
 }
 
 
@@ -91,38 +70,30 @@ case class ExtractExpression(
     identifier: Identifier,
     expression: Expression,
     innerPredicate: Option[Expression],
-    extractExpression: Option[Expression],
-    token: InputToken) extends FilteringExpression
+    extractExpression: Option[Expression])(val position: InputPosition) extends FilteringExpression
 {
   val name = "extract"
 
   override def semanticCheck(ctx: SemanticContext) =
     checkPredicateNotDefined then
-      checkExtractExpressionDefined then
-      super.semanticCheck(ctx) then
-      checkInnerExpression
+    checkExtractExpressionDefined then
+    super.semanticCheck(ctx) then
+    checkInnerExpression
 
   private def checkExtractExpressionDefined =
     when (extractExpression.isEmpty) {
-      SemanticError(s"$name(...) requires '| expression' (an extract expression)", token)
+      SemanticError(s"$name(...) requires '| expression' (an extract expression)", position)
     }
 
-  private def checkInnerExpression : SemanticCheck =
+  private def checkInnerExpression: SemanticCheck =
     extractExpression.fold(SemanticCheckResult.success) {
       e => withScopedState {
-        val innerTypes : TypeGenerator = expression.types(_).map(_.iteratedType)
-        identifier.declare(innerTypes) then e.semanticCheck(SemanticContext.Simple)
+        identifier.declare(possibleInnerTypes) then e.semanticCheck(SemanticContext.Simple)
       } then {
-        val outerTypes : TypeGenerator = e.types(_).map(CollectionType(_))
+        val outerTypes: TypeGenerator = e.types(_).wrapInCollection
         this.specifyType(outerTypes)
       }
     }
-
-  def toCommand(command: CommandExpression, name: String, inner: commands.Predicate) =
-    commandexpressions.ExtractFunction(command, name, extractExpression.get.toCommand)
-
-  def toPredicate(command: CommandExpression, name: String, inner: CommandPredicate) =
-    NonEmpty(toCommand(command, name, inner))
 }
 
 
@@ -130,96 +101,61 @@ case class ListComprehension(
     identifier: Identifier,
     expression: Expression,
     innerPredicate: Option[Expression],
-    extractExpression: Option[Expression],
-    token: InputToken) extends FilteringExpression
+    extractExpression: Option[Expression])(val position: InputPosition) extends FilteringExpression
 {
   val name = "[...]"
 
   override def semanticCheck(ctx: SemanticContext) = super.semanticCheck(ctx) then checkInnerExpression
 
-  private def checkInnerExpression : SemanticCheck = {
-    extractExpression match {
-      case Some(e) => withScopedState {
-          val innerTypes : TypeGenerator = expression.types(_).map(_.iteratedType)
-          identifier.declare(innerTypes) then e.semanticCheck(SemanticContext.Simple)
-        } then {
-          val outerTypes : TypeGenerator = e.types(_).map(CollectionType(_))
-          this.specifyType(outerTypes)
-        }
-      case None    => this.specifyType(expression.types)
-    }
+  private def checkInnerExpression: SemanticCheck = extractExpression match {
+    case Some(e) =>
+      withScopedState {
+        identifier.declare(possibleInnerTypes) then e.semanticCheck(SemanticContext.Simple)
+      } then {
+        val outerTypes: TypeGenerator = e.types(_).wrapInCollection
+        this.specifyType(outerTypes)
+      }
+    case None    => this.specifyType(expression.types)
   }
-
-  def toCommand(command: CommandExpression, name: String, inner: commands.Predicate) = {
-    val filter = inner match {
-      case commands.True() => command
-      case _               => commandexpressions.FilterFunction(command, name, inner)
-    }
-    val extract = extractExpression match {
-      case Some(e) => commandexpressions.ExtractFunction(filter, name, e.toCommand)
-      case None    => filter
-    }
-    extract
-  }
-
-  def toPredicate(command: CommandExpression, name: String, inner: CommandPredicate) =
-     NonEmpty(toCommand(command, name, inner))
 }
 
 
 sealed trait IterablePredicateExpression extends FilteringExpression {
   override def semanticCheck(ctx: SemanticContext) =
     checkPredicateDefined then
-      super.semanticCheck(ctx) then
-      this.specifyType(BooleanType())
-
-  def toPredicate(command: CommandExpression, name: String, inner: commands.Predicate) : commands.Predicate
-
-  def toCommand(command: CommandExpression, name: String, inner: commands.Predicate) =
-    toPredicate(command, identifier.name, inner)
+    super.semanticCheck(ctx) then
+    this.specifyType(CTBoolean)
 }
 
-case class AllIterablePredicate(identifier: Identifier, expression: Expression, innerPredicate: Option[Expression], token: InputToken) extends IterablePredicateExpression {
+case class AllIterablePredicate(identifier: Identifier, expression: Expression, innerPredicate: Option[Expression])(val position: InputPosition) extends IterablePredicateExpression {
   val name = "all"
-  def toPredicate(command: CommandExpression, name: String, inner: commands.Predicate) = {
-    commands.AllInCollection(command, identifier.name, inner)
-  }
 }
 
-case class AnyIterablePredicate(identifier: Identifier, expression: Expression, innerPredicate: Option[Expression], token: InputToken) extends IterablePredicateExpression {
+case class AnyIterablePredicate(identifier: Identifier, expression: Expression, innerPredicate: Option[Expression])(val position: InputPosition) extends IterablePredicateExpression {
   val name = "any"
-  def toPredicate(command: CommandExpression, name: String, inner: commands.Predicate) = {
-    commands.AnyInCollection(command, identifier.name, inner)
-  }
 }
 
-case class NoneIterablePredicate(identifier: Identifier, expression: Expression, innerPredicate: Option[Expression], token: InputToken) extends IterablePredicateExpression {
+case class NoneIterablePredicate(identifier: Identifier, expression: Expression, innerPredicate: Option[Expression])(val position: InputPosition) extends IterablePredicateExpression {
   val name = "none"
-  def toPredicate(command: CommandExpression, name: String, inner: commands.Predicate) = {
-    commands.NoneInCollection(command, identifier.name, inner)
-  }
 }
 
-case class SingleIterablePredicate(identifier: Identifier, expression: Expression, innerPredicate: Option[Expression], token: InputToken) extends IterablePredicateExpression {
+case class SingleIterablePredicate(identifier: Identifier, expression: Expression, innerPredicate: Option[Expression])(val position: InputPosition) extends IterablePredicateExpression {
   val name = "single"
-  def toPredicate(command: CommandExpression, name: String, inner: commands.Predicate) = {
-    commands.SingleInCollection(command, identifier.name, inner)
-  }
 }
 
-case class ReduceExpression(accumulator: Identifier, init: Expression, id: Identifier, collection: Expression, expression: Expression, token: InputToken) extends Expression {
+case class ReduceExpression(accumulator: Identifier, init: Expression, identifier: Identifier, collection: Expression, expression: Expression)(val position: InputPosition) extends Expression {
   def semanticCheck(ctx: SemanticContext): SemanticCheck =
     init.semanticCheck(ctx) then
-      collection.semanticCheck(ctx) then
-      collection.constrainType(CollectionType(AnyType())) then
-      withScopedState {
-        val indexType: TypeGenerator = collection.types(_).map(_.iteratedType)
-        val accType: TypeGenerator = init.types
-        id.declare(indexType) then
-        accumulator.declare(accType) then
-        expression.semanticCheck(SemanticContext.Simple)
-      } then expression.constrainType(init.types) then
-      this.specifyType(s => init.types(s) mergeDown expression.types(s))
+    collection.semanticCheck(ctx) then
+    collection.expectType(CTCollection(CTAny).covariant) then
+    withScopedState {
+      val indexType: TypeGenerator = s =>
+        (collection.types(s) constrain CTCollection(CTAny)).unwrapCollections
+      val accType: TypeGenerator = init.types
 
-  def toCommand: CommandExpression = commandexpressions.ReduceFunction(collection.toCommand, id.name, expression.toCommand, accumulator.name, init.toCommand)
+      identifier.declare(indexType) then
+      accumulator.declare(accType) then
+      expression.semanticCheck(SemanticContext.Simple)
+    } then expression.expectType(init.types) then
+    this.specifyType(s => init.types(s) mergeUp expression.types(s))
 }

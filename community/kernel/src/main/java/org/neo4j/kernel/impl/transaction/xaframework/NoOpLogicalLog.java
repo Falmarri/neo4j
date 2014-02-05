@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -29,12 +29,13 @@ import javax.transaction.xa.Xid;
 
 import org.neo4j.helpers.Pair;
 import org.neo4j.kernel.logging.Logging;
+import org.neo4j.kernel.monitoring.Monitors;
 
 public class NoOpLogicalLog extends XaLogicalLog
 {
     public NoOpLogicalLog( Logging logging )
     {
-        super( null, null, null, null, null, null, logging, null, null, 10000l, null );
+        super( null, null, null, null, null, new Monitors(), logging, null, null, 10000l, null );
     }
 
     @Override

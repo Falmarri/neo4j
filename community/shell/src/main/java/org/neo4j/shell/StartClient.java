@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,12 +19,14 @@
  */
 package org.neo4j.shell;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Serializable;
+import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.helpers.Args;
+import org.neo4j.shell.impl.RmiLocation;
+import org.neo4j.shell.impl.ShellBootstrap;
+import org.neo4j.shell.impl.SimpleAppServer;
+import org.neo4j.shell.kernel.GraphDatabaseShellServer;
+
+import java.io.*;
 import java.lang.reflect.Method;
 import java.rmi.ConnectException;
 import java.rmi.RemoteException;
@@ -32,13 +34,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.helpers.Args;
-import org.neo4j.shell.impl.SimpleAppServer;
-import org.neo4j.shell.impl.RmiLocation;
-import org.neo4j.shell.impl.ShellBootstrap;
-import org.neo4j.shell.kernel.GraphDatabaseShellServer;
 
 import static org.neo4j.kernel.impl.util.Charsets.UTF_8;
 import static org.neo4j.kernel.impl.util.FileUtils.newBufferedFileReader;
@@ -165,6 +160,13 @@ public class StartClient
         // Remote
         else
         {
+            String readonly = args.get( ARG_READONLY, null );
+            if (readonly != null )
+            {
+                System.err.println(
+                        "Warning: -" + ARG_READONLY + " is ignored unless you connect with -" + ARG_PATH + "!" );
+            }
+
             // Start server on the supplied process
             if ( pid != null )
             {
@@ -336,7 +338,7 @@ public class StartClient
                     File file = new File( fileName );
                     if ( !file.exists() )
                     {
-                        throw new ShellException( "File to execute " + "does not exist " + fileName );
+                        throw new ShellException( "File to execute " + "does not exist: " + fileName );
                     }
                     reader = newBufferedFileReader( file, UTF_8 );
                 }
@@ -344,7 +346,10 @@ public class StartClient
             }
             finally
             {
-                reader.close();
+                if ( reader != null )
+                {
+                    reader.close();
+                }
             }
             return;
         }
@@ -461,7 +466,8 @@ public class StartClient
                         "shell exits\n" +
                         padArg( ARG_FILE, longestArgLength ) + "File containing commands to execute, or '-' to read " +
                         "from stdin. After executing it the shell exits\n" +
-                        padArg( ARG_READONLY, longestArgLength ) + "Connect in readonly mode\n" +
+                        padArg( ARG_READONLY, longestArgLength ) + "Connect in readonly mode (only for connecting " +
+                        "with -" + ARG_PATH + ")\n" +
                         padArg( ARG_PATH, longestArgLength ) + "Points to a neo4j db path so that a local server can " +
                         "be started there\n" +
                         padArg( ARG_CONFIG, longestArgLength ) + "Points to a config file when starting a local " +

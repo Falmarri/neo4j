@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,17 +20,17 @@
 package org.neo4j.cypher.internal.compiler.v2_0.functions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{expressions => commandexpressions}
+import ast.convert.ExpressionConverters._
+import commands.{expressions => commandexpressions}
+import symbols._
 
-case object Labels extends Function {
+case object Labels extends Function with SimpleTypedFunction {
   def name = "labels"
 
-  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation) : SemanticCheck =
-    checkArgs(invocation, 1) then
-    invocation.arguments.constrainType(NodeType()) then
-    invocation.specifyType(CollectionType(StringType()))
+  val signatures = Vector(
+    Signature(argumentTypes = Vector(CTNode), outputType = CTCollection(CTString))
+  )
 
-  def toCommand(invocation: ast.FunctionInvocation) =
-    commandexpressions.LabelsFunction(invocation.arguments(0).toCommand)
+  def asCommandExpression(invocation: ast.FunctionInvocation) =
+    commandexpressions.LabelsFunction(invocation.arguments(0).asCommandExpression)
 }

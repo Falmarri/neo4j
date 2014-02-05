@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,37 +20,27 @@
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{expressions => commandexpressions, values => commandvalues}
-import org.neo4j.cypher.internal.compiler.v2_0.mutation
+import symbols._
 
-sealed trait SetItem extends AstNode with SemanticCheckable {
-  def toLegacyUpdateAction : mutation.UpdateAction
-}
+sealed trait SetItem extends ASTNode with SemanticCheckable
 
-case class SetPropertyItem(property: Property, expression: Expression, token: InputToken) extends SetItem {
+case class SetPropertyItem(property: Property, expression: Expression)(val position: InputPosition) extends SetItem {
   def semanticCheck =
     property.semanticCheck(Expression.SemanticContext.Simple) then
     expression.semanticCheck(Expression.SemanticContext.Simple) then
-    expression.constrainType(BooleanType(), NumberType(), StringType(), CollectionType(AnyType()))
-
-  def toLegacyUpdateAction = mutation.PropertySetAction(property.toCommand, expression.toCommand)
+    property.map.expectType(CTNode.covariant | CTRelationship.covariant)
 }
 
-case class SetLabelItem(expression: Expression, labels: Seq[Identifier], token: InputToken) extends SetItem {
-  def semanticCheck = expression.semanticCheck(Expression.SemanticContext.Simple) then expression.constrainType(NodeType())
-
-  def toLegacyUpdateAction =
-    commands.LabelAction(expression.toCommand, commands.LabelSetOp, labels.map(l => commandvalues.KeyToken.Unresolved(l.name, commandvalues.TokenType.Label)))
+case class SetLabelItem(expression: Expression, labels: Seq[Identifier])(val position: InputPosition) extends SetItem {
+  def semanticCheck =
+    expression.semanticCheck(Expression.SemanticContext.Simple) then
+    expression.expectType(CTNode.covariant)
 }
 
-case class SetPropertiesFromMapItem(identifier: Identifier, expression: Expression, token: InputToken) extends SetItem {
+case class SetPropertiesFromMapItem(identifier: Identifier, expression: Expression)(val position: InputPosition) extends SetItem {
   def semanticCheck =
     identifier.semanticCheck(Expression.SemanticContext.Simple) then
-    identifier.constrainType(NodeType(), RelationshipType()) then
+    identifier.expectType(CTNode.covariant | CTRelationship.covariant) then
     expression.semanticCheck(Expression.SemanticContext.Simple) then
-    expression.constrainType(MapType())
-
-  def toLegacyUpdateAction = mutation.MapPropertySetAction(commandexpressions.Identifier(identifier.name), expression.toCommand)
+    expression.expectType(CTMap.covariant)
 }

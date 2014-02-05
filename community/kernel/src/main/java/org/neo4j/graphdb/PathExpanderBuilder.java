@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -26,7 +26,7 @@ import static org.neo4j.graphdb.Direction.BOTH;
 /**
  * A fluent builder for creating specialized {@link PathExpander path expanders}.
  * <p/>
- * See {@link PathExpanders} for a catalogue of common expanders.
+ * See {@link PathExpanders} for a catalog of common expanders.
  */
 public class PathExpanderBuilder
 {

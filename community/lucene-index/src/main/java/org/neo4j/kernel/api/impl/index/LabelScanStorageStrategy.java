@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -28,18 +28,18 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.SearcherManager;
 
 import org.neo4j.kernel.api.direct.AllEntriesLabelScanReader;
-import org.neo4j.kernel.api.labelscan.NodeLabelUpdate;
 import org.neo4j.kernel.impl.util.PrimitiveLongIterator;
+import org.neo4j.unsafe.batchinsert.LabelScanWriter;
 
 public interface LabelScanStorageStrategy
 {
-    void applyUpdates( StorageService storage, Iterator<NodeLabelUpdate> updates ) throws IOException;
-
     PrimitiveLongIterator nodesWithLabel( IndexSearcher searcher, int labelId );
 
     AllEntriesLabelScanReader newNodeLabelReader( SearcherManager searcher );
 
     Iterator<Long> labelsForNode( IndexSearcher searcher, long nodeId );
+
+    LabelScanWriter acquireWriter( StorageService storage );
 
     interface StorageService
     {

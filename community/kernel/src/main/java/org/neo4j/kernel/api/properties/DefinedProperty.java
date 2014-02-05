@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -195,6 +195,12 @@ public abstract class DefinedProperty extends Property implements SizeOfObject
             return lhs.toString().equals( rhs.toString() );
         }
 
+        // COMPARE BOOLEANS
+        if ( lhs instanceof Boolean && rhs instanceof Boolean )
+        {
+            return compareBooleans( (Boolean) lhs, (Boolean) rhs );
+        }
+
         // COMPARE ARRAYS
         if ( lhs.getClass().isArray() && rhs.getClass().isArray() )
         {
@@ -202,6 +208,11 @@ public abstract class DefinedProperty extends Property implements SizeOfObject
         }
 
         return false;
+    }
+
+    private static boolean compareBooleans( Boolean lhs, Boolean rhs )
+    {
+        return lhs.equals( rhs );
     }
 
     private static boolean compareNumbers( Number aNumber, Number bNumber )

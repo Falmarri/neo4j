@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -39,7 +39,7 @@ case class LengthFunction(inner: Expression)
 
   def arguments = Seq(inner)
 
-  def calculateType(symbols: SymbolTable): CypherType = LongType()
+  def calculateType(symbols: SymbolTable): CypherType = CTInteger
 
   def symbolTableDependencies = inner.symbolTableDependencies
 }

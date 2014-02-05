@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -26,29 +26,37 @@ import org.scalatest.Assertions
 
 class ExpressionTest extends Assertions {
 
-  @Test
-  def shouldReturnEmptyTypeSetIfTypesRequestedButNotEvaluated() {
-    val expression = new Expression() {
-      val token = DummyToken(0, 1)
-      def semanticCheck(ctx: Expression.SemanticContext) = ???
-      def toCommand = ???
-    }
+  val expression = DummyExpression(CTAny, DummyPosition(0))
 
-    assert(expression.types(SemanticState.clean) === TypeSet.empty)
+  @Test
+  def shouldReturnCalculatedType() {
+    assert(expression.types(SemanticState.clean) === TypeSpec.all)
+  }
+
+  @Test
+  def shouldReturnTypeSetOfAllIfTypesRequestedButNotEvaluated() {
+    assert(expression.types(SemanticState.clean) === TypeSpec.all)
   }
 
   @Test
   def shouldReturnSpecifiedAndConstrainedTypes() {
-    val expression = new Expression() {
-      val token = DummyToken(0, 1)
-      def semanticCheck(ctx: Expression.SemanticContext) = ???
-      def toCommand = ???
-    }
     val state = (
-      expression.specifyType(NodeType(), IntegerType()) then
-      expression.constrainType(NumberType())
-      )(SemanticState.clean).state
+      expression.specifyType(CTNode | CTInteger) then
+      expression.expectType(CTNumber.covariant)
+    )(SemanticState.clean).state
 
-    assert(expression.types(state) === TypeSet(IntegerType()))
+    assert(expression.types(state) === CTInteger.invariant)
+  }
+
+  @Test
+  def shouldRaiseTypeErrorWhenMismatchBetweenSpecifiedTypeAndExpectedType() {
+    val result = (
+      expression.specifyType(CTNode | CTInteger) then
+      expression.expectType(CTString.covariant)
+    )(SemanticState.clean)
+
+    assert(result.errors.size === 1)
+    assert(result.errors.head.position === expression.position)
+    assert(expression.types(result.state).isEmpty)
   }
 }
