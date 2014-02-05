@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,26 +20,25 @@
 package org.neo4j.cypher.internal.compiler.v2_0.functions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{expressions => commandexpressions}
+import ast.convert.ExpressionConverters._
+import commands.{expressions => commandexpressions}
+import symbols._
 
 case object Head extends Function {
   def name = "head"
 
   def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation): SemanticCheck =
     checkArgs(invocation, 1) ifOkThen {
-      invocation.arguments(0).constrainType(CollectionType(AnyType())) then
-        invocation.specifyType(iteratedTypes(invocation.arguments(0)))
+      invocation.arguments(0).expectType(CTCollection(CTAny).covariant) then
+      invocation.specifyType(possibleInnerTypes(invocation.arguments(0)))
     }
 
-  private def iteratedTypes(expression: ast.Expression): SemanticState => TypeSet = {
-    expression.types(_).flatMap {
-      case t if t.isCollection => Some(t.iteratedType)
-      case _                   => None
-    }
-  }
+  private def possibleInnerTypes(expression: ast.Expression) : TypeGenerator =
+    expression.types(_).unwrapCollections
 
-  def toCommand(invocation: ast.FunctionInvocation) =
+  def asCommandExpression(invocation: ast.FunctionInvocation) =
     commandexpressions.CollectionIndex(
-      invocation.arguments(0).toCommand, commandexpressions.Literal(0))
+      invocation.arguments(0).asCommandExpression,
+      commandexpressions.Literal(0)
+    )
 }

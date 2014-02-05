@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,15 +20,18 @@
 package org.neo4j.cypher.internal.compiler.v2_0.functions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{expressions => commandexpressions}
+import ast.convert.ExpressionConverters._
+import commands.{expressions => commandexpressions}
+import symbols._
 
 case object Coalesce extends Function {
   def name = "coalesce"
 
-  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation) : SemanticCheck =
+  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation): SemanticCheck =
     checkMinArgs(invocation, 1) then
-    invocation.specifyType(invocation.arguments.mergeDownTypes)
+    invocation.arguments.expectType(CTAny.covariant) then
+    invocation.specifyType(invocation.arguments.mergeUpTypes)
 
-  def toCommand(invocation: ast.FunctionInvocation) =
-    commandexpressions.CoalesceFunction(invocation.arguments.map(_.toCommand):_*)
+  def asCommandExpression(invocation: ast.FunctionInvocation) =
+    commandexpressions.CoalesceFunction(invocation.arguments.asCommandExpressions:_*)
 }

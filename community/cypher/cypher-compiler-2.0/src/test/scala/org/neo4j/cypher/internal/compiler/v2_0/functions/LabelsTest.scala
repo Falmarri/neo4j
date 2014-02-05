@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -22,41 +22,22 @@ package org.neo4j.cypher.internal.compiler.v2_0.functions
 import org.neo4j.cypher.internal.compiler.v2_0._
 import symbols._
 import org.junit.Test
-import org.scalatest.Assertions
 
-class LabelsTest extends Assertions {
+class LabelsTest extends FunctionTestBase("labels") {
+
+  @Test
+  def shouldFailIfWrongArguments() {
+    testInvalidApplication()("Insufficient parameters for function 'labels'")
+    testInvalidApplication(CTNode, CTNode)("Too many parameters for function 'labels'")
+  }
 
   @Test
   def shouldHaveCollectionOfStringsType() {
-    val nodeIdentifier = ast.Identifier("n", DummyToken(11, 12))
-    val labelsInvocation = ast.FunctionInvocation(
-      ast.Identifier("labels", DummyToken(6, 9)),
-      false,
-      Seq(nodeIdentifier),
-      DummyToken(5,14)
-    )
-
-    val state = SemanticState.clean.declareIdentifier(nodeIdentifier, NodeType()).right.get
-    val result = labelsInvocation.semanticCheck(ast.Expression.SemanticContext.Simple)(state)
-    assert(result.errors === Seq())
-    assert(labelsInvocation.types(result.state) === Set(CollectionType(StringType())))
+    testValidTypes(CTNode)(CTCollection(CTString))
   }
 
   @Test
-  def shouldReturnErrorIfNotANodeArgument() {
-    val nonNodeIdentifier = ast.Identifier("n", DummyToken(11, 12))
-    val labelsInvocation = ast.FunctionInvocation(
-      ast.Identifier("labels", DummyToken(6, 9)),
-      false,
-      Seq(nonNodeIdentifier),
-      DummyToken(5,14)
-    )
-
-    val state = SemanticState.clean.declareIdentifier(nonNodeIdentifier, RelationshipType()).right.get
-    val result = labelsInvocation.semanticCheck(ast.Expression.SemanticContext.Simple)(state)
-    assert(result.errors.size === 1)
-    assert(result.errors.head.msg === "Type mismatch: n already defined with conflicting type Relationship (expected Node)")
-    assert(result.errors.head.token === nonNodeIdentifier.token)
+  def shouldReturnErrorIfInvalidArgumentTypes() {
+    testInvalidApplication(CTInteger)("Type mismatch: expected Node but was Integer")
   }
-
 }

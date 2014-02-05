@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -42,7 +42,7 @@ import org.neo4j.test.DbRepresentation;
 import org.neo4j.test.ha.ClusterManager;
 import org.neo4j.test.ha.ClusterManager.ManagedCluster;
 
-@Ignore("Temporarily, pending backport of fixes from master")
+@Ignore("Breaks occasionally, needs investigation")
 public class BackupHaIT
 {
     private DbRepresentation representation;

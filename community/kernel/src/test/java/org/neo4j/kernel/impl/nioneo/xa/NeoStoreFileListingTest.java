@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -111,6 +111,51 @@ public class NeoStoreFileListingTest
         filesInStoreDirAre( new String[]{}, new String[]{} );
         scanStoreFilesAre( new String[]{} );
         indexFilesAre( new String[]{} );
+    }
+
+    @Test
+    public void shouldOnlyListLogicalLogs() throws Exception
+    {
+        // Given
+        filesInStoreDirAre( STANDARD_STORE_DIR_FILES, STANDARD_STORE_DIR_DIRECTORIES );
+        NeoStoreFileListing fileListing = newFileListing();
+
+        // When
+        ResourceIterator<File> result = fileListing.listLogicalLogs();
+
+        // Then
+        assertThat( asSetOfPaths( result ), equalTo( asSet(
+                "nioneo_logical.log.v0",
+                "nioneo_logical.log.v1",
+                "nioneo_logical.log.v2") ) );
+    }
+
+    @Test
+    public void shouldOnlyListNeoStoreFiles() throws Exception
+    {
+        // Given
+        filesInStoreDirAre( STANDARD_STORE_DIR_FILES, STANDARD_STORE_DIR_DIRECTORIES );
+        NeoStoreFileListing fileListing = newFileListing();
+
+        // When
+        ResourceIterator<File> result = fileListing.listStoreFiles(  );
+
+        // Then
+        assertThat( asSetOfPaths( result ), equalTo( asSet(
+                "neostore.labeltokenstore.db",
+                "neostore.labeltokenstore.db.names",
+                "neostore.nodestore.db",
+                "neostore.nodestore.db.labels",
+                "neostore.propertystore.db",
+                "neostore.propertystore.db.arrays",
+                "neostore.propertystore.db.index",
+                "neostore.propertystore.db.index.keys",
+                "neostore.propertystore.db.strings",
+                "neostore.relationshipstore.db",
+                "neostore.relationshiptypestore.db",
+                "neostore.relationshiptypestore.db.names",
+                "neostore.schemastore.db",
+                "neostore" ) ) );
     }
 
     @Test

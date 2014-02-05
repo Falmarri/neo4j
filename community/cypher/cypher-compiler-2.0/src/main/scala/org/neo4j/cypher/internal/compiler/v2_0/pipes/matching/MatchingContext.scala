@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -65,6 +65,7 @@ class MatchingContext(boundIdentifiers: SymbolTable,
 }
 
 trait MatcherBuilder {
+  def name:String
   def getMatches(sourceRow: ExecutionContext, state: QueryState): Traversable[ExecutionContext]
 }
 

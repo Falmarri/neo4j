@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -43,10 +43,13 @@ import org.neo4j.helpers.progress.ProgressMonitorFactory;
 import org.neo4j.kernel.api.direct.DirectStoreAccess;
 import org.neo4j.kernel.api.index.IndexAccessor;
 import org.neo4j.kernel.api.index.IndexConfiguration;
+import org.neo4j.kernel.api.index.IndexDescriptor;
 import org.neo4j.kernel.api.index.IndexPopulator;
 import org.neo4j.kernel.api.index.IndexUpdater;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
+import org.neo4j.kernel.api.labelscan.LabelScanStore;
+import org.neo4j.kernel.api.labelscan.NodeLabelUpdate;
 import org.neo4j.kernel.impl.api.index.IndexUpdateMode;
 import org.neo4j.kernel.impl.nioneo.store.AbstractDynamicStore;
 import org.neo4j.kernel.impl.nioneo.store.DynamicRecord;
@@ -69,6 +72,7 @@ import org.neo4j.kernel.impl.nioneo.store.UniquenessConstraintRule;
 import org.neo4j.kernel.impl.nioneo.store.labels.NodeLabelsField;
 import org.neo4j.kernel.impl.util.Bits;
 import org.neo4j.kernel.impl.util.StringLogger;
+import org.neo4j.unsafe.batchinsert.LabelScanWriter;
 
 import static java.util.Arrays.asList;
 
@@ -309,15 +313,28 @@ public class FullCheckIntegrationTest
         long nodeId1 = idGenerator.node();
         long labelId = idGenerator.label() - 1;
 
-        fixture.directStoreAccess().labelScanStore().updateAndCommit( asIterable(
+        LabelScanStore labelScanStore = fixture.directStoreAccess().labelScanStore();
+        Iterable<NodeLabelUpdate> nodeLabelUpdates = asIterable(
                 labelChanges( nodeId1, new long[]{}, new long[]{labelId} )
-        ).iterator() );
+        );
+        write( labelScanStore, nodeLabelUpdates );
 
         // when
         ConsistencySummaryStatistics result = check();
 
         // then
         verifyInconsistency( result, RecordType.LABEL_SCAN_DOCUMENT );
+    }
+
+    private void write( LabelScanStore labelScanStore, Iterable<NodeLabelUpdate> nodeLabelUpdates ) throws IOException
+    {
+        try ( LabelScanWriter writer = labelScanStore.newWriter() )
+        {
+            for ( NodeLabelUpdate update : nodeLabelUpdates )
+            {
+                writer.write( update );
+            }
+        }
     }
 
     @Test
@@ -350,8 +367,9 @@ public class FullCheckIntegrationTest
         while ( rules.hasNext() )
         {
             IndexRule rule = rules.next();
+            IndexDescriptor descriptor = new IndexDescriptor( rule.getLabel(), rule.getPropertyKey() );
             IndexPopulator populator =
-                storeAccess.indexes().getPopulator( rule.getId(), new IndexConfiguration( false ) );
+                storeAccess.indexes().getPopulator( rule.getId(), descriptor, new IndexConfiguration( false ) );
             populator.markAsFailed( "Oh noes! I was a shiny index and then I was failed" );
             populator.close( false );
 
@@ -397,7 +415,7 @@ public class FullCheckIntegrationTest
         labels.remove( 1 );
         long[] after = asArray( labels );
 
-        fixture.directStoreAccess().labelScanStore().updateAndCommit( asList( labelChanges( 42, before, after ) ).iterator() );
+        write( fixture.directStoreAccess().labelScanStore(), asList( labelChanges( 42, before, after ) ) );
 
         // when
         ConsistencySummaryStatistics stats = check();
@@ -432,7 +450,7 @@ public class FullCheckIntegrationTest
             }
         } );
 
-        fixture.directStoreAccess().labelScanStore().updateAndCommit( asList( labelChanges( 42, new long[]{1L, 2L}, new long[]{1L} ) ).iterator() );
+        write( fixture.directStoreAccess().labelScanStore(), asList( labelChanges( 42, new long[]{1L, 2L}, new long[]{1L} ) ) );
 
         // when
         ConsistencySummaryStatistics stats = check();

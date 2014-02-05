@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -34,8 +34,6 @@ import org.neo4j.graphdb.Path;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.RelationshipType;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.helpers.Predicate;
-import org.neo4j.helpers.collection.FilteringIterable;
 import org.neo4j.kernel.Traversal;
 
 @Description( "Here you can describe your plugin. It will show up in the description of the methods." )
@@ -63,8 +61,7 @@ public class FunctionalTestPlugin extends ServerPlugin
     public Iterable<Node> getAllConnectedNodes( @Source Node start )
     {
         ArrayList<Node> nodes = new ArrayList<>();
-        Transaction tx = start.getGraphDatabase().beginTx();
-        try
+        try ( Transaction tx = start.getGraphDatabase().beginTx() )
         {
             for ( Relationship rel : start.getRelationships() )
             {
@@ -73,10 +70,6 @@ public class FunctionalTestPlugin extends ServerPlugin
 
             tx.success();
         }
-        finally
-        {
-            tx.finish();
-        }
         return nodes;
     }
 
@@ -84,22 +77,19 @@ public class FunctionalTestPlugin extends ServerPlugin
     public Iterable<Relationship> getRelationshipsBetween( final @Source Node start,
             final @Parameter( name = "other" ) Node end )
     {
-        Transaction tx = start.getGraphDatabase().beginTx();
-        try
+        List<Relationship> result = new ArrayList<>();
+        try ( Transaction tx = start.getGraphDatabase().beginTx() )
         {
-            return new FilteringIterable<>( start.getRelationships(), new Predicate<Relationship>()
+            for ( Relationship relationship : start.getRelationships() )
             {
-                @Override
-                public boolean accept( Relationship item )
+                if ( relationship.getOtherNode( start ).equals( end ) )
                 {
-                    return item.getOtherNode( start ).equals( end );
+                    result.add( relationship );
                 }
-            } );
+            }
+            tx.success();
         }
-        finally
-        {
-            tx.finish();
-        }
+        return result;
     }
 
     @PluginTarget( Node.class )
@@ -107,18 +97,13 @@ public class FunctionalTestPlugin extends ServerPlugin
             @Parameter( name = "type" ) RelationshipType type, @Parameter( name = "nodes" ) Iterable<Node> nodes )
     {
         List<Relationship> result = new ArrayList<>();
-        Transaction tx = start.getGraphDatabase().beginTx();
-        try
+        try ( Transaction tx = start.getGraphDatabase().beginTx() )
         {
             for ( Node end : nodes )
             {
                 result.add( start.createRelationshipTo( end, type ) );
             }
             tx.success();
-        }
-        finally
-        {
-            tx.finish();
         }
         return result;
     }
@@ -133,68 +118,48 @@ public class FunctionalTestPlugin extends ServerPlugin
             return start;
         }
 
-        Transaction tx = start.getGraphDatabase().beginTx();
-        try
+        try ( Transaction tx = start.getGraphDatabase().beginTx() )
         {
             Node node = start.getGraphDatabase().getNodeById( id );
 
             tx.success();
             return node;
         }
-        finally
-        {
-            tx.finish();
-        }
     }
 
     @PluginTarget( GraphDatabaseService.class )
     public Node createNode( @Source GraphDatabaseService db )
     {
-        Transaction tx = db.beginTx();
-        try
+        try ( Transaction tx = db.beginTx() )
         {
             Node node = db.createNode();
 
             tx.success();
             return node;
         }
-        finally
-        {
-            tx.finish();
-        }
     }
 
     @PluginTarget( GraphDatabaseService.class )
     public Node methodWithIntParam( @Source GraphDatabaseService db, @Parameter( name = "id", optional = false ) int id )
     {
-        Transaction tx = db.beginTx();
-        try
+        try ( Transaction tx = db.beginTx() )
         {
             Node node = db.getNodeById( id );
 
             tx.success();
             return node;
         }
-        finally
-        {
-            tx.finish();
-        }
     }
 
     @PluginTarget( Relationship.class )
     public Iterable<Node> methodOnRelationship( @Source Relationship rel )
     {
-        Transaction tx = rel.getGraphDatabase().beginTx();
-        try
+        try ( Transaction tx = rel.getGraphDatabase().beginTx() )
         {
             List<Node> nodes = Arrays.asList( rel.getNodes() );
 
             tx.success();
             return nodes;
-        }
-        finally
-        {
-            tx.finish();
         }
     }
 

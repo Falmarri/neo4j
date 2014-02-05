@@ -1,5 +1,5 @@
 ###!
-Copyright (c) 2002-2013 "Neo Technology,"
+Copyright (c) 2002-2014 "Neo Technology,"
 Network Engine for Objects in Lund AB [http://neotechnology.com]
 
 This file is part of Neo4j.
@@ -230,6 +230,9 @@ angular.module('neo4jApp.controllers')
 
         nodeGroups.exit().remove();
 
+        # notify other graph observers
+        $rootScope.$broadcast 'graph:changed', graph
+
       @render = (g) ->
         graph = g
         return if graph.nodes().length is 0
@@ -237,4 +240,6 @@ angular.module('neo4jApp.controllers')
         .then (result) =>
           graph.addRelationships(result.relationships)
           @update()
+
+      return @
   ])

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -35,6 +35,7 @@ import org.neo4j.kernel.impl.storemigration.CurrentDatabase;
 import org.neo4j.kernel.impl.storemigration.DatabaseFiles;
 import org.neo4j.kernel.impl.storemigration.StoreMigrator;
 import org.neo4j.kernel.impl.storemigration.StoreUpgrader;
+import org.neo4j.kernel.impl.storemigration.StoreVersionCheck;
 import org.neo4j.kernel.impl.storemigration.UpgradableDatabase;
 import org.neo4j.kernel.impl.storemigration.UpgradeNotAllowedByConfigurationException;
 import org.neo4j.kernel.impl.storemigration.monitoring.VisibleMigrationProgressMonitor;
@@ -66,7 +67,7 @@ public class PerformUpgradeIfNecessary implements PreflightTask
             String dbLocation = new File( config.getString( Configurator.DATABASE_LOCATION_PROPERTY_KEY ) )
                     .getAbsolutePath();
 
-            if ( new CurrentDatabase().storeFilesAtCurrentVersion( new File( dbLocation ) ) )
+            if ( new CurrentDatabase(new StoreVersionCheck( new DefaultFileSystemAbstraction() ) ).storeFilesAtCurrentVersion( new File( dbLocation ) ) )
             {
                 return true;
             }
@@ -76,7 +77,7 @@ public class PerformUpgradeIfNecessary implements PreflightTask
             dbConfig.put( "neo_store", store.getPath() );
 
             FileSystemAbstraction fileSystem = new DefaultFileSystemAbstraction();
-            UpgradableDatabase upgradableDatabase = new UpgradableDatabase( fileSystem );
+            UpgradableDatabase upgradableDatabase = new UpgradableDatabase( new StoreVersionCheck( fileSystem ) );
             if ( !upgradableDatabase.storeFilesUpgradeable( store ) )
             {
                 return true;

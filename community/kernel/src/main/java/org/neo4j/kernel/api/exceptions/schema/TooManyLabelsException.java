@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,10 +19,12 @@
  */
 package org.neo4j.kernel.api.exceptions.schema;
 
+import org.neo4j.kernel.api.exceptions.Status;
+
 public class TooManyLabelsException extends SchemaKernelException
 {
     public TooManyLabelsException( Throwable cause )
     {
-        super( "The maximum number of labels available has been reached. Cannot create more labels.", cause );
+        super( Status.Schema.LabelLimitReached, "The maximum number of labels available has been reached. Cannot create more labels.", cause );
     }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -26,7 +26,8 @@ import org.junit.runners.Suite;
 @Suite.SuiteClasses({
         NonUniqueIndexPopulatorCompatibility.class,
         UniqueIndexPopulatorCompatibility.class,
-        UniqueIndexAccessorCompatibility.class
+        UniqueIndexAccessorCompatibility.class,
+        UniqueConstraintCompatibility.class
 })
 public abstract class IndexProviderCompatibilityTestSuite
 {
@@ -35,6 +36,7 @@ public abstract class IndexProviderCompatibilityTestSuite
     public static abstract class Compatibility
     {
         protected final SchemaIndexProvider indexProvider;
+        protected IndexDescriptor descriptor = new IndexDescriptor( 1, 2 );
 
         public Compatibility( IndexProviderCompatibilityTestSuite testSuite )
         {

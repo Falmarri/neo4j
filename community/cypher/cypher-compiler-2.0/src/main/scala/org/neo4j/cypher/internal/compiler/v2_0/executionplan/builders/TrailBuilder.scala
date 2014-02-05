@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -63,11 +63,11 @@ final class TrailBuilder(patterns: Seq[Pattern], boundPoints: Seq[String], predi
 
         val relPred: Predicate = Predicate.
           fromSeq(orgRelPred).
-          rewrite(rewriteTo(rel.relName, RelationshipIdentifier()))
+          rewriteAsPredicate(rewriteTo(rel.relName, RelationshipIdentifier()))
 
         val nodePred: Predicate = Predicate.
           fromSeq(orgNodePred).
-          rewrite(rewriteTo(end, NodeIdentifier()))
+          rewriteAsPredicate(rewriteTo(end, NodeIdentifier()))
 
         done.add(start => SingleStepTrail(EndPoint(end), dir, rel.relName, rel.relTypes, start, relPred, nodePred, rel, orgNodePred ++ orgRelPred))
       }

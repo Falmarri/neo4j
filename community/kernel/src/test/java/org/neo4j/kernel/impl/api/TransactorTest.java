@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -24,19 +24,28 @@ import javax.transaction.SystemException;
 
 import org.junit.Test;
 import org.mockito.InOrder;
+
 import org.neo4j.kernel.api.KernelTransaction;
 import org.neo4j.kernel.api.Statement;
-import org.neo4j.kernel.impl.core.Transactor;
 import org.neo4j.kernel.api.exceptions.KernelException;
+import org.neo4j.kernel.api.exceptions.Status;
 import org.neo4j.kernel.api.exceptions.TransactionFailureException;
+import org.neo4j.kernel.impl.core.Transactor;
 import org.neo4j.kernel.impl.persistence.PersistenceManager;
 import org.neo4j.kernel.impl.transaction.AbstractTransactionManager;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.fail;
 import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.when;
 
-@SuppressWarnings("deprecation")
 public class TransactorTest
 {
     private final AbstractTransactionManager txManager = mock( AbstractTransactionManager.class );
@@ -54,7 +63,7 @@ public class TransactorTest
         javax.transaction.Transaction existingTransaction = mock( javax.transaction.Transaction.class );
         when( txManager.suspend() ).thenReturn( existingTransaction );
 
-        when( pm.currentKernelTransaction() ).thenReturn( kernelTransaction );
+        when( pm.currentKernelTransactionForWriting() ).thenReturn( kernelTransaction );
         when( kernelTransaction.acquireStatement() ).thenReturn( statement );
 
         Object expectedResult = new Object();
@@ -68,7 +77,7 @@ public class TransactorTest
         InOrder order = inOrder( txManager, pm, kernelTransaction );
         order.verify( txManager ).suspend();
         order.verify( txManager ).begin();
-        order.verify( pm ).currentKernelTransaction();
+        order.verify( pm ).currentKernelTransactionForWriting();
         order.verify( txManager ).commit();
         order.verify( txManager ).resume( existingTransaction );
         order.verifyNoMoreInteractions();
@@ -81,7 +90,7 @@ public class TransactorTest
         javax.transaction.Transaction existingTransaction = mock( javax.transaction.Transaction.class );
         when( txManager.suspend() ).thenReturn( existingTransaction );
 
-        when( pm.currentKernelTransaction()  ).thenReturn( kernelTransaction );
+        when( pm.currentKernelTransactionForWriting()  ).thenReturn( kernelTransaction );
         when( kernelTransaction.acquireStatement() ).thenReturn( statement );
 
         SpecificKernelException exception = new SpecificKernelException();
@@ -102,7 +111,7 @@ public class TransactorTest
         InOrder order = inOrder( txManager, pm, kernelTransaction, work );
         order.verify( txManager ).suspend();
         order.verify( txManager ).begin();
-        order.verify( pm ).currentKernelTransaction();
+        order.verify( pm ).currentKernelTransactionForWriting();
         order.verify( txManager ).rollback();
         order.verify( txManager ).resume( existingTransaction );
         order.verifyNoMoreInteractions();
@@ -114,7 +123,7 @@ public class TransactorTest
         // given
         when( txManager.suspend() ).thenReturn( null );
 
-        when( pm.currentKernelTransaction()  ).thenReturn( kernelTransaction );
+        when( pm.currentKernelTransactionForWriting()  ).thenReturn( kernelTransaction );
         when( kernelTransaction.acquireStatement() ).thenReturn( statement );
 
         Object expectedResult = new Object();
@@ -128,7 +137,7 @@ public class TransactorTest
         InOrder order = inOrder( txManager, pm, kernelTransaction, work );
         order.verify( txManager ).suspend();
         order.verify( txManager ).begin();
-        order.verify( pm ).currentKernelTransaction();
+        order.verify( pm ).currentKernelTransactionForWriting();
         order.verify( work ).perform( statement );
         order.verify( txManager ).commit();
         order.verifyNoMoreInteractions();
@@ -236,7 +245,7 @@ public class TransactorTest
     {
         protected SpecificKernelException()
         {
-            super( "very specific" );
+            super( Status.General.UnknownFailure, "very specific" );
         }
     }
 }

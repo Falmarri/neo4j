@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -72,7 +72,7 @@ case class NamedPathPipe(source: Pipe, pathName: String, entities: Seq[AbstractP
     soFar ++ pathTail
   }
 
-  val symbols = source.symbols.add(pathName, PathType())
+  val symbols = source.symbols.add(pathName, CTPath)
 
   override def executionPlanDescription = {
     val name = SimpleVal.fromStr(pathName)

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -41,7 +41,7 @@ class EagerAggregationPipeTest extends JUnitSuite {
     val aggregationPipe = new EagerAggregationPipe(source, returnItems, grouping)
 
     assertEquals(
-      Map("name" -> NodeType(), "count(*)" -> LongType()),
+      Map("name" -> CTNode, "count(*)" -> CTInteger),
       aggregationPipe.symbols.identifiers)
   }
 
@@ -107,7 +107,7 @@ class EagerAggregationPipeTest extends JUnitSuite {
     assertEquals(List(Map("count(name)" -> 3)), aggregationPipe.createResults(QueryStateHelper.empty).toList)
   }
 
-  private def createSymbolTableFor(name: String) = name -> NodeType()
+  private def createSymbolTableFor(name: String) = name -> CTNode
 
   private def getResults(p: Pipe): JIterable[Map[String, Any]] = p.createResults(QueryStateHelper.empty).map(_.m.toMap).toIterable.asJava
 }

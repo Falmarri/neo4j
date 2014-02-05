@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -37,7 +37,7 @@ trait PatternGraphBuilder {
     def takeOnPattern(x: Pattern): Boolean = {
       x match {
         case r: RelatedTo          => takeOnRelatedTo(r)
-        case r: VarLengthRelatedTo => takeOnVarlengthRel(r)
+        case r: VarLengthRelatedTo => takeOnVarLengthRel(r)
         case _                     => false
       }
     }
@@ -53,14 +53,14 @@ trait PatternGraphBuilder {
         throw new SyntaxException("Can't re-use pattern relationship '%s' with different start/end nodes.".format(relName))
       }
 
-      patternRelMap(relName) = leftNode.relateTo(relName, rightNode, r.relTypes, r.direction)
+      patternRelMap(relName) = leftNode.relateTo(relName, rightNode, r)
       true
     }
 
-    def takeOnVarlengthRel(r: VarLengthRelatedTo) = {
+    def takeOnVarLengthRel(r: VarLengthRelatedTo) = {
       val startNode: PatternNode = patternNodeMap.getOrElseUpdate(r.left.name, new PatternNode(r.left.name))
       val endNode: PatternNode = patternNodeMap.getOrElseUpdate(r.right.name, new PatternNode(r.right.name))
-      patternRelMap(r.pathName) = startNode.relateViaVariableLengthPathTo(r.pathName, endNode, r.minHops, r.maxHops, r.relTypes, r.direction, r.relIterator)
+      patternRelMap(r.pathName) = startNode.relateViaVariableLengthPathTo(r.pathName, endNode, r.minHops, r.maxHops, r.relTypes, r.direction, r.relIterator, r.properties)
       true
     }
 

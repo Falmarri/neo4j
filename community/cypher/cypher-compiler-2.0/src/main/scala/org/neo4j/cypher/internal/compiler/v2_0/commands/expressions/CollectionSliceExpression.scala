@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -92,9 +92,9 @@ case class CollectionSliceExpression(collection: Expression, from: Option[Expres
   }
 
   protected def calculateType(symbols: SymbolTable): CypherType = {
-    from.foreach(_.evaluateType(NumberType(), symbols))
-    to.foreach(_.evaluateType(NumberType(), symbols))
-    collection.evaluateType(CollectionType(AnyType()), symbols)
+    from.foreach(_.evaluateType(CTNumber, symbols))
+    to.foreach(_.evaluateType(CTNumber, symbols))
+    collection.evaluateType(CTCollection(CTAny), symbols)
   }
 
   def rewrite(f: (Expression) => Expression): Expression =

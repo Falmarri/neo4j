@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -22,6 +22,4 @@ package org.neo4j.cypher.internal.compiler.v2_0
 import ast.{SimpleTypedExpression, Expression}
 import symbols._
 
-case class DummyExpression(possibleTypes: TypeSet, token: InputToken) extends Expression with SimpleTypedExpression {
-  def toCommand = ???
-}
+case class DummyExpression(possibleTypes: TypeSpec, position: InputPosition = DummyPosition(0)) extends Expression with SimpleTypedExpression

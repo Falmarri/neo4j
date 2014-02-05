@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -31,7 +31,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -49,11 +48,11 @@ import org.neo4j.graphdb.schema.ConstraintType;
 import org.neo4j.graphdb.schema.IndexDefinition;
 import org.neo4j.helpers.Function;
 import org.neo4j.helpers.Pair;
-import org.neo4j.helpers.collection.IteratorUtil;
 import org.neo4j.helpers.collection.MapUtil;
 import org.neo4j.kernel.DefaultFileSystemAbstraction;
 import org.neo4j.kernel.api.direct.AllEntriesLabelScanReader;
 import org.neo4j.kernel.api.index.IndexConfiguration;
+import org.neo4j.kernel.api.index.IndexDescriptor;
 import org.neo4j.kernel.api.index.IndexPopulator;
 import org.neo4j.kernel.api.index.SchemaIndexProvider;
 import org.neo4j.kernel.api.labelscan.LabelScanReader;
@@ -90,6 +89,7 @@ import static org.neo4j.graphdb.Neo4jMatchers.inTx;
 import static org.neo4j.helpers.collection.Iterables.map;
 import static org.neo4j.helpers.collection.IteratorUtil.addToCollection;
 import static org.neo4j.helpers.collection.IteratorUtil.asCollection;
+import static org.neo4j.helpers.collection.IteratorUtil.asSet;
 import static org.neo4j.helpers.collection.IteratorUtil.iterator;
 import static org.neo4j.helpers.collection.MapUtil.map;
 import static org.neo4j.helpers.collection.MapUtil.stringMap;
@@ -481,7 +481,7 @@ public class TestBatchInsert
         BatchInserter graphDb = newBatchInserter();
         long startNode = graphDb.createNode( properties );
         long endNodes[] = new long[25];
-        Set<Long> rels = new HashSet<Long>();
+        Set<Long> rels = new HashSet<>();
         for ( int i = 0; i < 25; i++ )
         {
             endNodes[i] = graphDb.createNode( properties );
@@ -561,16 +561,6 @@ public class TestBatchInsert
         {
             return db.getNodeById( nodeId );
         }
-    }
-
-    private static <T> Set<T> asSet( T... items )
-    {
-        return new HashSet<T>( Arrays.asList( items ) );
-    }
-
-    private static <T> Set<T> asSet( Iterable<T> items )
-    {
-        return new HashSet<T>( IteratorUtil.asCollection( items ) );
     }
 
     private void setProperties( Node node )
@@ -966,7 +956,7 @@ public class TestBatchInsert
         SchemaIndexProvider provider = mock( SchemaIndexProvider.class );
 
         when( provider.getProviderDescriptor() ).thenReturn( InMemoryIndexProviderFactory.PROVIDER_DESCRIPTOR );
-        when( provider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) ).thenReturn( populator );
+        when( provider.getPopulator( anyLong(), any( IndexDescriptor.class ), any( IndexConfiguration.class ) ) ).thenReturn( populator );
 
         BatchInserter inserter = newBatchInserterWithSchemaIndexProvider(
                 singleInstanceSchemaIndexProviderFactory( InMemoryIndexProviderFactory.KEY, provider ) );
@@ -981,7 +971,7 @@ public class TestBatchInsert
         // THEN
         verify( provider ).init();
         verify( provider ).start();
-        verify( provider ).getPopulator( anyLong(), any( IndexConfiguration.class ) );
+        verify( provider ).getPopulator( anyLong(), any( IndexDescriptor.class ), any( IndexConfiguration.class ) );
         verify( populator ).create();
         verify( populator ).add( nodeId, "Jakewins" );
         verify( populator ).close( true );
@@ -990,7 +980,7 @@ public class TestBatchInsert
         verifyNoMoreInteractions( populator );
     }
 
-    @Test @Ignore("once we implement verify constraint on existing data")
+    @Test
     public void shouldRunConstraintPopulationJobAtShutdown() throws Throwable
     {
         // GIVEN
@@ -998,7 +988,7 @@ public class TestBatchInsert
         SchemaIndexProvider provider = mock( SchemaIndexProvider.class );
 
         when( provider.getProviderDescriptor() ).thenReturn( InMemoryIndexProviderFactory.PROVIDER_DESCRIPTOR );
-        when( provider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) ).thenReturn( populator );
+        when( provider.getPopulator( anyLong(), any( IndexDescriptor.class ), any( IndexConfiguration.class ) ) ).thenReturn( populator );
 
         BatchInserter inserter = newBatchInserterWithSchemaIndexProvider(
                 singleInstanceSchemaIndexProviderFactory( InMemoryIndexProviderFactory.KEY, provider ) );
@@ -1013,7 +1003,7 @@ public class TestBatchInsert
         // THEN
         verify( provider ).init();
         verify( provider ).start();
-        verify( provider ).getPopulator( anyLong(), any( IndexConfiguration.class ) );
+        verify( provider ).getPopulator( anyLong(), any( IndexDescriptor.class ), any( IndexConfiguration.class ) );
         verify( populator ).create();
         verify( populator ).add( nodeId, "Jakewins" );
         verify( populator ).close( true );
@@ -1032,7 +1022,7 @@ public class TestBatchInsert
         SchemaIndexProvider provider = mock( SchemaIndexProvider.class );
 
         when( provider.getProviderDescriptor() ).thenReturn( InMemoryIndexProviderFactory.PROVIDER_DESCRIPTOR );
-        when( provider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) ).thenReturn( populator );
+        when( provider.getPopulator( anyLong(), any( IndexDescriptor.class ), any( IndexConfiguration.class ) ) ).thenReturn( populator );
 
         BatchInserter inserter = newBatchInserterWithSchemaIndexProvider(
                 singleInstanceSchemaIndexProviderFactory( InMemoryIndexProviderFactory.KEY, provider ) );
@@ -1045,7 +1035,7 @@ public class TestBatchInsert
         // THEN
         verify( provider ).init();
         verify( provider ).start();
-        verify( provider ).getPopulator( anyLong(), any( IndexConfiguration.class ) );
+        verify( provider ).getPopulator( anyLong(), any( IndexDescriptor.class ), any( IndexConfiguration.class ) );
         verify( populator ).create();
         verify( populator ).add( jakewins, "Jakewins" );
         verify( populator ).add( boggle, "b0ggl3" );
@@ -1061,7 +1051,7 @@ public class TestBatchInsert
         SchemaIndexProvider provider = mock( SchemaIndexProvider.class );
 
         when( provider.getProviderDescriptor() ).thenReturn( InMemoryIndexProviderFactory.PROVIDER_DESCRIPTOR );
-        when( provider.getPopulator( anyLong(), any( IndexConfiguration.class ) ) ).thenReturn( populator );
+        when( provider.getPopulator( anyLong(), any( IndexDescriptor.class ), any( IndexConfiguration.class ) ) ).thenReturn( populator );
 
         BatchInserter inserter = newBatchInserterWithSchemaIndexProvider(
                 singleInstanceSchemaIndexProviderFactory( InMemoryIndexProviderFactory.KEY, provider ) );
@@ -1115,16 +1105,90 @@ public class TestBatchInsert
         labelScanStore.assertRecivedUpdate( node4, 0, 1 );
         labelScanStore.assertRecivedUpdate( node5, 0, 2 );
     }
+    
+    @Test
+    public void shouldSkipStoreScanIfNoLabelsAdded() throws Exception
+    {
+        // GIVEN
+        UpdateTrackingLabelScanStore labelScanStore = new UpdateTrackingLabelScanStore();
+        BatchInserter inserter = newBatchInserterWithLabelScanStore( new ControlledLabelScanStore( labelScanStore ) );
+        
+        // WHEN
+        inserter.createNode( null );
+        inserter.createNode( null );
+        inserter.shutdown();
+        
+        // THEN
+        assertEquals( 0, labelScanStore.writersCreated );
+    }
+    
+    @Test
+    public void propertiesCanBeReSetUsingBatchInserter()
+    {
+        // GIVEN
+        BatchInserter batchInserter = newBatchInserter();
+        Map<String, Object> props = new HashMap<>();
+        props.put( "name", "One" );
+        props.put( "count", 1 );
+        props.put( "tags", new String[] { "one", "two" } );
+        props.put( "something", "something" );
+        batchInserter.createNode( 1, props );
+        batchInserter.setNodeProperty( 1, "name", "NewOne" );
+        batchInserter.removeNodeProperty( 1, "count" );
+        batchInserter.removeNodeProperty( 1, "something" );
+        
+        // WHEN setting new properties
+        batchInserter.setNodeProperty( 1, "name", "YetAnotherOne" );
+        batchInserter.setNodeProperty( 1, "additional", "something" );
+        
+        // THEN there should be no problems doing so
+        assertEquals( "YetAnotherOne", batchInserter.getNodeProperties( 1 ).get( "name" ) );
+        assertEquals( "something", batchInserter.getNodeProperties( 1 ).get( "additional" ) );
+        
+        batchInserter.shutdown();
+    }
+
+    @Test
+    public void propertiesCanBeReSetUsingBatchInserter2()
+    {
+        // GIVEN
+        BatchInserter batchInserter = newBatchInserter();
+        long id = batchInserter.createNode( new HashMap<String, Object>() );
+        
+        // WHEN
+        batchInserter.setNodeProperty( id, "test", "looooooooooong test" );
+        batchInserter.setNodeProperty( id, "test", "small test" );
+        
+        // THEN
+        assertEquals( "small test", batchInserter.getNodeProperties( id ).get( "test" ) );
+        
+        batchInserter.shutdown();
+    }
+
+    @Test
+    public void replaceWithBiggerPropertySpillsOverIntoNewPropertyRecord()
+    {
+        // GIVEN
+        BatchInserter batchInserter = newBatchInserter();
+        Map<String, Object> props = new HashMap<>();
+        props.put( "name", "One" );
+        props.put( "count", 1 );
+        props.put( "tags", new String[] { "one", "two" } );
+        long id = batchInserter.createNode( props );
+        batchInserter.setNodeProperty( id, "name", "NewOne" );
+        
+        // WHEN
+        batchInserter.setNodeProperty( id, "count", "something" );
+        
+        // THEN
+        assertEquals( "something", batchInserter.getNodeProperties( id ).get( "count" ) );
+        batchInserter.shutdown();
+    }
 
     private static class UpdateTrackingLabelScanStore implements LabelScanStore
     {
         private final List<NodeLabelUpdate> allUpdates = new ArrayList<>();
-
-        @Override
-        public void updateAndCommit( Iterator<NodeLabelUpdate> updates ) throws IOException
-        {
-            addToCollection( updates, allUpdates );
-        }
+        int writersCreated;
 
         public void assertRecivedUpdate( long node, long... labels )
         {
@@ -1187,6 +1251,24 @@ public class TestBatchInsert
         @Override
         public void shutdown() throws IOException
         {
+        }
+
+        @Override public LabelScanWriter newWriter()
+        {
+            writersCreated++;
+            return new LabelScanWriter()
+            {
+                @Override
+                public void write( NodeLabelUpdate update ) throws IOException
+                {
+                    addToCollection( Collections.singletonList( update ).iterator(), allUpdates );
+                }
+
+                @Override
+                public void close() throws IOException
+                {
+                }
+            };
         }
     }
 

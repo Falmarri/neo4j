@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -46,11 +46,11 @@ case class ReduceFunction(collection: Expression, id: String, expression: Expres
   def identifierDependencies(expectedType: CypherType) = AnyType
 
   def calculateType(symbols: SymbolTable) = {
-    val iteratorType = collection.evaluateType(CollectionType(AnyType()), symbols).iteratedType
-    var innerSymbols = symbols.add(acc, init.evaluateType(AnyType(), symbols))
+    val iteratorType = collection.evaluateType(CTCollection(CTAny), symbols).legacyIteratedType
+    var innerSymbols = symbols.add(acc, init.evaluateType(CTAny, symbols))
     innerSymbols = innerSymbols.add(id, iteratorType)
     // return expressions's type as the end result for reduce
-    expression.evaluateType(AnyType(), innerSymbols)
+    expression.evaluateType(CTAny, innerSymbols)
   }
 
   def symbolTableDependencies = (collection.symbolTableDependencies ++ expression.symbolTableDependencies ++ init.symbolTableDependencies) - id - acc

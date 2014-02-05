@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -300,11 +300,19 @@ public class TransactionWrappingRestfulGraphDatabase extends RestfulGraphDatabas
     @Override
     public Response createPropertyUniquenessConstraint( String labelName, String body )
     {
-        throw new UnsupportedOperationException( "TODO" );
+        try ( Transaction transaction = graph.beginTx() )
+        {
+            Response response = restfulGraphDatabase.createPropertyUniquenessConstraint( labelName, body );
+            if ( response.getStatus() < 300 )
+            {
+                transaction.success();
+            }
+            return response;
+        }
     }
 
     @Override
-    public Response getSchemaIndexes( String labelName )
+    public Response getSchemaIndexesForLabel( String labelName )
     {
         throw new UnsupportedOperationException( "TODO" );
     }
@@ -833,7 +841,10 @@ public class TransactionWrappingRestfulGraphDatabase extends RestfulGraphDatabas
     @Override
     public Response getNodeLabels( ForceMode force, long nodeId )
     {
-        throw new UnsupportedOperationException( "TODO" );
+        try ( Transaction ignored = graph.beginTx() )
+        {
+            return restfulGraphDatabase.getNodeLabels( force, nodeId );
+        }
     }
 
     @Override
@@ -852,7 +863,15 @@ public class TransactionWrappingRestfulGraphDatabase extends RestfulGraphDatabas
     @Override
     public Response addNodeLabel( ForceMode force, long nodeId, String body )
     {
-        throw new UnsupportedOperationException( "TODO" );
+        try ( Transaction transaction = graph.beginTx() )
+        {
+            Response response = restfulGraphDatabase.addNodeLabel( force, nodeId, body );
+            if ( response.getStatus() < 300 )
+            {
+                transaction.success();
+            }
+            return response;
+        }
     }
 
     @Override
@@ -893,16 +912,14 @@ public class TransactionWrappingRestfulGraphDatabase extends RestfulGraphDatabas
     public Response setNodeProperty( ForceMode force, long
             nodeId, String key, String body )
     {
-        Transaction transaction = graph.beginTx();
-        try
+        try (Transaction transaction = graph.beginTx())
         {
             Response response = restfulGraphDatabase.setNodeProperty( force, nodeId, key, body );
-            transaction.success();
+            if (response.getStatus() < 300)
+            {
+                transaction.success();
+            }
             return response;
-        }
-        finally
-        {
-            transaction.finish();
         }
     }
 

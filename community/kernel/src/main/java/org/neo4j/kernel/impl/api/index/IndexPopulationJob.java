@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -202,7 +202,7 @@ public class IndexPopulationJob implements Runnable
                     populator.add( update.getNodeId(), update.getValueAfter() );
                     populateFromQueueIfAvailable( update.getNodeId() );
                 }
-                catch ( Exception conflict )
+                catch ( IndexEntryConflictException | IOException conflict )
                 {
                     throw new IndexPopulationFailedKernelException( descriptor, indexUserDescription, conflict );
                 }
@@ -210,6 +210,14 @@ public class IndexPopulationJob implements Runnable
             }
         });
         storeScan.run();
+        try
+        {
+            populator.verifyDeferredConstraints( storeView );
+        }
+        catch ( Exception conflict )
+        {
+            throw new IndexPopulationFailedKernelException( descriptor, indexUserDescription, conflict );
+        }
     }
 
     private void populateFromQueueIfAvailable( final long highestIndexedNodeId )
@@ -217,7 +225,7 @@ public class IndexPopulationJob implements Runnable
     {
         if ( !queue.isEmpty() )
         {
-            try ( IndexUpdater updater = populator.newPopulatingUpdater() )
+            try ( IndexUpdater updater = populator.newPopulatingUpdater( storeView ) )
             {
                 for ( NodePropertyUpdate update : queue )
                 {

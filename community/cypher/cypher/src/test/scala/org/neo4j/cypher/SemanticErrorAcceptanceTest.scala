@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -49,14 +49,14 @@ class SemanticErrorAcceptanceTest extends ExecutionEngineHelper with Assertions 
   @Test def cantUseTYPEOnNodes() {
     test(
       "start r=node(0) return type(r)",
-      "Type mismatch: r already defined with conflicting type Node (expected Relationship) (line 1, column 29)"
+      "Type mismatch: expected Relationship but was Node (line 1, column 29)"
     )
   }
 
   @Test def cantUseLENGTHOnNodes() {
     test(
       "start n=node(0) return length(n)",
-      "Type mismatch: n already defined with conflicting type Node (expected Collection<Any>, Path or String) (line 1, column 31)"
+      "Type mismatch: expected Path, String or Collection<T> but was Node (line 1, column 31)"
     )
   }
 
@@ -70,7 +70,7 @@ class SemanticErrorAcceptanceTest extends ExecutionEngineHelper with Assertions 
   @Test def shouldKnowNotToCompareStringsAndNumbers() {
     test(
       "start a=node(0) where a.age =~ 13 return a",
-      "Type mismatch: expected String but was Long (line 1, column 32)"
+      "Type mismatch: expected String but was Integer (line 1, column 32)"
     )
   }
 
@@ -159,13 +159,6 @@ class SemanticErrorAcceptanceTest extends ExecutionEngineHelper with Assertions 
     )
   }
 
-  @Test def shortestPathNeedsBothEndNodes() {
-    test(
-      "start a=node(0) match p=shortestPath(a-->b) return p",
-      "Unknown identifier `b`"
-    )
-  }
-
   @Test def shouldBeSemanticallyIncorrectToReferToUnknownIdentifierInCreateConstraint() {
     test(
       "create constraint on (foo:Foo) bar.name is unique",
@@ -183,7 +176,7 @@ class SemanticErrorAcceptanceTest extends ExecutionEngineHelper with Assertions 
   @Test def shouldFailTypeCheckWhenDeleting() {
     test(
       "start a=node(0) delete 1 + 1",
-      "Type mismatch: expected Node, Relationship or Path but was Long (line 1, column 26)"
+      "Type mismatch: expected Node, Path or Relationship but was Integer (line 1, column 26)"
     )
   }
 
@@ -371,17 +364,24 @@ class SemanticErrorAcceptanceTest extends ExecutionEngineHelper with Assertions 
     )
   }
 
-  @Test def shouldMakeItClearThatAtLeastOneNodeMustBeBoundForPatternMerge() {
+  @Test def shouldWarnOnOverSizedInteger() {
     test(
-      "MERGE (a {prop:1})-[:FOO]->(b {prop:2})",
-      "MERGE needs at least some part of the pattern to already be known. Please provide values for one of: a, b"
+      "RETURN 1766384027365849394756747201203756",
+      "integer is too large (line 1, column 8)"
     )
   }
 
-  @Test def shouldMakeItClearThatWeCurrentlyDontSupportRelationshipsInPatterns() {
+  @Test def shouldWarnOnOverSizedDouble() {
     test(
-      "MATCH n WHERE (n)-[{prop:42}]->() RETURN n",
-      "Cypher can not currently handle relationships with properties in expressions (line 1, column 20)"
+      "RETURN 1.34E999",
+      "floating point number is too large (line 1, column 8)"
+    )
+  }
+
+  @Test def shouldGiveTypeErrorForActionsOnMixedCollection() {
+    test(
+      "RETURN (['a', 1][0]).prop",
+      "Type mismatch: expected Map, Node or Relationship but was Any (line 1, column 19)"
     )
   }
 
@@ -391,10 +391,9 @@ class SemanticErrorAcceptanceTest extends ExecutionEngineHelper with Assertions 
       result.toList
       fail(s"Did not get the expected syntax error, expected: $message")
     } catch {
-      case x: CypherException => {
+      case x: CypherException =>
         val actual = x.getMessage.lines.next().trim
         assertThat(actual, equalTo(message))
-      }
     }
   }
 }

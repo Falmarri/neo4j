@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -35,7 +35,9 @@ import org.neo4j.kernel.impl.api.operations.SchemaStateOperations;
 import org.neo4j.kernel.impl.api.operations.SchemaWriteOperations;
 import org.neo4j.kernel.impl.api.state.TxState;
 
+import static org.mockito.Matchers.anyInt;
 import static org.mockito.Matchers.anyLong;
+import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -62,6 +64,9 @@ public abstract class StatementOperationsTestHelper
     {
         KernelStatement state = mock( KernelStatement.class );
         LockHolder lockHolder = mock( LockHolder.class );
+        ReleasableLock lock = mock( ReleasableLock.class );
+        when( lockHolder.getReleasableIndexEntryReadLock( anyInt(), anyInt(), anyString() ) ).thenReturn( lock );
+        when( lockHolder.getReleasableIndexEntryWriteLock( anyInt(), anyInt(), anyString() ) ).thenReturn( lock );
         try
         {
             IndexReader indexReader = mock( IndexReader.class );

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,6 +20,7 @@
 package org.neo4j.cypher.internal.compiler.v2_0.parser
 
 import org.neo4j.cypher.internal.compiler.v2_0._
+import ast.convert.StatementConverters._
 import commands.AbstractQuery
 import org.neo4j.cypher.SyntaxException
 import org.neo4j.helpers.ThisShouldNotHappenError
@@ -30,7 +31,7 @@ case class CypherParser() extends Parser
   with Statement
   with Expressions {
 
-  def SingleStatement : Rule1[ast.Statement] = rule {
+  val SingleStatement: Rule1[ast.Statement] = rule {
     WS ~ Statement ~~ optional(ch(';') ~ WS) ~ EOI.label("end of input")
   }
 
@@ -38,19 +39,19 @@ case class CypherParser() extends Parser
   def parse(text: String): ast.Statement = {
     val parsingResult = ReportingParseRunner(SingleStatement).run(text)
     parsingResult.result match {
-      case Some(statement : ast.Statement) => statement
+      case Some(statement: ast.Statement) => statement
       case _ => {
         parsingResult.parseErrors.map { error =>
           val message = if (error.getErrorMessage != null) {
             error.getErrorMessage
           } else {
             error match {
-              case invalidInput : InvalidInputError => new InvalidInputErrorFormatter().format(invalidInput)
-              case _                                => error.getClass.getSimpleName
+              case invalidInput: InvalidInputError => new InvalidInputErrorFormatter().format(invalidInput)
+              case _                               => error.getClass.getSimpleName
             }
           }
           val position = BufferPosition(error.getInputBuffer, error.getStartIndex)
-          throw new SyntaxException(s"${message} (${position})", text, error.getStartIndex)
+          throw new SyntaxException(s"$message ($position)", text, position.offset)
         }
       }
         throw new ThisShouldNotHappenError("cleishm", "Parsing failed but no parse errors were provided")
@@ -61,8 +62,8 @@ case class CypherParser() extends Parser
   def parseToQuery(query: String): AbstractQuery = {
     val statement = parse(query)
     statement.semanticCheck(SemanticState.clean).errors.map { error =>
-      throw new SyntaxException(s"${error.msg} (${error.token.startPosition})", query, error.token.startPosition.offset)
+      throw new SyntaxException(s"${error.msg} (${error.position})", query, error.position.offset)
     }
-    ReattachAliasedExpressions(statement.toLegacyQuery.setQueryText(query))
+    ReattachAliasedExpressions(statement.asQuery.setQueryText(query))
   }
 }

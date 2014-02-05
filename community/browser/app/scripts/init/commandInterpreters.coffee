@@ -1,5 +1,5 @@
 ###!
-Copyright (c) 2002-2013 "Neo Technology,"
+Copyright (c) 2002-2014 "Neo Technology,"
 Network Engine for Objects in Lund AB [http://neotechnology.com]
 
 This file is part of Neo4j.
@@ -160,7 +160,7 @@ angular.module('neo4jApp')
             else
               # insist that data is parseable JSON
               try
-                data = JSON.parse(data.replace(/\n/g, ""))
+                JSON.parse(data.replace(/\n/g, ""))
               catch e
                 q.reject(error("Payload does not seem to be valid data."))
                 return q.promise

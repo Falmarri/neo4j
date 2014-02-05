@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -71,7 +71,7 @@ class ReturnTest extends DocumentingTestBase {
       outside of the english alphabet, you can use the +`+ to enclose the identifier, like this:""",
       queryText = """match (`This isn't a common identifier`) where `This isn't a common identifier`.name='A'
 return `This isn't a common identifier`.happy""",
-      returns = """The node indexed with name "A" is returned""",
+      returns = """The node with name "A" is returned""",
       assertions = (p) => assertEquals(List(Map("`This isn't a common identifier`.happy" -> "Yes!")), p.toList))
   }
 

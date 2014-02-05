@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -39,8 +39,8 @@ case class RelationshipFunction(path: Expression) extends NullInNullOutExpressio
   def arguments = Seq(path)
 
   def calculateType(symbols: SymbolTable) = {
-    path.evaluateType(PathType(), symbols)
-    CollectionType(RelationshipType())
+    path.evaluateType(CTPath, symbols)
+    CTCollection(CTRelationship)
   }
 
   def symbolTableDependencies = path.symbolTableDependencies

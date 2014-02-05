@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,17 +20,19 @@
 package org.neo4j.cypher.internal.compiler.v2_0.functions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import ast.FunctionInvocation
+import ast.convert.ExpressionConverters._
 import symbols._
 
-case object And extends PredicateFunction {
+case object And extends PredicateFunction with SimpleTypedFunction {
   def name = "AND"
 
-  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation) : SemanticCheck =
-    checkArgs(invocation, 2) then
-//    invocation.arguments.constrainType(BooleanType()) then // TODO: should constrain to boolean, when coercion is possible
-    invocation.specifyType(BooleanType())
+  val signatures = Vector(
+    Signature(argumentTypes = Vector(CTBoolean, CTBoolean), outputType = CTBoolean)
+  )
 
-  protected def internalToPredicate(invocation: FunctionInvocation) =
-    commands.And(invocation.arguments(0).toPredicate, invocation.arguments(1).toPredicate)
+  protected def internalToPredicate(invocation: ast.FunctionInvocation) =
+    commands.And(
+      invocation.arguments(0).asCommandPredicate,
+      invocation.arguments(1).asCommandPredicate
+    )
 }

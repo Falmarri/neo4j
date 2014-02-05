@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -32,6 +32,10 @@ public enum BitmapFormat
         this.mask = mask;
     }
 
+    public int rangeSize() {
+        return 1 << shift;
+    }
+
     public long rangeOf( long id )
     {
         return id >> shift;
@@ -59,7 +63,7 @@ public enum BitmapFormat
     }
 
     // Returns true if the label exists on the given node for the given bitmap
-    public boolean peek( long bitmap, long nodeId )
+    public boolean hasLabel( long bitmap, long nodeId )
     {
         long normalizedNodeId = nodeId % (1L << shift);
 

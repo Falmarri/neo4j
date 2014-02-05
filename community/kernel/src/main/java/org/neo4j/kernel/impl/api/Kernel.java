@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -25,12 +25,11 @@ import javax.transaction.Transaction;
 import org.neo4j.graphdb.DatabaseShutdownException;
 import org.neo4j.kernel.api.KernelAPI;
 import org.neo4j.kernel.api.KernelTransaction;
-import org.neo4j.kernel.impl.core.Transactor;
 import org.neo4j.kernel.api.labelscan.LabelScanStore;
-import org.neo4j.kernel.impl.api.operations.LegacyKernelOperations;
-import org.neo4j.kernel.impl.api.state.ConstraintIndexCreator;
 import org.neo4j.kernel.impl.api.index.IndexingService;
 import org.neo4j.kernel.impl.api.index.SchemaIndexProviderMap;
+import org.neo4j.kernel.impl.api.operations.LegacyKernelOperations;
+import org.neo4j.kernel.impl.api.state.ConstraintIndexCreator;
 import org.neo4j.kernel.impl.api.state.TxState;
 import org.neo4j.kernel.impl.api.store.CacheLayer;
 import org.neo4j.kernel.impl.api.store.DiskLayer;
@@ -42,6 +41,7 @@ import org.neo4j.kernel.impl.core.NodeManager;
 import org.neo4j.kernel.impl.core.PropertyKeyTokenHolder;
 import org.neo4j.kernel.impl.core.RelationshipTypeTokenHolder;
 import org.neo4j.kernel.impl.core.TransactionState;
+import org.neo4j.kernel.impl.core.Transactor;
 import org.neo4j.kernel.impl.nioneo.store.NeoStore;
 import org.neo4j.kernel.impl.nioneo.store.SchemaRule;
 import org.neo4j.kernel.impl.nioneo.store.SchemaStorage;
@@ -85,7 +85,7 @@ import static org.neo4j.helpers.collection.IteratorUtil.loop;
  * at the same time it should remain independent and runnable without a transaction manager.
  *
  * The heart of this work is in the relationship between {@link KernelTransaction},
- * {@link org.neo4j.kernel.impl.nioneo.xa.WriteTransaction} and
+ * {@link org.neo4j.kernel.impl.nioneo.xa.NeoStoreTransaction} and
  * {@link org.neo4j.kernel.impl.transaction.xaframework.XaResourceManager}. The latter should become a wrapper around
  * KernelTransactions, exposing them as JTA-capable transactions. The Write transaction should be hidden from the outside,
  * an implementation detail living inside the kernel.
@@ -240,13 +240,12 @@ public class Kernel extends LifecycleAdapter implements KernelAPI
         // Bottom layer: Read-access to committed data
         StoreReadLayer storeLayer = new CacheLayer( new DiskLayer( propertyKeyTokenHolder, labelTokenHolder,
                 relationshipTypeTokenHolder, new SchemaStorage( neoStore.getSchemaStore() ), neoStore,
-                indexService ), persistenceCache, indexService, schemaCache );;
+                indexService ), persistenceCache, indexService, schemaCache );
 
         // + Transaction state handling
         StateHandlingStatementOperations stateHandlingContext = new StateHandlingStatementOperations(
                 storeLayer, legacyPropertyTrackers,
-                new ConstraintIndexCreator( new Transactor( transactionManager, persistenceManager ), indexService ),
-                persistenceManager );
+                new ConstraintIndexCreator( new Transactor( transactionManager, persistenceManager ), indexService ) );
 
         StatementOperationParts parts = new StatementOperationParts( stateHandlingContext, stateHandlingContext,
                 stateHandlingContext, stateHandlingContext, stateHandlingContext, stateHandlingContext,

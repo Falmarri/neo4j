@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,11 +19,12 @@
  */
 package org.neo4j.cypher.internal.compiler.v2_0.executionplan.builders
 
-import org.neo4j.cypher.internal.compiler.v2_0.commands._
-import org.neo4j.cypher.internal.compiler.v2_0.commands.expressions._
-import org.neo4j.cypher.internal.compiler.v2_0.spi.PlanContext
-import org.neo4j.cypher.internal.compiler.v2_0.commands.values.KeyToken
-import org.neo4j.cypher.internal.compiler.v2_0.symbols.{NodeType, SymbolTable}
+import org.neo4j.cypher.internal.compiler.v2_0._
+import commands._
+import commands.expressions._
+import commands.values.KeyToken
+import spi.PlanContext
+import symbols._
 
 /*
 This rather simple class finds a starting strategy for a given single node and a list of predicates required
@@ -130,13 +131,13 @@ object IndexSeekStrategy extends NodeStrategy {
       val schemaIndex = SchemaIndex(node, labelPredicate.solution, propertyPredicate.solution, AnyIndex, None)
       val optConstraint = ctx.getUniquenessConstraint(labelPredicate.solution, propertyPredicate.solution)
       val rating = if (optConstraint.isDefined) Single else IndexEquality
-      val predicates = Seq(labelPredicate.predicate, propertyPredicate.predicate)
+      val predicates = Seq.empty // These are still not solved.
       RatedStartItem(schemaIndex, rating, predicates)
     }
   }
 
   private def findEqualityPredicatesOnProperty(identifier: IdentifierName, where: Seq[Predicate], initialSymbols: SymbolTable): Seq[SolvedPredicate[PropertyKey]] = {
-    val symbols = initialSymbols.add(identifier, NodeType())
+    val symbols = initialSymbols.add(identifier, CTNode)
 
     where.collect {
       case predicate @ Equals(Property(Identifier(id), propertyKey), expression)

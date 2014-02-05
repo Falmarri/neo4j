@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,21 +20,15 @@
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.commands
 
-case class OrderBy(sortItems: Seq[SortItem], token: InputToken) extends AstNode with SemanticCheckable {
+case class OrderBy(sortItems: Seq[SortItem])(val position: InputPosition) extends ASTNode with SemanticCheckable {
   def semanticCheck = sortItems.semanticCheck
 }
 
-sealed trait SortItem extends AstNode with SemanticCheckable {
+sealed trait SortItem extends ASTNode with SemanticCheckable {
   def expression: Expression
   def semanticCheck = expression.semanticCheck(Expression.SemanticContext.Results)
+}
 
-  def toCommand : commands.SortItem
-}
-case class AscSortItem(expression: Expression, token: InputToken) extends SortItem {
-  def toCommand = commands.SortItem(expression.toCommand, ascending = true)
-}
-case class DescSortItem(expression: Expression, token: InputToken) extends SortItem {
-  def toCommand = commands.SortItem(expression.toCommand, ascending = false)
-}
+case class AscSortItem(expression: Expression)(val position: InputPosition) extends SortItem
+case class DescSortItem(expression: Expression)(val position: InputPosition) extends SortItem

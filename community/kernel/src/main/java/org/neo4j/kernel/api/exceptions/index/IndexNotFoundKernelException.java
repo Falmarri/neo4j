@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,16 +20,17 @@
 package org.neo4j.kernel.api.exceptions.index;
 
 import org.neo4j.kernel.api.exceptions.KernelException;
+import org.neo4j.kernel.api.exceptions.Status;
 
 public class IndexNotFoundKernelException extends KernelException
 {
     public IndexNotFoundKernelException( String message, Throwable cause )
     {
-        super( cause, message );
+        super( Status.Schema.NoSuchIndex, cause, message );
     }
 
     public IndexNotFoundKernelException( String msg )
     {
-        super( msg );
+        super( Status.Schema.NoSuchIndex, msg );
     }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -126,7 +126,7 @@ case class PartiallySolvedQuery(returns: Seq[QueryToken[ReturnColumn]],
         case x => x
       },
       where = where.map {
-        case Unsolved(pred) => Unsolved(pred.rewrite(f))
+        case Unsolved(pred) => Unsolved(pred.rewriteAsPredicate(f))
         case x => x
       },
       updates = updates.map {

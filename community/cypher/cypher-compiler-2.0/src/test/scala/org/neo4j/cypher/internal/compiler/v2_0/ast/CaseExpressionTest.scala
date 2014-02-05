@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -30,23 +30,22 @@ class CaseExpressionTest extends Assertions {
   @Test
   def shouldHaveMergedTypesOfAllAlternativesInSimpleCase() {
     val caseExpression = CaseExpression(
-      Some(DummyExpression(TypeSet(StringType()), DummyToken(2, 3))),
-      Seq(
+      expression = Some(DummyExpression(CTString)),
+      alternatives = Seq(
         (
-          DummyExpression(TypeSet(StringType()), DummyToken(5, 7)),
-          DummyExpression(TypeSet(DoubleType()), DummyToken(10, 11))
+          DummyExpression(CTString),
+          DummyExpression(CTDouble)
         ), (
-          DummyExpression(TypeSet(StringType()), DummyToken(12, 15)),
-          DummyExpression(TypeSet(IntegerType()), DummyToken(17, 20))
+          DummyExpression(CTString),
+          DummyExpression(CTInteger)
         )
       ),
-      Some(DummyExpression(TypeSet(DoubleType()), DummyToken(22, 25))),
-      DummyToken(2, 25)
-    )
+      default = Some(DummyExpression(CTDouble))
+    )(DummyPosition(2))
 
     val result = caseExpression.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
     assert(result.errors === Seq())
-    assert(caseExpression.types(result.state) === Set(NumberType()))
+    assert(caseExpression.types(result.state) === CTNumber.invariant)
   }
 
   @Test
@@ -55,20 +54,19 @@ class CaseExpressionTest extends Assertions {
       None,
       Seq(
         (
-          DummyExpression(TypeSet(BooleanType()), DummyToken(5, 7)),
-          DummyExpression(TypeSet(DoubleType(), StringType()), DummyToken(10, 11))
+          DummyExpression(CTBoolean),
+          DummyExpression(CTDouble | CTString)
         ), (
-          DummyExpression(TypeSet(BooleanType()), DummyToken(12, 15)),
-          DummyExpression(TypeSet(IntegerType()), DummyToken(17, 20))
+          DummyExpression(CTBoolean),
+          DummyExpression(CTInteger)
         )
       ),
-      Some(DummyExpression(TypeSet(DoubleType(), NodeType()), DummyToken(22, 25))),
-      DummyToken(2, 25)
-    )
+      Some(DummyExpression(CTDouble | CTNode))
+    )(DummyPosition(2))
 
     val result = caseExpression.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
     assert(result.errors === Seq())
-    assert(caseExpression.types(result.state) === Set(NumberType(), AnyType()))
+    assert(caseExpression.types(result.state) === (CTNumber | CTAny))
   }
 
   @Test
@@ -77,21 +75,20 @@ class CaseExpressionTest extends Assertions {
       None,
       Seq(
         (
-          DummyExpression(TypeSet(BooleanType()), DummyToken(5, 7)),
-          DummyExpression(TypeSet(DoubleType()), DummyToken(10, 11))
+          DummyExpression(CTBoolean),
+          DummyExpression(CTDouble)
         ), (
-          DummyExpression(TypeSet(StringType()), DummyToken(12, 15)),
-          DummyExpression(TypeSet(IntegerType()), DummyToken(17, 20))
+          DummyExpression(CTString, DummyPosition(12)),
+          DummyExpression(CTInteger)
         )
       ),
-      Some(DummyExpression(TypeSet(DoubleType()), DummyToken(22, 25))),
-      DummyToken(2, 25)
-    )
+      Some(DummyExpression(CTDouble))
+    )(DummyPosition(2))
 
     val result = caseExpression.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
     assert(result.errors.size === 1)
     assert(result.errors.head.msg === "Type mismatch: expected Boolean but was String")
-    assert(result.errors.head.token === DummyToken(12,15))
+    assert(result.errors.head.position === DummyPosition(12))
   }
 
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,8 +19,7 @@
  */
 package org.neo4j.kernel.api.index;
 
-import java.io.Closeable;
-
+import org.neo4j.graphdb.Resource;
 import org.neo4j.kernel.impl.util.PrimitiveLongIterator;
 
 import static org.neo4j.helpers.collection.IteratorUtil.emptyPrimitiveLongIterator;
@@ -30,12 +29,9 @@ import static org.neo4j.helpers.collection.IteratorUtil.emptyPrimitiveLongIterat
  * Must honor repeatable reads, which means that if a lookup is executed multiple times the same result set
  * must be returned.
  */
-public interface IndexReader extends Closeable
+public interface IndexReader extends Resource
 {
     PrimitiveLongIterator lookup( Object value );
-
-    @Override
-    void close();
     
     IndexReader EMPTY = new IndexReader()
     {

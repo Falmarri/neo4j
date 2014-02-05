@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -127,6 +127,57 @@ public class MasterInfoServiceTest
 
         // when
         Response response = service.isSlave();
+
+        // then
+        assertEquals( 404, response.getStatus() );
+        assertEquals( "UNKNOWN", String.valueOf( response.getEntity() ) );
+    }
+
+    @Test
+    public void shouldReportMasterAsGenerallyAvailableForTransactionProcessing() throws Exception
+    {
+        // given
+        HighlyAvailableGraphDatabase database = mock( HighlyAvailableGraphDatabase.class );
+        when( database.role() ).thenReturn( "master" );
+
+        MasterInfoService service = new MasterInfoService( null, database );
+
+        // when
+        Response response = service.isAvailable();
+
+        // then
+        assertEquals( 200, response.getStatus() );
+        assertEquals( "master", String.valueOf( response.getEntity() ) );
+    }
+
+    @Test
+    public void shouldReportSlaveAsGenerallyAvailableForTransactionProcessing() throws Exception
+    {
+        // given
+        HighlyAvailableGraphDatabase database = mock( HighlyAvailableGraphDatabase.class );
+        when( database.role() ).thenReturn( "slave" );
+
+        MasterInfoService service = new MasterInfoService( null, database );
+
+        // when
+        Response response = service.isAvailable();
+
+        // then
+        assertEquals( 200, response.getStatus() );
+        assertEquals( "slave", String.valueOf( response.getEntity() ) );
+    }
+
+    @Test
+    public void shouldReportNonMasterOrSlaveAsUnavailableForTransactionProcessing() throws Exception
+    {
+        // given
+        HighlyAvailableGraphDatabase database = mock( HighlyAvailableGraphDatabase.class );
+        when( database.role() ).thenReturn( "unknown" );
+
+        MasterInfoService service = new MasterInfoService( null, database );
+
+        // when
+        Response response = service.isAvailable();
 
         // then
         assertEquals( 404, response.getStatus() );

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,70 +19,70 @@
  */
 package org.neo4j.cypher.internal.compiler.v2_0.parser
 
-import org.neo4j.cypher.internal.compiler.v2_0.ast
+import org.neo4j.cypher.internal.compiler.v2_0._
 import org.parboiled.scala._
 
 trait StartPoints extends Parser
   with Literals
   with Base {
 
-  def StartPoint : Rule1[ast.StartItem] = rule {
-    Identifier ~>> (_.start) ~~ operator("=") ~~ Lookup
+  def StartPoint: Rule1[ast.StartItem] = rule {
+    Identifier ~>> position ~~ operator("=") ~~ Lookup
   }
 
-  private def Lookup : ReductionRule2[ast.Identifier, Int, ast.StartItem] = {
+  private def Lookup: ReductionRule2[ast.Identifier, InputPosition, ast.StartItem] = {
     NodeLookup | RelationshipLookup
   }
 
-  private def NodeLookup : ReductionRule2[ast.Identifier, Int, ast.StartItem] = {
+  private def NodeLookup: ReductionRule2[ast.Identifier, InputPosition, ast.StartItem] = {
     keyword("NODE") ~~ (NodeIndexLookup | NodeIndexQuery | NodeIdLookup)
   }
 
-  private def NodeIdLookup : ReductionRule2[ast.Identifier, Int, ast.StartItem] = rule {
+  private def NodeIdLookup: ReductionRule2[ast.Identifier, InputPosition, ast.StartItem] = rule {
     "(" ~~ (
-        LiteralIds ~>> (_.end) ~~> rt(ast.NodeByIds(_: ast.Identifier, _: Seq[ast.UnsignedInteger], _))
-      | Parameter ~>> (_.end) ~~> rt(ast.NodeByParameter(_: ast.Identifier, _: ast.Parameter, _))
-      | "*" ~>> (_.end) ~~> rt(ast.AllNodes(_: ast.Identifier, _))
+        LiteralIds ~~> ((i: ast.Identifier, p: InputPosition, ids) => ast.NodeByIds(i, ids)(p))
+      | Parameter ~~> ((i: ast.Identifier, p: InputPosition, param) => ast.NodeByParameter(i, param)(p))
+      | "*" ~~> ((i: ast.Identifier, p: InputPosition) => ast.AllNodes(i)(p))
     ) ~~ ")"
   }
 
-  private def NodeIndexLookup : ReductionRule2[ast.Identifier, Int, ast.NodeByIndex] = {
-    IdentifiedIndexLookup ~>> (_.end) ~~> rt(ast.NodeByIdentifiedIndex(_, _, _, _, _))
+  private def NodeIndexLookup: ReductionRule2[ast.Identifier, InputPosition, ast.NodeByIdentifiedIndex] = {
+    IdentifiedIndexLookup ~~> ((i, p, index, key, value) => ast.NodeByIdentifiedIndex(i, index, key, value)(p))
   }
 
-  private def NodeIndexQuery : ReductionRule2[ast.Identifier, Int, ast.NodeByIndexQuery] = rule {
-    IndexQuery ~>> (_.end) ~~> rt(ast.NodeByIndexQuery(_, _, _, _))
+  private def NodeIndexQuery: ReductionRule2[ast.Identifier, InputPosition, ast.NodeByIndexQuery] = rule {
+    IndexQuery ~~> ((i: ast.Identifier, p: InputPosition, index, query) => ast.NodeByIndexQuery(i, index, query)(p))
   }
 
-  private def RelationshipLookup : ReductionRule2[ast.Identifier, Int, ast.StartItem] = {
+  private def RelationshipLookup: ReductionRule2[ast.Identifier, InputPosition, ast.StartItem] = {
     (keyword("RELATIONSHIP") | keyword("REL")).label("RELATIONSHIP") ~~ (RelationshipIndexLookup | RelationshipIndexQuery | RelationshipIdLookup)
   }
 
-  private def RelationshipIdLookup : ReductionRule2[ast.Identifier, Int, ast.StartItem] = rule {
+  private def RelationshipIdLookup: ReductionRule2[ast.Identifier, InputPosition, ast.StartItem] = rule {
     "(" ~~ (
-        LiteralIds ~>> (_.end) ~~> rt(ast.RelationshipByIds(_: ast.Identifier, _: Seq[ast.UnsignedInteger], _))
-      | Parameter ~>> (_.end) ~~> rt(ast.RelationshipByParameter(_: ast.Identifier, _: ast.Parameter, _))
-      | "*" ~>> (_.end) ~~> rt(ast.AllRelationships(_: ast.Identifier, _))
+        LiteralIds ~~> ((i: ast.Identifier, p: InputPosition, ids) => ast.RelationshipByIds(i, ids)(p))
+      | Parameter ~~> ((i: ast.Identifier, p: InputPosition, param) => ast.RelationshipByParameter(i, param)(p))
+      | "*" ~~> ((i: ast.Identifier, p: InputPosition) => ast.AllRelationships(i)(p))
     ) ~~ ")"
   }
 
-  private def RelationshipIndexLookup : ReductionRule2[ast.Identifier, Int, ast.StartItem] = {
-    IdentifiedIndexLookup ~>> (_.end) ~~> rt(ast.RelationshipByIdentifiedIndex(_, _, _, _, _))
+  private def RelationshipIndexLookup: ReductionRule2[ast.Identifier, InputPosition, ast.RelationshipByIdentifiedIndex] = {
+    IdentifiedIndexLookup ~~> ((i, p, index, key, value) => ast.RelationshipByIdentifiedIndex(i, index, key, value)(p))
   }
 
-  private def RelationshipIndexQuery : ReductionRule2[ast.Identifier, Int, ast.RelationshipByIndexQuery] = rule {
-    IndexQuery ~>> (_.end) ~~> rt(ast.RelationshipByIndexQuery(_, _, _, _))
+  private def RelationshipIndexQuery: ReductionRule2[ast.Identifier, InputPosition, ast.RelationshipByIndexQuery] = rule {
+    IndexQuery ~~> ((i: ast.Identifier, p: InputPosition, index, query) => ast.RelationshipByIndexQuery(i, index, query)(p))
   }
 
-  private def IdentifiedIndexLookup : Rule3[ast.Identifier, ast.Identifier, ast.Expression] = rule {
+  private def IdentifiedIndexLookup: Rule3[ast.Identifier, ast.Identifier, ast.Expression] = rule {
     ":" ~~ Identifier ~~ "(" ~~ Identifier ~~ operator("=") ~~ (StringLiteral | Parameter) ~~ ")"
   }
 
-  private def IndexQuery : Rule2[ast.Identifier, ast.Expression] = rule {
+  private def IndexQuery: Rule2[ast.Identifier, ast.Expression] = rule {
     ":" ~~ Identifier ~~ "(" ~~ (StringLiteral | Parameter) ~~ ")"
   }
 
-  private def LiteralIds : Rule1[Seq[ast.UnsignedInteger]] = rule("an unsigned integer") {
+  private def LiteralIds: Rule1[Seq[ast.UnsignedIntegerLiteral]] = rule("an unsigned integer") {
     oneOrMore(UnsignedIntegerLiteral, separator = CommaSep)
   }
 }

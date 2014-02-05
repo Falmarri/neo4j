@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -41,6 +41,7 @@ import org.neo4j.kernel.impl.util.JobScheduler;
 import org.neo4j.kernel.logging.Logging;
 
 import static org.neo4j.helpers.collection.IteratorUtil.emptyIterator;
+import static org.neo4j.kernel.impl.util.JobScheduler.Group.indexPopulation;
 
 
 public class PopulatingIndexProxy implements IndexProxy
@@ -70,7 +71,7 @@ public class PopulatingIndexProxy implements IndexProxy
     @Override
     public void start()
     {
-        scheduler.schedule( job );
+        scheduler.schedule( indexPopulation, job );
     }
 
     @Override

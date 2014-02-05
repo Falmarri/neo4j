@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -21,7 +21,7 @@ package org.neo4j.cypher.internal.compiler.v2_0.parser
 
 import org.neo4j.cypher.internal.compiler.v2_0.{commands => legacyCommands}
 import org.neo4j.cypher.internal.compiler.v2_0._
-import ast.Expression
+import ast.convert.StatementConverters._
 import org.junit.Test
 import org.parboiled.scala._
 import org.parboiled.scala.rules.Rule1
@@ -51,7 +51,7 @@ class ConstraintTest extends ParserTest[ast.Command, legacyCommands.AbstractQuer
       legacyCommands.DropUniqueConstraint("foo", "Foo", "bar", "name")
   }
 
-  def convert(astNode: ast.Command): legacyCommands.AbstractQuery = astNode.toLegacyQuery
+  def convert(astNode: ast.Command): legacyCommands.AbstractQuery = astNode.asQuery
 
-  def Expression: Rule1[Expression] = ???
+  def Expression: Rule1[ast.Expression] = ???
 }

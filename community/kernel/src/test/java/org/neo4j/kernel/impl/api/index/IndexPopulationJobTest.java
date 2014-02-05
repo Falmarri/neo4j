@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -47,6 +47,8 @@ import org.neo4j.kernel.api.index.IndexPopulator;
 import org.neo4j.kernel.api.index.IndexUpdater;
 import org.neo4j.kernel.api.index.InternalIndexState;
 import org.neo4j.kernel.api.index.NodePropertyUpdate;
+import org.neo4j.kernel.api.index.PreexistingIndexEntryConflictException;
+import org.neo4j.kernel.api.index.PropertyAccessor;
 import org.neo4j.kernel.impl.api.KernelSchemaStateStore;
 import org.neo4j.kernel.impl.core.ThreadToStatementContextBridge;
 import org.neo4j.kernel.impl.locking.LockService;
@@ -65,8 +67,16 @@ import static java.lang.String.format;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.*;
-import static org.mockito.Mockito.*;
+import static org.junit.Assert.assertEquals;
+import static org.mockito.Mockito.RETURNS_MOCKS;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 
 import static org.neo4j.helpers.collection.IteratorUtil.asSet;
 import static org.neo4j.helpers.collection.MapUtil.genericMap;
@@ -79,6 +89,7 @@ import static org.neo4j.kernel.impl.util.TestLogger.LogCall.info;
 
 public class IndexPopulationJobTest
 {
+
     @Test
     public void shouldPopulateIndexWithOneNode() throws Exception
     {
@@ -93,6 +104,7 @@ public class IndexPopulationJobTest
         // THEN
         verify( populator ).create();
         verify( populator ).add( nodeId, value );
+        verify( populator ).verifyDeferredConstraints( indexStoreView );
         verify( populator ).close( true );
 
         verifyNoMoreInteractions( populator );
@@ -133,6 +145,7 @@ public class IndexPopulationJobTest
         verify( populator ).create();
         verify( populator ).add( node1, value );
         verify( populator ).add( node4, value );
+        verify( populator ).verifyDeferredConstraints( indexStoreView );
         verify( populator ).close( true );
 
         verifyNoMoreInteractions( populator );
@@ -205,7 +218,7 @@ public class IndexPopulationJobTest
         job.run();
 
         // THEN
-        assertThat(index.getState(), equalTo(InternalIndexState.FAILED));
+        assertThat( index.getState(), equalTo( InternalIndexState.FAILED ) );
     }
 
     @Test
@@ -255,9 +268,8 @@ public class IndexPopulationJobTest
         createNode( map( name, "irrelephant" ), FIRST );
         TestLogger logger = new TestLogger();
         FlippableIndexProxy index = mock( FlippableIndexProxy.class );
-        NeoStoreIndexStoreView store = newStoreView();
 
-        IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, index, store, logger );
+        IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, index, indexStoreView, logger );
 
         // When
         job.run();
@@ -276,9 +288,8 @@ public class IndexPopulationJobTest
         createNode( map( name, "irrelephant" ), FIRST );
         TestLogger logger = new TestLogger();
         FlippableIndexProxy index = mock( FlippableIndexProxy.class );
-        NeoStoreIndexStoreView store = newStoreView();
 
-        IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, index, store, logger );
+        IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, index, indexStoreView, logger );
 
         IllegalStateException failure = new IllegalStateException( "not successful" );
         doThrow( failure ).when( populator ).create();
@@ -296,8 +307,8 @@ public class IndexPopulationJobTest
         // Given
         FailedIndexProxyFactory failureDelegateFactory = mock( FailedIndexProxyFactory.class );
         IndexPopulationJob job =
-            newIndexPopulationJob( FIRST, name, failureDelegateFactory, populator,
-                    new FlippableIndexProxy(), newStoreView(), new TestLogger() );
+                newIndexPopulationJob( FIRST, name, failureDelegateFactory, populator,
+                        new FlippableIndexProxy(), indexStoreView, new TestLogger() );
 
 
         IllegalStateException failure = new IllegalStateException( "not successful" );
@@ -316,9 +327,8 @@ public class IndexPopulationJobTest
         createNode( map( name, "irrelephant" ), FIRST );
         TestLogger logger = new TestLogger();
         FlippableIndexProxy index = mock( FlippableIndexProxy.class );
-        NeoStoreIndexStoreView store = newStoreView();
 
-        IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, index, store, logger );
+        IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, index, indexStoreView, logger );
 
         String failureMessage = "not successful";
         IllegalStateException failure = new IllegalStateException( failureMessage );
@@ -329,6 +339,25 @@ public class IndexPopulationJobTest
 
         // Then
         verify( populator ).markAsFailed( Matchers.contains( failureMessage ) );
+    }
+
+    @Test
+    public void shouldFailIfDeferredConstraintViolated() throws Exception
+    {
+        createNode( map( name, "irrelephant" ), FIRST );
+        TestLogger logger = new TestLogger();
+        FlippableIndexProxy index = mock( FlippableIndexProxy.class );
+
+        IndexPopulationJob job = newIndexPopulationJob( FIRST, name, populator, index, indexStoreView, logger );
+
+        IndexEntryConflictException failure = new PreexistingIndexEntryConflictException( "duplicate value", 0, 1 );
+        doThrow( failure ).when( populator ).verifyDeferredConstraints( indexStoreView );
+
+        // When
+        job.run();
+
+        // Then
+        verify( populator ).markAsFailed( Matchers.contains( "duplicate value" ) );
     }
 
     private static class ControlledStoreScan implements StoreScan<RuntimeException>
@@ -379,7 +408,7 @@ public class IndexPopulationJobTest
         }
 
         @Override
-        public IndexUpdater newPopulatingUpdater()
+        public IndexUpdater newPopulatingUpdater( PropertyAccessor propertyAccessor )
         {
             return new IndexUpdater()
             {
@@ -445,13 +474,13 @@ public class IndexPopulationJobTest
         {
             if ( nodeId == 2 )
             {
-                job.update( remove( nodeToDelete, propertyKeyId, valueToDelete, new long[] { label } ) );
+                job.update( remove( nodeToDelete, propertyKeyId, valueToDelete, new long[]{label} ) );
             }
             added.put( nodeId, propertyValue );
         }
 
         @Override
-        public IndexUpdater newPopulatingUpdater()
+        public IndexUpdater newPopulatingUpdater( PropertyAccessor propertyAccessor )
         {
             return new IndexUpdater()
             {
@@ -463,7 +492,7 @@ public class IndexPopulationJobTest
                         case ADDED:
                         case CHANGED:
                             added.put( update.getNodeId(), update.getValueAfter() );
-                        break;
+                            break;
                         case REMOVED:
                             removed.put( update.getNodeId(), update.getValueBefore() );
                             break;
@@ -490,9 +519,11 @@ public class IndexPopulationJobTest
 
     private final Label FIRST = DynamicLabel.label( "FIRST" );
     private final Label SECOND = DynamicLabel.label( "SECOND" );
+    private final String name = "name";
+    private final String age = "age";
 
-    private final String name = "name", age = "age";
     private ThreadToStatementContextBridge ctxProvider;
+    private NeoStoreIndexStoreView indexStoreView;
     private IndexPopulator populator;
     private KernelSchemaStateStore stateHolder;
 
@@ -505,6 +536,7 @@ public class IndexPopulationJobTest
         ctxProvider = db.getDependencyResolver().resolveDependency( ThreadToStatementContextBridge.class );
         populator = mock( IndexPopulator.class );
         stateHolder = new KernelSchemaStateStore();
+        indexStoreView = newStoreView();
 
         try ( Transaction tx = db.beginTx() )
         {
@@ -526,7 +558,7 @@ public class IndexPopulationJobTest
     private IndexPopulationJob newIndexPopulationJob( Label label, String propertyKey, IndexPopulator populator,
                                                       FlippableIndexProxy flipper )
     {
-        return newIndexPopulationJob( label, propertyKey, populator, flipper, newStoreView(),
+        return newIndexPopulationJob( label, propertyKey, populator, flipper, indexStoreView,
                 StringLogger.DEV_NULL );
     }
 

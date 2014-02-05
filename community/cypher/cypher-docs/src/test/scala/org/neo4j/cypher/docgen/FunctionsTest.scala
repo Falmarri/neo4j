@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -387,7 +387,7 @@ In case all arguments are +NULL+, +NULL+ will be returned.""",
   @Test def e() {
     testThis(
       title = "E",
-      syntax = "E( expression )",
+      syntax = "E()",
       arguments = List.empty,
       text = "`E` returns the constant, e.",
       queryText = """return e()""",

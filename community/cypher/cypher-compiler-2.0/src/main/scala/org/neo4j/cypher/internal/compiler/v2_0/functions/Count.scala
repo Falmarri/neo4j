@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,18 +20,20 @@
 package org.neo4j.cypher.internal.compiler.v2_0.functions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{expressions => commandexpressions}
+import ast.convert.ExpressionConverters._
+import commands.{expressions => commandexpressions}
+import commands.expressions.{Expression => CommandExpression}
+import symbols._
 
-case object Count extends AggregatingFunction {
+case object Count extends AggregatingFunction with SimpleTypedFunction {
   def name = "count"
 
-  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation) : SemanticCheck =
-    checkArgs(invocation, 1) then
-    invocation.specifyType(LongType())
+  val signatures = Vector(
+    Signature(argumentTypes = Vector(CTAny), outputType = CTInteger)
+  )
 
-  def toCommand(invocation: ast.FunctionInvocation) = {
-    val inner = invocation.arguments(0).toCommand
+  def asCommandExpression(invocation: ast.FunctionInvocation) = {
+    val inner = invocation.arguments(0).asCommandExpression
     val command = commandexpressions.Count(inner)
     if (invocation.distinct)
       commandexpressions.Distinct(command, inner)

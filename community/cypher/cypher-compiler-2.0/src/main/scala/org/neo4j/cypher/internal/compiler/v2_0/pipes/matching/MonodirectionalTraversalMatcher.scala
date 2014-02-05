@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -26,6 +26,7 @@ import org.neo4j.graphdb.{Path, Node}
 import org.neo4j.graphdb.traversal._
 import collection.JavaConverters._
 import org.neo4j.helpers.ThisShouldNotHappenError
+import org.neo4j.cypher.internal.compiler.v2_0.data.SimpleVal
 
 class MonoDirectionalTraversalMatcher(steps: ExpanderStep, start: EntityProducer[Node])
   extends TraversalMatcher {
@@ -54,6 +55,7 @@ class MonoDirectionalTraversalMatcher(steps: ExpanderStep, start: EntityProducer
     def evaluate(path: Path) = Evaluation.INCLUDE_AND_CONTINUE
   }
 
+  def description: Seq[(String, SimpleVal)] = Seq("start" -> SimpleVal.fromMap(start.description.toMap))
 }
 
 class MyEvaluator extends PathEvaluator[Option[ExpanderStep]] {

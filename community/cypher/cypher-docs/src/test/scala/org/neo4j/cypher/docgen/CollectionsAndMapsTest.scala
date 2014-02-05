@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -94,8 +94,7 @@ RETURN [x IN range(0,10) | x^3 ] AS result###
 
 == Literal maps ==
 
-From Cypher, you can also construct maps. In Java, they will be java.util.Map<String,Object>, through REST
-you will get JSON objects.
+From Cypher, you can also construct maps. Through REST you will get JSON objects; in Java they will be `java.util.Map<String,Object>`.
 
 ###
 RETURN { key : "Value", collectionKey: [ { inner: "Map1" }, { inner: "Map2" } ] }###

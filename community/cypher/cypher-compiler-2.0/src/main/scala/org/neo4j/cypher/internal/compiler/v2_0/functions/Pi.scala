@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,15 +20,15 @@
 package org.neo4j.cypher.internal.compiler.v2_0.functions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{expressions => commandexpressions}
-import org.neo4j.cypher.internal.compiler.v2_0.symbols.DoubleType
+import commands.{expressions => commandexpressions}
+import symbols._
 
-case object Pi extends Function {
+case object Pi extends Function with SimpleTypedFunction {
   def name = "pi"
 
-  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation) : SemanticCheck =
-    checkArgs(invocation, 0) then
-    invocation.specifyType(DoubleType())
+  val signatures = Vector(
+    Signature(argumentTypes = Vector(), outputType = CTDouble)
+  )
 
-  def toCommand(invocation: ast.FunctionInvocation) = commandexpressions.PiFunction()
+  def asCommandExpression(invocation: ast.FunctionInvocation) = commandexpressions.PiFunction()
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,12 +19,10 @@
  */
 package org.neo4j.kernel.api.exceptions;
 
-import org.neo4j.kernel.api.exceptions.KernelException;
-
 public class ReadOnlyDatabaseKernelException extends KernelException
 {
     public ReadOnlyDatabaseKernelException()
     {
-        super( (Throwable) null, "Cannot modify a read-only database" );
+        super( Status.General.ReadOnly, (Throwable) null, "Cannot modify a read-only database" );
     }
 }

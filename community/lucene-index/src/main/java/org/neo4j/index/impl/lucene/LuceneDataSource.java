@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -75,6 +75,7 @@ import org.neo4j.graphdb.index.Index;
 import org.neo4j.graphdb.index.IndexManager;
 import org.neo4j.graphdb.index.RelationshipIndex;
 import org.neo4j.helpers.UTF8;
+import org.neo4j.helpers.collection.IteratorUtil;
 import org.neo4j.helpers.collection.PrefetchingResourceIterator;
 import org.neo4j.kernel.InternalAbstractGraphDatabase;
 import org.neo4j.kernel.TransactionInterceptorProviders;
@@ -416,9 +417,9 @@ public class LuceneDataSource extends LogBackedXaDataSource
     private class LuceneTransactionFactory extends XaTransactionFactory
     {
         @Override
-        public XaTransaction create( int identifier, long lastCommittedTxWhenTransactionStarted, TransactionState state)
+        public XaTransaction create( long lastCommittedTxWhenTransactionStarted, TransactionState state)
         {
-            return createTransaction( identifier, this.getLogicalLog(), state );
+            return createTransaction( this.getLogicalLog(), state );
         }
 
         @Override
@@ -658,9 +659,9 @@ public class LuceneDataSource extends LogBackedXaDataSource
         return searcher;
     }
 
-    XaTransaction createTransaction( int identifier, XaLogicalLog logicalLog, TransactionState state )
+    XaTransaction createTransaction( XaLogicalLog logicalLog, TransactionState state )
     {
-        return new LuceneTransaction( identifier, logicalLog, state, this );
+        return new LuceneTransaction( logicalLog, state, this );
     }
 
     void invalidateIndexSearcher( IndexIdentifier identifier )
@@ -939,6 +940,18 @@ public class LuceneDataSource extends LogBackedXaDataSource
                 }
             }
         };
+    }
+
+    @Override
+    public ResourceIterator<File> listStoreFiles() throws IOException
+    {
+        return listStoreFiles( false );
+    }
+
+    @Override
+    public ResourceIterator<File> listLogicalLogs() throws IOException
+    {
+        return IteratorUtil.emptyIterator();
     }
 
     private void makeSureAllIndexesAreInstantiated()

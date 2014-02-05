@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -22,7 +22,6 @@ package org.neo4j.cypher.internal.compiler.v2_0.pipes
 import matching.{PatternGraph, MatchingContext}
 import org.neo4j.cypher.internal.compiler.v2_0._
 import commands._
-import symbols._
 
 case class MatchPipe(source: Pipe,
                      predicates: Seq[Predicate],
@@ -43,5 +42,5 @@ case class MatchPipe(source: Pipe,
   }
 
   override def executionPlanDescription =
-    source.executionPlanDescription.andThen(this, "PatternMatch", "g" -> patternGraph)
+    source.executionPlanDescription.andThen(this, matchingContext.builder.name, "g" -> patternGraph)
 }

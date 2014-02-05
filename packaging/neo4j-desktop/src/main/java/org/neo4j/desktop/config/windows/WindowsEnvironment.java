@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -56,13 +56,13 @@ class WindowsEnvironment extends PortableEnvironment
                 e.printStackTrace( System.out );
             }
         }
-
         windowsEditFile( file );
     }
 
     private void windowsEditFile( File file ) throws IOException
     {
-        getRuntime().exec( new String[]{"rundll32", "url.dll,FileProtocolHandler", file.getAbsolutePath()} );
+        String[] cmdarray = { "notepad", file.getAbsolutePath() };
+        getRuntime().exec( cmdarray );
     }
 
     @Override

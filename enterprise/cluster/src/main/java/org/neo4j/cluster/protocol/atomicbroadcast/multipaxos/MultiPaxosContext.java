@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -18,6 +18,15 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 package org.neo4j.cluster.protocol.atomicbroadcast.multipaxos;
+
+import static org.neo4j.cluster.util.Quorums.isQuorum;
+import static org.neo4j.helpers.Predicates.in;
+import static org.neo4j.helpers.Predicates.not;
+import static org.neo4j.helpers.Uris.parameter;
+import static org.neo4j.helpers.collection.Iterables.filter;
+import static org.neo4j.helpers.collection.Iterables.limit;
+import static org.neo4j.helpers.collection.Iterables.map;
+import static org.neo4j.helpers.collection.Iterables.toList;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -61,13 +70,6 @@ import org.neo4j.helpers.Predicate;
 import org.neo4j.helpers.collection.Iterables;
 import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.kernel.logging.Logging;
-
-import static org.neo4j.cluster.util.Quorums.isQuorum;
-import static org.neo4j.helpers.Predicates.in;
-import static org.neo4j.helpers.Predicates.not;
-import static org.neo4j.helpers.Uris.parameter;
-import static org.neo4j.helpers.collection.Iterables.limit;
-import static org.neo4j.helpers.collection.Iterables.map;
 
 /**
  * Context that implements all the context interfaces used by the Paxos state machines.
@@ -190,7 +192,7 @@ public class MultiPaxosContext
         @Override
         public List<URI> getMemberURIs()
         {
-            return Iterables.toList( configuration.getMemberURIs() );
+            return toList( configuration.getMemberURIs() );
         }
 
         @Override
@@ -209,7 +211,7 @@ public class MultiPaxosContext
         public List<URI> getAcceptors()
         {
             // Only use 2f+1 acceptors
-            return Iterables.toList( limit( configuration
+            return toList( limit( configuration
                     .getAllowedFailures() * 2 + 1, configuration.getMemberURIs() ) );
         }
 
@@ -312,6 +314,10 @@ public class MultiPaxosContext
         @Override
         public void bookInstance( InstanceId instanceId, Message message )
         {
+            if ( message.getPayload() == null )
+            {
+                throw new IllegalArgumentException( "null payload for booking instance: " + message );
+            }
             bookedInstances.put( instanceId, message );
         }
 
@@ -640,7 +646,7 @@ public class MultiPaxosContext
         {
             return joinDeniedConfigurationResponseState != null;
         }
-        
+
         @Override
         public ConfigurationResponseState getJoinDeniedConfigurationResponseState()
         {
@@ -947,7 +953,7 @@ public class MultiPaxosContext
         @Override
         public Iterable<org.neo4j.cluster.InstanceId> getAlive()
         {
-            return Iterables.filter( new Predicate<org.neo4j.cluster.InstanceId>()
+            return filter( new Predicate<org.neo4j.cluster.InstanceId>()
             {
                 @Override
                 public boolean accept( org.neo4j.cluster.InstanceId item )
@@ -1061,11 +1067,11 @@ public class MultiPaxosContext
             Iterables.addAll( this.roles, roles );
         }
 
-        @Override
-        public void setElectionCredentialsProvider( ElectionCredentialsProvider electionCredentialsProvider )
-        {
-            this.electionCredentialsProvider = electionCredentialsProvider;
-        }
+//        @Override
+//        public void setElectionCredentialsProvider( ElectionCredentialsProvider electionCredentialsProvider )
+//        {
+//            this.electionCredentialsProvider = electionCredentialsProvider;
+//        }
 
         @Override
         public void created()
@@ -1128,40 +1134,7 @@ public class MultiPaxosContext
         @Override
         public void startDemotionProcess( String role, final org.neo4j.cluster.InstanceId demoteNode )
         {
-            elections.put( role, new Election( new WinnerStrategy()
-            {
-                @Override
-                public org.neo4j.cluster.InstanceId pickWinner( Collection<Vote> voteList )
-                {
-
-                    // Remove blank votes
-                    List<Vote> filteredVoteList = Iterables.toList( Iterables.filter( new Predicate<Vote>()
-                    {
-                        @Override
-                        public boolean accept( Vote item )
-                        {
-                            return !( item.getCredentials() instanceof NotElectableElectionCredentials);
-                        }
-                    }, voteList ) );
-
-                    // Sort based on credentials
-                    // The most suited candidate should come out on top
-                    Collections.sort( filteredVoteList );
-                    Collections.reverse( filteredVoteList );
-
-                    for ( Vote vote : filteredVoteList )
-                    {
-                        // Don't elect as winner the node we are trying to demote
-                        if ( !vote.getSuggestedNode().equals( demoteNode ) )
-                        {
-                            return vote.getSuggestedNode();
-                        }
-                    }
-
-                    // No possible winner
-                    return null;
-                }
-            } ) );
+            elections.put( role, new Election( BiasedWinnerStrategy.demotion( clusterContext, demoteNode ) ) );
         }
 
         @Override
@@ -1174,22 +1147,17 @@ public class MultiPaxosContext
                 public org.neo4j.cluster.InstanceId pickWinner( Collection<Vote> voteList )
                 {
                     // Remove blank votes
-                    List<Vote> filteredVoteList = Iterables.toList( Iterables.filter( new Predicate<Vote>()
-                    {
-                        @Override
-                        public boolean accept( Vote item )
-                        {
-                            return !( item.getCredentials() instanceof NotElectableElectionCredentials );
-                        }
-                    }, voteList ) );
+                    List<Vote> filteredVoteList = removeBlankVotes( voteList );
 
                     // Sort based on credentials
                     // The most suited candidate should come out on top
                     Collections.sort( filteredVoteList );
                     Collections.reverse( filteredVoteList );
 
-                    clusterContext.getLogger( getClass() ).debug( "Elections ended up with list " + filteredVoteList );
+                    clusterContext.getLogger( getClass() ).debug( "Election started with " + voteList +
+                            ", ended up with " + filteredVoteList );
 
+                    // Elect this highest voted instance
                     for ( Vote vote : filteredVoteList )
                     {
                         return vote.getSuggestedNode();
@@ -1204,40 +1172,7 @@ public class MultiPaxosContext
         @Override
         public void startPromotionProcess( String role, final org.neo4j.cluster.InstanceId promoteNode )
         {
-            elections.put( role, new Election( new WinnerStrategy()
-            {
-                @Override
-                public org.neo4j.cluster.InstanceId pickWinner( Collection<Vote> voteList )
-                {
-
-                    // Remove blank votes
-                    List<Vote> filteredVoteList = Iterables.toList( Iterables.filter( new Predicate<Vote>()
-                    {
-                        @Override
-                        public boolean accept( Vote item )
-                        {
-                            return !( item.getCredentials() instanceof NotElectableElectionCredentials);
-                        }
-                    }, voteList ) );
-
-                    // Sort based on credentials
-                    // The most suited candidate should come out on top
-                    Collections.sort( filteredVoteList );
-                    Collections.reverse( filteredVoteList );
-
-                    for ( Vote vote : filteredVoteList )
-                    {
-                        // Don't elect as winner the node we are trying to demote
-                        if ( !vote.getSuggestedNode().equals( promoteNode ) )
-                        {
-                            return vote.getSuggestedNode();
-                        }
-                    }
-
-                    // No possible winner
-                    return null;
-                }
-            } ) );
+            elections.put( role, new Election( BiasedWinnerStrategy.promotion( clusterContext, promoteNode ) ) );
         }
 
         @Override
@@ -1305,7 +1240,7 @@ public class MultiPaxosContext
         @Override
         public Iterable<String> getRolesRequiringElection()
         {
-            return Iterables.filter( new Predicate<String>() // Only include roles that are not elected
+            return filter( new Predicate<String>() // Only include roles that are not elected
             {
                 @Override
                 public boolean accept( String role )
@@ -1352,7 +1287,7 @@ public class MultiPaxosContext
         public boolean isElector()
         {
             // Only the first alive server should try elections. Everyone else waits
-            List<org.neo4j.cluster.InstanceId> aliveInstances = Iterables.toList( getAlive() );
+            List<org.neo4j.cluster.InstanceId> aliveInstances = toList( getAlive() );
             Collections.sort( aliveInstances );
             return aliveInstances.indexOf( getMyId() ) == 0;
         }
@@ -1382,79 +1317,9 @@ public class MultiPaxosContext
         }
     }
 
-    private static class Vote
-            implements Comparable<Vote>
-    {
-        private final org.neo4j.cluster.InstanceId suggestedNode;
-        private final Comparable<Object> voteCredentials;
-
-        private Vote( org.neo4j.cluster.InstanceId suggestedNode, Comparable<Object> voteCredentials )
-        {
-            this.suggestedNode = suggestedNode;
-            this.voteCredentials = voteCredentials;
-        }
-
-        public org.neo4j.cluster.InstanceId getSuggestedNode()
-        {
-            return suggestedNode;
-        }
-
-        public Comparable<Object> getCredentials()
-        {
-            return voteCredentials;
-        }
-
-        @Override
-        public String toString()
-        {
-            return suggestedNode + ":" + voteCredentials;
-        }
-
-        @Override
-        public int compareTo( Vote o )
-        {
-            return this.voteCredentials.compareTo( o.voteCredentials );
-        }
-
-        @Override
-        public boolean equals( Object o )
-        {
-            if ( this == o )
-            {
-                return true;
-            }
-            if ( o == null || getClass() != o.getClass() )
-            {
-                return false;
-            }
-
-            Vote vote = (Vote) o;
-
-            if ( !suggestedNode.equals( vote.suggestedNode ) )
-            {
-                return false;
-            }
-            if ( !voteCredentials.equals( vote.voteCredentials ) )
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        @Override
-        public int hashCode()
-        {
-            int result = suggestedNode.hashCode();
-            result = 31 * result + voteCredentials.hashCode();
-            return result;
-        }
-    }
-
     private static class Election
     {
         private final WinnerStrategy winnerStrategy;
-//        List<Vote> votes = new ArrayList<Vote>();
         private final Map<org.neo4j.cluster.InstanceId, Vote> votes = new HashMap<org.neo4j.cluster.InstanceId, Vote>();
 
         private Election( WinnerStrategy winnerStrategy )
@@ -1476,5 +1341,17 @@ public class MultiPaxosContext
     interface WinnerStrategy
     {
         org.neo4j.cluster.InstanceId pickWinner( Collection<Vote> votes );
+    }
+
+    public static List<Vote> removeBlankVotes( Collection<Vote> voteList )
+    {
+        return toList( Iterables.filter( new Predicate<Vote>()
+        {
+            @Override
+            public boolean accept( Vote item )
+            {
+                return !(item.getCredentials() instanceof NotElectableElectionCredentials);
+            }
+        }, voteList ) );
     }
 }

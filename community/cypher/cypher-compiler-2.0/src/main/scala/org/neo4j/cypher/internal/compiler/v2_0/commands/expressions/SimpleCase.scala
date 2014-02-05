@@ -1,6 +1,6 @@
 
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -46,7 +46,7 @@ case class SimpleCase(expression: Expression, alternatives: Seq[(Expression, Exp
   def arguments = (expression +: (alternativeComparison ++ alternativeExpressions)).distinct
 
   protected def calculateType(symbols: SymbolTable): CypherType =
-    calculateUpperTypeBound(AnyType(), symbols, alternativeExpressions ++ default.toSeq)
+    calculateUpperTypeBound(CTAny, symbols, alternativeExpressions ++ default.toSeq)
 
   def rewrite(f: (Expression) => Expression): Expression = {
     val newAlternatives = alternatives map {

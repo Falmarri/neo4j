@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,29 +20,18 @@
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{values => commandvalues}
-import org.neo4j.cypher.internal.compiler.v2_0.mutation
+import symbols._
 
-sealed trait RemoveItem extends AstNode with SemanticCheckable {
-  def toLegacyUpdateAction : mutation.UpdateAction
-}
+sealed trait RemoveItem extends ASTNode with SemanticCheckable
 
-case class RemoveLabelItem(expression: Expression, labels: Seq[Identifier], token: InputToken) extends RemoveItem {
+case class RemoveLabelItem(expression: Expression, labels: Seq[Identifier])(val position: InputPosition) extends RemoveItem {
   def semanticCheck =
     expression.semanticCheck(Expression.SemanticContext.Simple) then
-    expression.constrainType(NodeType())
-
-  def toLegacyUpdateAction =
-    commands.LabelAction(expression.toCommand, commands.LabelRemoveOp, labels.map(l => commandvalues.KeyToken.Unresolved(l.name, commandvalues.TokenType.Label)))
+    expression.expectType(CTNode.covariant)
 }
 
 case class RemovePropertyItem(property: Property) extends RemoveItem {
-  def token = property.token
+  def position = property.position
 
   def semanticCheck = property.semanticCheck(Expression.SemanticContext.Simple)
-
-  def toLegacyUpdateAction =
-    mutation.DeletePropertyAction(property.map.toCommand, commandvalues.KeyToken.Unresolved(property.identifier.name, commandvalues.TokenType.PropertyKey))
 }

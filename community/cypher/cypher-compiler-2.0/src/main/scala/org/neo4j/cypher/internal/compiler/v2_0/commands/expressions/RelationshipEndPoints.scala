@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -40,7 +40,7 @@ case class RelationshipEndPoints(relExpression: Expression, start: Boolean) exte
 
   def arguments = Seq(relExpression)
 
-  protected def calculateType(symbols: SymbolTable): CypherType = NodeType()
+  protected def calculateType(symbols: SymbolTable): CypherType = CTNode
 
   def rewrite(f: (Expression) => Expression): Expression = f(RelationshipEndPoints(relExpression.rewrite(f), start))
 

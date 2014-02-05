@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -45,11 +45,11 @@ case class GenericCase(alternatives: Seq[(Predicate, Expression)], default: Opti
   def arguments = alternatives.map(_._1) ++ alternatives.map(_._2) ++ default.toSeq
 
   protected def calculateType(symbols: SymbolTable): CypherType =
-    calculateUpperTypeBound(AnyType(), symbols, alternativeExpressions ++ default.toSeq)
+    calculateUpperTypeBound(CTAny, symbols, alternativeExpressions ++ default.toSeq)
 
   def rewrite(f: (Expression) => Expression): Expression = {
     val newAlternatives: Seq[(Predicate, Expression)] = alternatives map {
-      case (p, e) => (p.rewrite(f), e.rewrite(f))
+      case (p, e) => (p.rewriteAsPredicate(f), e.rewrite(f))
     }
 
     val newDefault = default.map(_.rewrite(f))

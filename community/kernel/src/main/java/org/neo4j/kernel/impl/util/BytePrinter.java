@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -57,7 +57,7 @@ public class BytePrinter
      */
     public static void print( ByteBuffer bytes, PrintStream out )
     {
-        print( bytes, out, 0, bytes.capacity() );
+        print( bytes, out, 0, bytes.limit() );
     }
 
     /**

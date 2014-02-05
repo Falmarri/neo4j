@@ -1,5 +1,5 @@
 ###!
-Copyright (c) 2002-2013 "Neo Technology,"
+Copyright (c) 2002-2014 "Neo Technology,"
 Network Engine for Objects in Lund AB [http://neotechnology.com]
 
 This file is part of Neo4j.
@@ -44,6 +44,7 @@ MATCH (n) RETURN n LIMIT 100
         content: """
 // What is related, and how
 MATCH (a)-[r]->(b)
+WHERE labels(a) <> [] AND labels(b) <> []
 RETURN DISTINCT head(labels(a)) AS This, type(r) as To, head(labels(b)) AS That
 LIMIT 10
         """

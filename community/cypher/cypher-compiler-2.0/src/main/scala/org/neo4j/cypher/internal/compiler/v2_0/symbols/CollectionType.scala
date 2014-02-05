@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,45 +20,45 @@
 package org.neo4j.cypher.internal.compiler.v2_0.symbols
 
 object CollectionType {
-  val anyCollectionTypeInstance = new CollectionType(AnyType())
+  private val anyCollectionTypeInstance = new CollectionTypeImpl(CTAny)
 
-  def apply(iteratedType: CypherType) = if (iteratedType == AnyType()) anyCollectionTypeInstance else new CollectionType(iteratedType)
+  def apply(iteratedType: CypherType) = if (iteratedType == CTAny) anyCollectionTypeInstance else new CollectionTypeImpl(iteratedType)
+
+  final case class CollectionTypeImpl(innerType: CypherType) extends CollectionType {
+    val parentType = CTAny
+    override val legacyIteratedType = innerType
+
+    override lazy val coercibleTo: Set[CypherType] = Set(CTBoolean)
+
+    override def parents = innerType.parents.map(copy) ++ super.parents
+
+    override val toString = s"Collection<$innerType>"
+
+    override def isAssignableFrom(other: CypherType): Boolean = other match {
+      case otherCollection: CollectionType =>
+        innerType isAssignableFrom otherCollection.innerType
+      case _ =>
+        super.isAssignableFrom(other)
+    }
+
+    override def mergeUp(other: CypherType) = other match {
+      case otherCollection: CollectionType =>
+        copy(innerType mergeUp otherCollection.innerType)
+      case _ =>
+        super.mergeUp(other)
+    }
+
+    override def mergeDown(other: CypherType) = other match {
+      case otherCollection: CollectionType =>
+        (innerType mergeDown otherCollection.innerType).map(copy)
+      case _ =>
+        super.mergeDown(other)
+    }
+
+    override def rewrite(f: CypherType => CypherType) = f(copy(innerType.rewrite(f)))
+  }
 }
 
-class CollectionType(override val iteratedType: CypherType) extends AnyType {
-
-  override def toString: String = s"Collection<$iteratedType>"
-
-  override def isCoercibleFrom(other: CypherType): Boolean =
-    super.isCoercibleFrom(other) ||
-    other == BooleanType()
-
-  override def isAssignableFrom(other: CypherType): Boolean = super.isAssignableFrom(other) &&
-    iteratedType.isAssignableFrom(other.asInstanceOf[CollectionType].iteratedType)
-
-  override def mergeDown(other: CypherType) = other match {
-    case otherCollection: CollectionType =>
-      CollectionType(iteratedType mergeDown otherCollection.iteratedType)
-    case _ =>
-      super.mergeDown(other)
-  }
-
-  override def mergeUp(other: CypherType) = other match {
-    case otherCollection: CollectionType =>
-      for (ctype <- iteratedType mergeUp otherCollection.iteratedType) yield CollectionType(ctype)
-    case _ =>
-      super.mergeUp(other)
-  }
-
-  override val isCollection = true
-
-  override def equals(other: Any) = other match {
-    case null => false
-    case t: CollectionType => t.iteratedType.equals(iteratedType)
-    case _ => false
-  }
-
-  override def hashCode = 37 * iteratedType.hashCode
-
-  override def rewrite(f: CypherType => CypherType) = f(CollectionType(this.iteratedType.rewrite(f)))
+sealed abstract class CollectionType extends CypherType {
+  def innerType: CypherType
 }

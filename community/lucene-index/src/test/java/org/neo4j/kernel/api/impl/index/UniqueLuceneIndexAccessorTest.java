@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -23,6 +23,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.List;
 
+import org.junit.Ignore;
 import org.junit.Test;
 
 import org.neo4j.kernel.api.index.DuplicateIndexEntryConflictException;
@@ -121,6 +122,7 @@ public class UniqueLuceneIndexAccessorTest
         assertEquals( asList( 1l ), getAllNodes( "value2" ) );
     }
 
+    @Ignore("Rephrase in UniqueConstraintCompatibility")
     @Test
     public void shouldRejectChangingEntryToAlreadyIndexedValue() throws Exception
     {
@@ -144,6 +146,7 @@ public class UniqueLuceneIndexAccessorTest
         }
     }
 
+    @Ignore("Rephrase in UniqueConstraintCompatibility")
     @Test
     public void shouldRejectAddingEntryToValueAlreadyIndexedByPriorChange() throws Exception
     {
@@ -167,6 +170,7 @@ public class UniqueLuceneIndexAccessorTest
         }
     }
 
+    @Ignore("Rephrase in UniqueConstriaintCompatibility")
     @Test
     public void shouldRejectEntryWithAlreadyIndexedValue() throws Exception
     {
@@ -189,6 +193,7 @@ public class UniqueLuceneIndexAccessorTest
         }
     }
 
+    @Ignore("Rephrase in UniqueConstraintCompatibility")
     @Test
     public void shouldRejectEntriesInSameTransactionWithDuplicatedIndexedValues() throws Exception
     {

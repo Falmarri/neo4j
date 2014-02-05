@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -28,6 +28,8 @@ import org.neo4j.helpers.Thunk;
 import org.neo4j.helpers.collection.ResourceClosingIterator;
 import org.neo4j.kernel.impl.util.JobScheduler;
 import org.neo4j.kernel.logging.Logging;
+
+import static org.neo4j.kernel.impl.util.JobScheduler.Group.unusedResourceCleanup;
 
 class ReferenceQueueBasedCleanupService extends CleanupService implements Runnable
 {
@@ -72,7 +74,7 @@ class ReferenceQueueBasedCleanupService extends CleanupService implements Runnab
     public void start()
     {
         running = true;
-        scheduler.scheduleRecurring( this, 1, TimeUnit.SECONDS );
+        scheduler.scheduleRecurring( unusedResourceCleanup, this, 1, TimeUnit.SECONDS );
     }
 
     @Override

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -23,6 +23,8 @@ import java.util.Iterator;
 import java.util.Set;
 
 import org.neo4j.helpers.Predicate;
+import org.neo4j.helpers.PrimitiveLongPredicate;
+import org.neo4j.helpers.ThisShouldNotHappenError;
 import org.neo4j.helpers.collection.IteratorUtil;
 import org.neo4j.kernel.api.Statement;
 import org.neo4j.kernel.api.constraints.UniquenessConstraint;
@@ -39,23 +41,21 @@ import org.neo4j.kernel.api.exceptions.schema.IllegalTokenNameException;
 import org.neo4j.kernel.api.exceptions.schema.IndexBrokenKernelException;
 import org.neo4j.kernel.api.exceptions.schema.SchemaRuleNotFoundException;
 import org.neo4j.kernel.api.exceptions.schema.TooManyLabelsException;
+import org.neo4j.kernel.api.index.IndexDescriptor;
 import org.neo4j.kernel.api.index.InternalIndexState;
-import org.neo4j.kernel.impl.api.operations.EntityReadOperations;
-import org.neo4j.kernel.impl.api.operations.EntityWriteOperations;
+import org.neo4j.kernel.api.properties.DefinedProperty;
+import org.neo4j.kernel.api.properties.Property;
+import org.neo4j.kernel.api.properties.PropertyKeyIdIterator;
+import org.neo4j.kernel.impl.api.operations.EntityOperations;
 import org.neo4j.kernel.impl.api.operations.KeyReadOperations;
 import org.neo4j.kernel.impl.api.operations.KeyWriteOperations;
 import org.neo4j.kernel.impl.api.operations.SchemaReadOperations;
 import org.neo4j.kernel.impl.api.operations.SchemaWriteOperations;
-import org.neo4j.kernel.api.properties.DefinedProperty;
-import org.neo4j.kernel.api.properties.Property;
-import org.neo4j.kernel.api.properties.PropertyKeyIdIterator;
-import org.neo4j.kernel.api.index.IndexDescriptor;
 import org.neo4j.kernel.impl.api.state.ConstraintIndexCreator;
 import org.neo4j.kernel.impl.api.state.TxState;
 import org.neo4j.kernel.impl.api.store.StoreReadLayer;
 import org.neo4j.kernel.impl.core.Token;
 import org.neo4j.kernel.impl.nioneo.store.SchemaStorage;
-import org.neo4j.kernel.impl.persistence.PersistenceManager;
 import org.neo4j.kernel.impl.util.DiffSets;
 import org.neo4j.kernel.impl.util.PrimitiveIntIterator;
 import org.neo4j.kernel.impl.util.PrimitiveLongIterator;
@@ -64,7 +64,7 @@ import static java.util.Collections.emptyList;
 
 import static org.neo4j.helpers.collection.Iterables.filter;
 import static org.neo4j.helpers.collection.Iterables.option;
-import static org.neo4j.helpers.collection.IteratorUtil.asPrimitiveIterator;
+import static org.neo4j.helpers.collection.IteratorUtil.filter;
 import static org.neo4j.helpers.collection.IteratorUtil.single;
 import static org.neo4j.helpers.collection.IteratorUtil.singleOrNull;
 import static org.neo4j.helpers.collection.IteratorUtil.toPrimitiveIntIterator;
@@ -73,24 +73,21 @@ import static org.neo4j.kernel.api.StatementConstants.NO_SUCH_NODE;
 public class StateHandlingStatementOperations implements
         KeyReadOperations,
         KeyWriteOperations,
-        EntityReadOperations,
-        EntityWriteOperations,
+        EntityOperations,
         SchemaReadOperations,
         SchemaWriteOperations
 {
     private final StoreReadLayer storeLayer;
     private final LegacyPropertyTrackers legacyPropertyTrackers;
     private final ConstraintIndexCreator constraintIndexCreator;
-    private final PersistenceManager persistenceManager;
 
     public StateHandlingStatementOperations(
             StoreReadLayer storeLayer, LegacyPropertyTrackers propertyTrackers,
-            ConstraintIndexCreator constraintIndexCreator, PersistenceManager writeTransactionProxy )
+            ConstraintIndexCreator constraintIndexCreator )
     {
         this.storeLayer = storeLayer;
         this.legacyPropertyTrackers = propertyTrackers;
         this.constraintIndexCreator = constraintIndexCreator;
-        this.persistenceManager = writeTransactionProxy;
     }
 
     @Override
@@ -443,71 +440,85 @@ public class StateHandlingStatementOperations implements
     }
 
     @Override
-    public long nodeGetUniqueFromIndexLookup( KernelStatement state, IndexDescriptor index, Object value )
+    public long nodeGetUniqueFromIndexLookup(
+            KernelStatement state,
+            IndexDescriptor index,
+            Object value )
             throws IndexNotFoundKernelException, IndexBrokenKernelException
     {
-
-        if ( state.hasTxStateWithChanges() )
-        {
-            TxState txState = state.txState();
-            DiffSets<Long> diff = nodesWithLabelAndPropertyDiffSet( state, index, value );
-            long indexNode = storeLayer.nodeGetUniqueFromIndexLookup( state, index, value );
-
-            if ( diff.isEmpty() )
-            {
-                if ( NO_SUCH_NODE == indexNode )
-                {
-                    return NO_SUCH_NODE;
-                }
-                else
-                {
-                    return nodeIfNotDeleted( indexNode, txState );
-                }
-            }
-            else
-            {
-                if ( NO_SUCH_NODE  == indexNode )
-                {
-                    // No underlying node, return any node created in the tx state, or nothing
-                    Iterator<Long> iterator = diff.getAdded().iterator();
-                    if ( iterator.hasNext() )
-                    {
-                        return single( txState.nodesDeletedInTx().apply( iterator ), NO_SUCH_NODE );
-                    }
-                    else
-                    {
-                        return NO_SUCH_NODE;
-                    }
-                }
-                else
-                {
-                    // There is a node already, apply tx state diff
-                    return single(
-                        txState.nodesDeletedInTx().applyPrimitiveLongIterator(
-                            diff.applyPrimitiveLongIterator( asPrimitiveIterator( indexNode ) ) ), NO_SUCH_NODE );
-                }
-            }
-        }
-
-        return storeLayer.nodeGetUniqueFromIndexLookup( state, index, value );
+        PrimitiveLongIterator committed = storeLayer.nodeGetUniqueFromIndexLookup( state, index, value );
+        PrimitiveLongIterator exactMatches = filterExactIndexMatches( state, index, value, committed );
+        PrimitiveLongIterator changeFilteredMatches = filterIndexStateChanges( state, index, value, exactMatches );
+        return single( changeFilteredMatches, NO_SUCH_NODE );
     }
 
     @Override
     public PrimitiveLongIterator nodesGetFromIndexLookup( KernelStatement state, IndexDescriptor index, final Object value )
             throws IndexNotFoundKernelException
     {
+        PrimitiveLongIterator committed = storeLayer.nodesGetFromIndexLookup( state, index, value );
+        PrimitiveLongIterator exactMatches = filterExactIndexMatches( state, index, value, committed );
+        PrimitiveLongIterator changeFilteredMatches = filterIndexStateChanges( state, index, value, exactMatches );
+        return changeFilteredMatches;
+    }
+
+    private PrimitiveLongIterator filterExactIndexMatches(
+            KernelStatement state,
+            IndexDescriptor index,
+            Object value,
+            PrimitiveLongIterator committed )
+    {
+        if ( isNumberOrArray( value ) )
+        {
+            return filter( exactMatch( state, index.getPropertyKeyId(), value ), committed );
+        }
+        return committed;
+    }
+
+    private boolean isNumberOrArray( Object value )
+    {
+        return value instanceof Number || value.getClass().isArray();
+    }
+
+    private PrimitiveLongPredicate exactMatch(
+            final KernelStatement state,
+            final int propertyKeyId,
+            final Object value )
+    {
+        return new PrimitiveLongPredicate()
+        {
+            @Override
+            public boolean accept( long nodeId )
+            {
+                try
+                {
+                    return nodeGetProperty( state, nodeId, propertyKeyId ).valueEquals( value );
+                }
+                catch ( EntityNotFoundException e )
+                {
+                    throw new ThisShouldNotHappenError( "Chris", "An index claims a node by id " + nodeId +
+                            " has the value. However, it looks like that node does not exist.", e);
+                }
+            }
+        };
+    }
+
+    private PrimitiveLongIterator filterIndexStateChanges(
+            KernelStatement state,
+            IndexDescriptor index,
+            Object value,
+            PrimitiveLongIterator nodeIds )
+    {
         if ( state.hasTxStateWithChanges() )
         {
-            TxState txState = state.txState();
-            DiffSets<Long> diff = nodesWithLabelAndPropertyDiffSet( state, index, value );
+            DiffSets<Long> labelPropertyChanges = nodesWithLabelAndPropertyDiffSet( state, index, value );
+            DiffSets<Long> deletionChanges = state.txState().nodesDeletedInTx();
 
             // Apply to actual index lookup
-            PrimitiveLongIterator committed = storeLayer.nodesGetFromIndexLookup( state, index, value );
-            return
-                txState.nodesDeletedInTx().applyPrimitiveLongIterator( diff.applyPrimitiveLongIterator( committed ) );
+            return deletionChanges.applyPrimitiveLongIterator(
+                    labelPropertyChanges.applyPrimitiveLongIterator( nodeIds ) );
         }
-
-        return storeLayer.nodesGetFromIndexLookup( state, index, value );
+        return nodeIds;
     }
 
     @Override
@@ -518,12 +529,12 @@ public class StateHandlingStatementOperations implements
         if ( !existingProperty.isDefined() )
         {
             legacyPropertyTrackers.nodeAddStoreProperty( nodeId, property );
-            persistenceManager.nodeAddProperty( nodeId, property.propertyKeyId(), property.value() );
+            state.neoStoreTransaction.nodeAddProperty( nodeId, property.propertyKeyId(), property.value() );
         }
         else
         {
             legacyPropertyTrackers.nodeChangeStoreProperty( nodeId, (DefinedProperty) existingProperty, property );
-            persistenceManager.nodeChangeProperty( nodeId, property.propertyKeyId(), property.value() );
+            state.neoStoreTransaction.nodeChangeProperty( nodeId, property.propertyKeyId(), property.value() );
         }
         state.txState().nodeDoReplaceProperty( nodeId, existingProperty, property );
         return existingProperty;
@@ -537,13 +548,13 @@ public class StateHandlingStatementOperations implements
         if ( !existingProperty.isDefined() )
         {
             legacyPropertyTrackers.relationshipAddStoreProperty( relationshipId, property );
-            persistenceManager.relAddProperty( relationshipId, property.propertyKeyId(), property.value() );
+            state.neoStoreTransaction.relAddProperty( relationshipId, property.propertyKeyId(), property.value() );
         }
         else
         {
             legacyPropertyTrackers.relationshipChangeStoreProperty( relationshipId, (DefinedProperty)
                     existingProperty, property );
-            persistenceManager.relChangeProperty( relationshipId, property.propertyKeyId(), property.value() );
+            state.neoStoreTransaction.relChangeProperty( relationshipId, property.propertyKeyId(), property.value() );
         }
         state.txState().relationshipDoReplaceProperty( relationshipId, existingProperty, property );
         return existingProperty;
@@ -555,11 +566,11 @@ public class StateHandlingStatementOperations implements
         Property existingProperty = graphGetProperty( state, property.propertyKeyId() );
         if ( !existingProperty.isDefined() )
         {
-            persistenceManager.graphAddProperty( property.propertyKeyId(), property.value() );
+            state.neoStoreTransaction.graphAddProperty( property.propertyKeyId(), property.value() );
         }
         else
         {
-            persistenceManager.graphChangeProperty( property.propertyKeyId(), property.value() );
+            state.neoStoreTransaction.graphChangeProperty( property.propertyKeyId(), property.value() );
         }
         state.txState().graphDoReplaceProperty( existingProperty, property );
         return existingProperty;
@@ -573,7 +584,7 @@ public class StateHandlingStatementOperations implements
         if ( existingProperty.isDefined() )
         {
             legacyPropertyTrackers.nodeRemoveStoreProperty( nodeId, (DefinedProperty) existingProperty );
-            persistenceManager.nodeRemoveProperty( nodeId, propertyKeyId );
+            state.neoStoreTransaction.nodeRemoveProperty( nodeId, propertyKeyId );
         }
         state.txState().nodeDoRemoveProperty( nodeId, existingProperty );
         return existingProperty;
@@ -588,7 +599,7 @@ public class StateHandlingStatementOperations implements
         {
             legacyPropertyTrackers.relationshipRemoveStoreProperty( relationshipId, (DefinedProperty)
                     existingProperty );
-            persistenceManager.relRemoveProperty( relationshipId, propertyKeyId );
+            state.neoStoreTransaction.relRemoveProperty( relationshipId, propertyKeyId );
         }
         state.txState().relationshipDoRemoveProperty( relationshipId, existingProperty );
         return existingProperty;
@@ -600,7 +611,7 @@ public class StateHandlingStatementOperations implements
         Property existingProperty = graphGetProperty( state, propertyKeyId );
         if ( existingProperty.isDefined() )
         {
-            persistenceManager.graphRemoveProperty( propertyKeyId );
+            state.neoStoreTransaction.graphRemoveProperty( propertyKeyId );
         }
         state.txState().graphDoRemoveProperty( existingProperty );
         return existingProperty;

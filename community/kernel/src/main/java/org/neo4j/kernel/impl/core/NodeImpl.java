@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -740,7 +740,7 @@ public class NodeImpl extends ArrayBasedPrimitive
             {
                 if ( labels == null )
                 {
-                    labels = loader.load( state, getId() );
+                    labels = loader.load( getId() );
                 }
             }
         }

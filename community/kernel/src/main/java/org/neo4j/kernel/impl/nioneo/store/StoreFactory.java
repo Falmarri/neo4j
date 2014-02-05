@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -35,6 +35,7 @@ import org.neo4j.kernel.impl.storemigration.ConfigMapUpgradeConfiguration;
 import org.neo4j.kernel.impl.storemigration.DatabaseFiles;
 import org.neo4j.kernel.impl.storemigration.StoreMigrator;
 import org.neo4j.kernel.impl.storemigration.StoreUpgrader;
+import org.neo4j.kernel.impl.storemigration.StoreVersionCheck;
 import org.neo4j.kernel.impl.storemigration.UpgradableDatabase;
 import org.neo4j.kernel.impl.storemigration.monitoring.VisibleMigrationProgressMonitor;
 import org.neo4j.kernel.impl.transaction.RemoteTxHook;
@@ -141,7 +142,7 @@ public class StoreFactory
     private void tryToUpgradeStores( File fileName )
     {
         new StoreUpgrader(config, new ConfigMapUpgradeConfiguration(config),
-                new UpgradableDatabase( fileSystemAbstraction ),
+                new UpgradableDatabase( new StoreVersionCheck( fileSystemAbstraction ) ),
                 new StoreMigrator( new VisibleMigrationProgressMonitor( stringLogger, System.out ) ),
                 new DatabaseFiles( fileSystemAbstraction ),
                 idGeneratorFactory, fileSystemAbstraction ).attemptUpgrade( fileName );

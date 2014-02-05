@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,30 +20,50 @@
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.helpers.ThisShouldNotHappenError
-import org.neo4j.cypher.internal.compiler.v2_0.commands
 
 sealed trait Query extends Statement
 
-case class SingleQuery(clauses: Seq[Clause], token: InputToken) extends Query {
+case class SingleQuery(clauses: Seq[Clause])(val position: InputPosition) extends Query {
+  assert(clauses.nonEmpty)
+
   def semanticCheck: SemanticCheck = checkOrder(clauses) then checkClauses
 
-  private def checkOrder(clauses: Seq[Clause]): SemanticCheck = clauses match {
-    case Seq() => Seq()
-    case _     => (clauses.take(2) match {
-      case Seq(_: With, _: Start)                => Seq()
-      case Seq(clause, start: Start)             => Seq(SemanticError(s"WITH is required between ${clause.name} and ${start.name}", clause.token, start.token))
-      case Seq(match1: Match, match2: Match) if match1.optional && !match2.optional => Seq(SemanticError(s"${match2.name} cannot follow OPTIONAL ${match1.name} (perhaps use a WITH clause between them)", match2.token, match1.token))
-      case Seq(clause: Return, _)                => Seq(SemanticError(s"${clause.name} can only be used at the end of the query", clause.token))
-      case Seq(_: UpdateClause, _: UpdateClause) => Seq()
-      case Seq(_: UpdateClause, _: With)         => Seq()
-      case Seq(_: UpdateClause, _: Return)       => Seq()
-      case Seq(update: UpdateClause, clause)     => Seq(SemanticError(s"WITH is required between ${update.name} and ${clause.name}", clause.token, update.token))
-      case Seq(_: UpdateClause)                  => Seq()
-      case Seq(_: Return)                        => Seq()
-      case Seq(clause)                           => Seq(SemanticError(s"Query cannot conclude with ${clause.name} (must be RETURN or an update clause)", clause.token))
-      case _                                     => Seq()
-    }) then checkOrder(clauses.tail)
+  private def checkOrder(clauses: Seq[Clause]): SemanticCheck = s => {
+    val (lastPair, errors) = clauses.sliding(2).foldLeft(Seq.empty[Clause], Vector.empty[SemanticError]) {
+      case ((_, errors), pair) =>
+        val optError = pair match {
+          case Seq(_: With, _: Start) =>
+            None
+          case Seq(clause, start: Start) =>
+            Some(SemanticError(s"WITH is required between ${clause.name} and ${start.name}", clause.position, start.position))
+          case Seq(match1: Match, match2: Match) if match1.optional && !match2.optional =>
+            Some(SemanticError(s"${match2.name} cannot follow OPTIONAL ${match1.name} (perhaps use a WITH clause between them)", match2.position, match1.position))
+          case Seq(clause: Return, _) =>
+            Some(SemanticError(s"${clause.name} can only be used at the end of the query", clause.position))
+          case Seq(_: UpdateClause, _: UpdateClause) =>
+            None
+          case Seq(_: UpdateClause, _: With) =>
+            None
+          case Seq(_: UpdateClause, _: Return) =>
+            None
+          case Seq(update: UpdateClause, clause) =>
+            Some(SemanticError(s"WITH is required between ${update.name} and ${clause.name}", clause.position, update.position))
+          case _ =>
+            None
+        }
+        (pair, optError.fold(errors)(errors :+ _))
+    }
+
+    val lastError = lastPair.last match {
+      case _: UpdateClause =>
+        None
+      case _: Return =>
+        None
+      case clause =>
+        Some(SemanticError(s"Query cannot conclude with ${clause.name} (must be RETURN or an update clause)", clause.position))
+    }
+
+    SemanticCheckResult(s, errors ++ lastError)
   }
 
   private def checkClauses: SemanticCheck = s => {
@@ -60,60 +80,6 @@ case class SingleQuery(clauses: Seq[Clause], token: InputToken) extends Query {
       case _       => checkClause(clause, last)
     })
   }
-
-  def toLegacyQuery =
-    groupClauses(clauses).foldRight(None: Option[commands.Query], (_: commands.QueryBuilder).returns()) {
-      case (group, (tail, defaultClose)) =>
-        val builder = tail.foldLeft(new commands.QueryBuilder())((b, t) => b.tail(t))
-
-        group.foldLeft(builder)((b, clause) => clause match {
-          case c: Start        => c.addToLegacyQuery(b)
-          case c: Match        => c.addToLegacyQuery(b)
-          case c: Merge        => c.addToLegacyQuery(b)
-          case c: Create       => c.addToLegacyQuery(b)
-          case c: CreateUnique => c.addToLegacyQuery(b)
-          case c: SetClause    => c.addToLegacyQuery(b)
-          case c: Delete       => c.addToLegacyQuery(b)
-          case c: Remove       => c.addToLegacyQuery(b)
-          case c: Foreach      => c.addToLegacyQuery(b)
-          case _: With         => b
-          case _: Return       => b
-          case _               => throw new ThisShouldNotHappenError("cleishm", "Unknown clause while grouping")
-        })
-
-        val query = Some(group.takeRight(2) match {
-          case Seq(w: With, r: Return)  => w.closeLegacyQueryBuilder(builder, r.closeLegacyQueryBuilder)
-          case Seq(_, c: ClosingClause) => c.closeLegacyQueryBuilder(builder)
-          case Seq(c: ClosingClause)    => c.closeLegacyQueryBuilder(builder)
-          case _                        => defaultClose(builder)
-        })
-
-        (query, (_: commands.QueryBuilder).returns(commands.AllIdentifiers()))
-    }._1.get
-
-  private def groupClauses(clauses: Seq[Clause]): IndexedSeq[IndexedSeq[Clause]] = {
-    def split = Vector(clauses.head) +: groupClauses(clauses.tail)
-
-    def group = {
-      val tailGroups = groupClauses(clauses.tail)
-      (clauses.head +: tailGroups.head) +: tailGroups.tail
-    }
-
-    clauses.take(2) match {
-      case Seq(clause)                           => Vector(Vector(clause))
-      case Seq(_: With, _: Return)               => group
-      case Seq(_: ClosingClause, _)              => split
-      case Seq(_, _: ClosingClause)              => group
-      case Seq(_: UpdateClause, _: Create)       => split
-      case Seq(_: UpdateClause, _: CreateUnique) => split
-      case Seq(_: UpdateClause, _: Merge)        => split
-      case Seq(_: UpdateClause, _: UpdateClause) => group
-      case Seq(_: UpdateClause, _)               => split
-      case Seq(_, _: UpdateClause)               => split
-      case Seq(_: Match, _)                      => split
-      case Seq(_, _)                             => group
-    }
-  }
 }
 
 trait Union extends Query {
@@ -122,26 +88,22 @@ trait Union extends Query {
 
   def semanticCheck: SemanticCheck =
     checkUnionAggregation then
-      statement.semanticCheck then
-      query.semanticCheck
+    statement.semanticCheck then
+    query.semanticCheck
 
   private def checkUnionAggregation: SemanticCheck = (statement, this) match {
     case (_: SingleQuery, _)                  => None
     case (_: UnionAll, _: UnionAll)           => None
     case (_: UnionDistinct, _: UnionDistinct) => None
-    case _                                    => Some(SemanticError("Invalid combination of UNION and UNION ALL", token))
+    case _                                    => Some(SemanticError("Invalid combination of UNION and UNION ALL", position))
   }
 
-  protected def unionedQueries: Seq[SingleQuery] = statement match {
-    case q: SingleQuery => Seq(query, q)
-    case u: Union       => query +: u.unionedQueries
+  def unionedQueries: Seq[SingleQuery] = unionedQueries(Vector.empty)
+  private def unionedQueries(accum: Seq[SingleQuery]): Seq[SingleQuery] = statement match {
+    case q: SingleQuery => accum :+ query :+ q
+    case u: Union       => u.unionedQueries(accum :+ query)
   }
 }
 
-case class UnionAll(statement: Query, token: InputToken, query: SingleQuery) extends Union {
-  def toLegacyQuery = commands.Union(unionedQueries.reverseMap(_.toLegacyQuery), commands.QueryString.empty, distinct = false)
-}
-
-case class UnionDistinct(statement: Query, token: InputToken, query: SingleQuery) extends Union {
-  def toLegacyQuery = commands.Union(unionedQueries.reverseMap(_.toLegacyQuery), commands.QueryString.empty, distinct = true)
-}
+case class UnionAll(statement: Query, query: SingleQuery)(val position: InputPosition) extends Union
+case class UnionDistinct(statement: Query, query: SingleQuery)(val position: InputPosition) extends Union

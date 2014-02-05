@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,6 +19,13 @@
  */
 package org.neo4j.kernel.ha;
 
+import static org.neo4j.com.Protocol.INTEGER_SERIALIZER;
+import static org.neo4j.com.Protocol.LONG_SERIALIZER;
+import static org.neo4j.com.Protocol.VOID_SERIALIZER;
+import static org.neo4j.com.Protocol.readBoolean;
+import static org.neo4j.com.Protocol.readString;
+import static org.neo4j.kernel.ha.com.slave.MasterClient.LOCK_SERIALIZER;
+
 import java.io.IOException;
 import java.nio.channels.ReadableByteChannel;
 
@@ -31,20 +38,14 @@ import org.neo4j.com.Response;
 import org.neo4j.com.TargetCaller;
 import org.neo4j.com.ToNetworkStoreWriter;
 import org.neo4j.com.TxExtractor;
-import org.neo4j.helpers.Pair;
 import org.neo4j.kernel.IdType;
+import org.neo4j.kernel.ha.com.master.HandshakeResult;
 import org.neo4j.kernel.ha.com.master.Master;
 import org.neo4j.kernel.ha.com.slave.MasterClient18.AquireLockCall;
 import org.neo4j.kernel.ha.id.IdAllocation;
 import org.neo4j.kernel.ha.lock.LockResult;
 import org.neo4j.kernel.impl.nioneo.store.IdRange;
-
-import static org.neo4j.com.Protocol.INTEGER_SERIALIZER;
-import static org.neo4j.com.Protocol.LONG_SERIALIZER;
-import static org.neo4j.com.Protocol.VOID_SERIALIZER;
-import static org.neo4j.com.Protocol.readBoolean;
-import static org.neo4j.com.Protocol.readString;
-import static org.neo4j.kernel.ha.com.slave.MasterClient.LOCK_SERIALIZER;
+import org.neo4j.kernel.monitoring.Monitors;
 
 public enum HaRequestType20 implements RequestType<Master>
 {
@@ -56,7 +57,7 @@ public enum HaRequestType20 implements RequestType<Master>
                 ChannelBuffer target )
         {
             IdType idType = IdType.values()[input.readByte()];
-            return master.allocateIds( idType );
+            return master.allocateIds( context, idType );
         }
     }, new ObjectSerializer<IdAllocation>()
     {
@@ -192,24 +193,23 @@ public enum HaRequestType20 implements RequestType<Master>
     }, VOID_SERIALIZER ),
 
     // ====
-    GET_MASTER_ID_FOR_TX( new TargetCaller<Master, Pair<Integer, Long>>()
+    HANDSHAKE( new TargetCaller<Master, HandshakeResult>()
     {
         @Override
-        public Response<Pair<Integer, Long>> call( Master master, RequestContext context, ChannelBuffer input,
+        public Response<HandshakeResult> call( Master master, RequestContext context, ChannelBuffer input,
                 ChannelBuffer target )
         {
-            return master.getMasterIdForCommittedTx( input.readLong(), null );
+            return master.handshake( input.readLong(), null );
         }
-    }, new ObjectSerializer<Pair<Integer, Long>>()
+    }, new ObjectSerializer<HandshakeResult>()
     {
         @Override
-        public void write( Pair<Integer, Long> responseObject, ChannelBuffer result ) throws IOException
+        public void write( HandshakeResult responseObject, ChannelBuffer result ) throws IOException
         {
-            result.writeInt( responseObject.first() );
-            result.writeLong( responseObject.other() );
+            result.writeInt( responseObject.txAuthor() );
+            result.writeLong( responseObject.txChecksum() );
         }
-    }
-    ),
+    } ),
 
     // ====
     COPY_STORE( new TargetCaller<Master, Void>()
@@ -218,7 +218,7 @@ public enum HaRequestType20 implements RequestType<Master>
         public Response<Void> call( Master master, RequestContext context, ChannelBuffer input,
                 final ChannelBuffer target )
         {
-            return master.copyStore( context, new ToNetworkStoreWriter( target ) );
+            return master.copyStore( context, new ToNetworkStoreWriter( target, new Monitors() ) );
         }
 
     }, VOID_SERIALIZER ),

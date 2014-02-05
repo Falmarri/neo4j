@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -23,6 +23,6 @@ public class LabelNotFoundKernelException extends KernelException
 {
     public LabelNotFoundKernelException( String message, Exception cause )
     {
-        super( message, cause );
+        super( Status.Schema.NoSuchLabel, cause, message);
     }
 }

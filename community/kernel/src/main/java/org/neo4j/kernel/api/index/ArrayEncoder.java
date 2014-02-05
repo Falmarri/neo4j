@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -21,12 +21,15 @@ package org.neo4j.kernel.api.index;
 
 import java.lang.reflect.Array;
 
-import org.neo4j.kernel.impl.util.Charsets;
+import sun.misc.BASE64Decoder;
 import sun.misc.BASE64Encoder;
+
+import org.neo4j.kernel.impl.util.Charsets;
 
 public class ArrayEncoder
 {
     private static final BASE64Encoder base64Encoder = new BASE64Encoder();
+    private static final BASE64Decoder base64Decoder = new BASE64Decoder();
 
     public static String encode( Object array )
     {
@@ -35,7 +38,7 @@ public class ArrayEncoder
             throw new IllegalArgumentException( "Only works with arrays" );
         }
 
-        StringBuilder builder = new StringBuilder( );
+        StringBuilder builder = new StringBuilder();
         int length = Array.getLength( array );
         String type = "";
         for ( int i = 0; i < length; i++ )

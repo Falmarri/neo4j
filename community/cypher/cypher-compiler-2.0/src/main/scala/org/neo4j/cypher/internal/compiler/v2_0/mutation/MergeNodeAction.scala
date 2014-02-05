@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -23,23 +23,31 @@ import org.neo4j.cypher.internal.compiler.v2_0._
 import commands.expressions.Expression
 import commands.Predicate
 import commands.values.KeyToken
-import data.SimpleVal
+import org.neo4j.cypher.internal.compiler.v2_0.data.{SeqVal, MapVal, SimpleVal}
 import pipes.{QueryState, EntityProducer}
-import symbols.{NodeType, CypherType}
+import symbols._
 import org.neo4j.cypher.internal.compiler.v2_0.spi.QueryContext
 import org.neo4j.cypher.{MergeConstraintConflictException, InternalException}
 import org.neo4j.graphdb.Node
 
 final case class IndexNodeProducer(label: KeyToken, propertyKey: KeyToken, producer: EntityProducer[Node]) extends EntityProducer[Node] {
-  def name: String = producer.name
-  def description: Seq[(String, SimpleVal)] = producer.description
+  def producerType: String = s"IndexNodProducer(${producer.producerType})"
+  override def description: Seq[(String, SimpleVal)] = producer.description ++ super.description
   def apply(ctx: ExecutionContext, state: QueryState) : Iterator[Node] = producer(ctx, state)
   override def toString() = s":${label.name}.${propertyKey.name}" //":Person.name"
 }
 
-sealed abstract class MergeNodeProducer
-final case class PlainMergeNodeProducer(nodeProducer: EntityProducer[Node]) extends MergeNodeProducer
-final case class UniqueMergeNodeProducers(nodeProducers: Seq[IndexNodeProducer]) extends MergeNodeProducer
+sealed abstract class MergeNodeProducer {
+  def producerDescriptions: Seq[SimpleVal]
+}
+
+final case class PlainMergeNodeProducer(nodeProducer: EntityProducer[Node]) extends MergeNodeProducer {
+  def producerDescriptions = Seq(MapVal(nodeProducer.description.toMap))
+}
+
+final case class UniqueMergeNodeProducers(nodeProducers: Seq[IndexNodeProducer]) extends MergeNodeProducer {
+  def producerDescriptions = nodeProducers.map(producer => MapVal(producer.description.toMap))
+}
 
 case class MergeNodeAction(identifier: String,
                            props: Map[KeyToken, Expression],
@@ -70,13 +78,17 @@ case class MergeNodeAction(identifier: String,
 
       Iterator(newContext)
     } else {
-      // eagerly drain foundNodes to prevent concurrent modification exception from kernel transaction state iterator
-      foundNodes.toList.iterator.map {
+      foundNodes.map {
         nextContext =>
           onMatch.foreach(_.exec(nextContext, state))
           nextContext
       }
     }
+  }
+
+  override def description: Seq[(String, SimpleVal)] = {
+    val producers = maybeNodeProducer.map(producer => Seq("producers" -> SeqVal(producer.producerDescriptions))).toSeq.flatten
+    super.description ++ producers
   }
 
   def findNodes(context: ExecutionContext)(implicit state: QueryState): Iterator[ExecutionContext] = definedProducer match {
@@ -127,13 +139,13 @@ case class MergeNodeAction(identifier: String,
       None
     }
 
-  def identifiers: Seq[(String, CypherType)] = Seq(identifier -> NodeType())
+  def identifiers: Seq[(String, CypherType)] = Seq(identifier -> CTNode)
 
   def rewrite(f: (Expression) => Expression) =
     MergeNodeAction(identifier = identifier,
       props = props.map { case (k, v) => k.rewrite(f) -> v.rewrite(f) },
       labels = labels.map(_.rewrite(f)),
-      expectations = expectations.map(_.rewrite(f)),
+      expectations = expectations.map(_.rewriteAsPredicate(f)),
       onCreate = onCreate.map(_.rewrite(f)),
       onMatch = onMatch.map(_.rewrite(f)),
       maybeNodeProducer = maybeNodeProducer)

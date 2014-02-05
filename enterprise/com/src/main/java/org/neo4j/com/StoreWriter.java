@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -28,7 +28,7 @@ public interface StoreWriter
     // "hasData" is an effect of the block format not supporting a zero length block
     // whereas a neostore file may actually be 0 bytes we'll have to keep track
     // of that special case.
-    void write( String path, ReadableByteChannel data, ByteBuffer temporaryBuffer, boolean hasData )
+    int write( String path, ReadableByteChannel data, ByteBuffer temporaryBuffer, boolean hasData )
             throws IOException;
 
     void done();

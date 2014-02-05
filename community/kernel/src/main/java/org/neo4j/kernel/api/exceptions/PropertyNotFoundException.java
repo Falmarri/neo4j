@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -37,7 +37,7 @@ public class PropertyNotFoundException extends KernelException
 
     private PropertyNotFoundException( String entity, int propertyKeyId )
     {
-        super( "%s has no property with propertyKeyId=%s.", entity, propertyKeyId );
+        super( Status.Statement.NoSuchProperty, "%s has no property with propertyKeyId=%s.", entity, propertyKeyId );
         this.entity = entity;
         this.propertyKeyId = propertyKeyId;
     }

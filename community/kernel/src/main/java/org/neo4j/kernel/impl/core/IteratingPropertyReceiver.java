@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -23,7 +23,7 @@ import java.util.Arrays;
 
 import org.neo4j.helpers.collection.PrefetchingIterator;
 import org.neo4j.kernel.api.properties.DefinedProperty;
-import org.neo4j.kernel.impl.persistence.NeoStoreTransaction.PropertyReceiver;
+import org.neo4j.kernel.impl.nioneo.xa.NeoStoreTransaction.PropertyReceiver;
 
 /**
  * A {@link PropertyReceiver} which can be iterated over once populated. The receiver and iterator is the

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -49,6 +49,9 @@ trait ExecutionEngineHelper extends GraphDatabaseTestBase with GraphIcing {
   // that individual tests don't need to worry about that.
   def execute(q: String, params: (String, Any)*): ExecutionResult =
     new EagerExecutionResult(engine.execute(q, params.toMap))
+  
+  def profile(q: String, params: (String, Any)*): ExecutionResult =
+    new EagerExecutionResult(engine.profile(q, params.toMap))
 
   def executeLazy(q: String, params: (String, Any)*): ExecutionResult =
     engine.execute(q, params.toMap)

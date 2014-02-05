@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -35,7 +35,8 @@ public class ToFileStoreWriter implements StoreWriter
         this.basePath = graphDbStoreDir;
     }
 
-    public void write( String path, ReadableByteChannel data, ByteBuffer temporaryBuffer,
+    @Override
+    public int write( String path, ReadableByteChannel data, ByteBuffer temporaryBuffer,
             boolean hasData ) throws IOException
     {
         try
@@ -48,16 +49,19 @@ public class ToFileStoreWriter implements StoreWriter
             {
                 file.getParentFile().mkdirs();
                 randomAccessFile = new RandomAccessFile( file, "rw" );
+                int totalWritten = 0;
                 if ( hasData )
                 {
                     FileChannel channel = randomAccessFile.getChannel();
                     while ( data.read( temporaryBuffer ) >= 0 )
                     {
                         temporaryBuffer.flip();
+                        totalWritten += temporaryBuffer.limit();
                         channel.write( temporaryBuffer );
                         temporaryBuffer.clear();
                     }
                 }
+                return totalWritten;
             }
             finally
             {
@@ -73,6 +77,7 @@ public class ToFileStoreWriter implements StoreWriter
         }
     }
 
+    @Override
     public void done()
     {
         // Do nothing

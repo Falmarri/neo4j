@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,23 +20,23 @@
 package org.neo4j.cypher.internal.compiler.v2_0.functions
 
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{expressions => commandexpressions}
+import ast.convert.ExpressionConverters._
+import commands.{expressions => commandexpressions}
+import commands.expressions.{Expression => CommandExpression}
+import symbols._
 
-case object Range extends Function {
+case object Range extends Function with SimpleTypedFunction {
   def name = "range"
 
-  def semanticCheck(ctx: ast.Expression.SemanticContext, invocation: ast.FunctionInvocation) : SemanticCheck =
-    checkMinArgs(invocation, 2) then checkMaxArgs(invocation, 3) then
-    when(invocation.arguments.length >= 2) {
-      invocation.arguments(0).constrainType(LongType()) then
-      invocation.arguments(1).constrainType(LongType())
-    } then when(invocation.arguments.length == 3) {
-      invocation.arguments(2).constrainType(LongType())
-    } then invocation.specifyType(CollectionType(LongType()))
+  val signatures = Vector(
+    Signature(argumentTypes = Vector(CTInteger, CTInteger), outputType = CTCollection(CTInteger)),
+    Signature(argumentTypes = Vector(CTInteger, CTInteger, CTInteger), outputType = CTCollection(CTInteger))
+  )
 
-  def toCommand(invocation: ast.FunctionInvocation) = {
-    val commands = invocation.arguments.map(_.toCommand)
-    commandexpressions.RangeFunction(commands(0), commands(1), commands.lift(2).getOrElse(commandexpressions.Literal(1)))
-  }
+  def asCommandExpression(invocation: ast.FunctionInvocation) =
+    commandexpressions.RangeFunction(
+      invocation.arguments(0).asCommandExpression,
+      invocation.arguments(1).asCommandExpression,
+      invocation.arguments.lift(2).asCommandExpression.getOrElse(commandexpressions.Literal(1))
+    )
 }

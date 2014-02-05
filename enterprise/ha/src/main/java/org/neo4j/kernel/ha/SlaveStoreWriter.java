@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -48,6 +48,7 @@ import org.neo4j.kernel.impl.util.FileUtils;
 import org.neo4j.kernel.impl.util.StringLogger;
 import org.neo4j.kernel.logging.ConsoleLogger;
 
+import static org.neo4j.helpers.Format.bytes;
 import static org.neo4j.kernel.impl.nioneo.xa.NeoStoreXaDataSource.LOGICAL_LOG_DEFAULT_NAME;
 
 public class SlaveStoreWriter
@@ -118,7 +119,7 @@ public class SlaveStoreWriter
             public boolean accept( File file )
             {
                 // Skip log files and tx files from temporary database
-                return !file.getName().equals( StringLogger.DEFAULT_NAME ) && !("active_tx_log tm_tx_log.1 tm_tx_log" +
+                return !file.getName().startsWith( "metrics" ) && !file.getName().equals( StringLogger.DEFAULT_NAME ) && !("active_tx_log tm_tx_log.1 tm_tx_log" +
                         ".2").contains( file.getName() );
             }
         } ) )
@@ -134,13 +135,14 @@ public class SlaveStoreWriter
             private int totalFiles;
 
             @Override
-            public void write( String path, ReadableByteChannel data, ByteBuffer temporaryBuffer,
+            public int write( String path, ReadableByteChannel data, ByteBuffer temporaryBuffer,
                                boolean hasData ) throws IOException
             {
                 console.log( "Copying " + path );
-                actual.write( path, data, temporaryBuffer, hasData );
-                console.log( "Copied " + path );
+                int written = actual.write( path, data, temporaryBuffer, hasData );
+                console.log( "Copied  " + path + " " + bytes( written ) );
                 totalFiles++;
+                return written;
             }
 
             @Override

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -51,7 +51,9 @@ public class LuceneSchemaIndexProviderFactory extends
     @Override
     public LuceneSchemaIndexProvider newKernelExtension( Dependencies dependencies ) throws Throwable
     {
-        return new LuceneSchemaIndexProvider(
-                directoryFactory( dependencies.getConfig(), dependencies.getFileSystem() ), dependencies.getConfig() );
+        Config config = dependencies.getConfig();
+        FileSystemAbstraction fileSystem = dependencies.getFileSystem();
+        DirectoryFactory directoryFactory = directoryFactory( config, fileSystem );
+        return new LuceneSchemaIndexProvider( directoryFactory, config );
     }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -22,7 +22,7 @@ package org.neo4j.cypher.internal.compiler.v2_0
 import scala.collection.immutable.SortedSet
 
 object SemanticError {
-  def apply(msg: String, token: InputToken, references: InputToken*) : SemanticError = apply(msg, token, SortedSet(references:_*))
+  def apply(msg: String, position: InputPosition, references: InputPosition*) : SemanticError = apply(msg, position, SortedSet(references:_*))
 }
 
-case class SemanticError(msg: String, token: InputToken, references: SortedSet[InputToken])
+case class SemanticError(msg: String, position: InputPosition, references: SortedSet[InputPosition])

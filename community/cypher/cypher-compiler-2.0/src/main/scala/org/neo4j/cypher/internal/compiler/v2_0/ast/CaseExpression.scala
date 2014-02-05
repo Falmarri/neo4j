@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -19,40 +19,19 @@
  */
 package org.neo4j.cypher.internal.compiler.v2_0.ast
 
-import org.neo4j.cypher.SyntaxException
+import Expression.SemanticContext
 import org.neo4j.cypher.internal.compiler.v2_0._
-import org.neo4j.cypher.internal.compiler.v2_0.symbols._
-import org.neo4j.cypher.internal.compiler.v2_0.commands.{expressions => commandexpressions, Predicate => CommandPredicate}
-import org.neo4j.cypher.internal.compiler.v2_0.commands.expressions.{Expression => CommandExpression}
-import org.neo4j.cypher.internal.compiler.v2_0.ast.Expression.SemanticContext
+import symbols._
 
-case class CaseExpression(expression: Option[Expression], alternatives: Seq[(Expression, Expression)], default: Option[Expression], token: InputToken) extends Expression {
+case class CaseExpression(expression: Option[Expression], alternatives: Seq[(Expression, Expression)], default: Option[Expression])(val position: InputPosition) extends Expression {
   def semanticCheck(ctx: SemanticContext): SemanticCheck = {
-    val possibleTypes : TypeGenerator = (alternatives.map(_._2) ++ default) mergeDownTypes
+    val possibleTypes: TypeGenerator = (alternatives.map(_._2) ++ default).mergeUpTypes
 
     expression.semanticCheck(ctx) then
-      alternatives.flatMap { a => Seq(a._1, a._2) }.semanticCheck(ctx) then
-      default.semanticCheck(ctx) then
-      when (expression.isEmpty) {
-        alternatives.map(_._1).constrainType(BooleanType())
-      } then this.specifyType(possibleTypes)
-  }
-
-  def toCommand: CommandExpression = expression match {
-    case Some(e) => {
-      val legacyAlternatives = alternatives.map {
-        a => (a._1.toCommand, a._2.toCommand)
-      }
-      commandexpressions.SimpleCase(e.toCommand, legacyAlternatives, default.map(_.toCommand))
-    }
-    case None => {
-      val predicateAlternatives = alternatives.map { a =>
-        a._1.toCommand match {
-          case predicate: CommandPredicate => (predicate, a._2.toCommand)
-          case _ => throw new SyntaxException(s"Argument to WHEN is not a predicate (${a._1.token.startPosition})")
-        }
-      }
-      commandexpressions.GenericCase(predicateAlternatives, default.map(_.toCommand))
-    }
+    alternatives.flatMap { a => Seq(a._1, a._2) }.semanticCheck(ctx) then
+    default.semanticCheck(ctx) then
+    when (expression.isEmpty) {
+      alternatives.map(_._1).expectType(CTBoolean.covariant)
+    } then this.specifyType(possibleTypes)
   }
 }

@@ -1,5 +1,5 @@
 @echo off
-rem Copyright (c) 2002-2013 "Neo Technology,"
+rem Copyright (c) 2002-2014 "Neo Technology,"
 rem Network Engine for Objects in Lund AB [http://neotechnology.com]
 rem
 rem This file is part of Neo4j.
@@ -63,7 +63,7 @@ goto:eof
   if %command% == "" (
       if not "%1" == "" (
              echo This command is not supported by the Neo4j utility. Please try "Neo4j.bat help" for more info.
-             echo For installing Neo4j as a Windows Service, see Neo4j-Installer.bat
+             echo For installing Neo4j as a Windows Service, see Neo4jInstaller.bat
              goto:eof
       )
       set command=console
@@ -133,7 +133,7 @@ goto:eof
   goto :eof
 
 :console
-  "%javapath%\bin\java.exe" -DworkingDir="%~dp0.." -Djava.util.logging.config.file=conf/windows-wrapper-logging.properties -DconfigFile=%configFile% %classpath% %mainclass% -jar %~dps0%wrapperJarFilename%
+  "%javapath%\bin\java.exe" -DworkingDir="%~dps0.." -Djava.util.logging.config.file=conf/windows-wrapper-logging.properties -DconfigFile=%configFile% %classpath% %mainclass% -jar "%~dps0%wrapperJarFilename%"
   goto :eof
 
 :help

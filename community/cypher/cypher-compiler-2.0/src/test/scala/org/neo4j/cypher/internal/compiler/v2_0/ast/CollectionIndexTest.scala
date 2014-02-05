@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -24,31 +24,29 @@ import symbols._
 import org.junit.Test
 import org.scalatest.Assertions
 import org.junit.Assert._
-import scala.collection.immutable.SortedSet
 
 class CollectionIndexTest extends Assertions {
   val dummyCollection = DummyExpression(
-    TypeSet(CollectionType(NodeType()), NodeType(), CollectionType(StringType())),
-    DummyToken(2,3))
+    CTCollection(CTNode) | CTNode | CTCollection(CTString))
 
   @Test
   def shouldReturnCollectionInnerTypesOfExpression() {
     val index = CollectionIndex(dummyCollection,
-      SignedInteger(1, DummyToken(5,6)),
-      DummyToken(4, 8))
+      SignedIntegerLiteral("1")(DummyPosition(5))
+    )(DummyPosition(4))
 
     val result = index.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
     assertEquals(Seq(), result.errors)
-    assertEquals(Set(NodeType(), StringType()), index.types(result.state))
+    assertEquals(CTNode | CTString, index.types(result.state))
   }
 
   @Test
   def shouldRaiseErrorIfIndexingByFraction() {
     val index = CollectionIndex(dummyCollection,
-      Double(1.3, DummyToken(5,6)),
-      DummyToken(4, 8))
+      DoubleLiteral("1.3")(DummyPosition(5))
+    )(DummyPosition(4))
 
     val result = index.semanticCheck(Expression.SemanticContext.Simple)(SemanticState.clean)
-    assertEquals(Seq(SemanticError("Type mismatch: expected Integer or Long but was Double", index.idx.token, SortedSet(index.idx.token))), result.errors)
+    assertEquals(Seq(SemanticError("Type mismatch: expected Integer but was Double", index.idx.position)), result.errors)
   }
 }

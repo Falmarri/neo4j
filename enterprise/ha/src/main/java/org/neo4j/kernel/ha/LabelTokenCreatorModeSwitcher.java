@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -32,15 +32,15 @@ import org.neo4j.kernel.logging.Logging;
 public class LabelTokenCreatorModeSwitcher extends AbstractModeSwitcher<TokenCreator>
 {
     private final HaXaDataSourceManager xaDsm;
-    private final Master master;
+    private final DelegateInvocationHandler<Master> master;
     private final RequestContextFactory requestContextFactory;
     private final Logging logging;
 
     public LabelTokenCreatorModeSwitcher( HighAvailabilityMemberStateMachine stateMachine,
-                                           DelegateInvocationHandler<TokenCreator> delegate,
-                                           HaXaDataSourceManager xaDsm,
-                                           Master master, RequestContextFactory requestContextFactory,
-                                           Logging logging
+                                          DelegateInvocationHandler<TokenCreator> delegate,
+                                          HaXaDataSourceManager xaDsm,
+                                          DelegateInvocationHandler<Master> master,
+                                          RequestContextFactory requestContextFactory, Logging logging
     )
     {
         super( stateMachine, delegate );
@@ -59,6 +59,6 @@ public class LabelTokenCreatorModeSwitcher extends AbstractModeSwitcher<TokenCre
     @Override
     protected TokenCreator getSlaveImpl( URI serverHaUri )
     {
-        return new SlaveLabelTokenCreator( master, requestContextFactory, xaDsm );
+        return new SlaveLabelTokenCreator( master.cement(), requestContextFactory, xaDsm );
     }
 }

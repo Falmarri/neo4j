@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -20,11 +20,13 @@
 package org.neo4j.kernel.impl.core;
 
 import org.junit.Test;
+
 import org.neo4j.graphdb.NotInTransactionException;
 import org.neo4j.kernel.impl.persistence.PersistenceManager;
 
-import static org.junit.Assert.*;
-import static org.mockito.Mockito.*;
+import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public class ThreadToStatementContextBridgeTest
 {
@@ -33,7 +35,7 @@ public class ThreadToStatementContextBridgeTest
     {
         // Given
         PersistenceManager persistenceManager = mock( PersistenceManager.class );
-        when( persistenceManager.currentKernelTransaction() ).thenReturn( null );
+        when( persistenceManager.currentKernelTransactionForReading() ).thenReturn( null );
         ThreadToStatementContextBridge bridge = new ThreadToStatementContextBridge( persistenceManager );
 
         // When

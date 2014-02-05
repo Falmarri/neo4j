@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -32,13 +32,13 @@ case class FilterFunction(collection: Expression, id: String, predicate: Predica
   def compute(value: Any, m: ExecutionContext)(implicit state: QueryState) =
     makeTraversable(value).filter(element => predicate.isTrue(m.newWith(id -> element)  ))
 
-  def rewrite(f: (Expression) => Expression) = f(FilterFunction(collection.rewrite(f), id, predicate.rewrite(f)))
+  def rewrite(f: (Expression) => Expression) = f(FilterFunction(collection.rewrite(f), id, predicate.rewriteAsPredicate(f)))
 
   override def children = Seq(collection, predicate)
 
   def arguments: Seq[Expression] = Seq(collection)
 
-  def calculateType(symbols: SymbolTable): CypherType =  collection.evaluateType(CollectionType(AnyType()), symbols)
+  def calculateType(symbols: SymbolTable): CypherType =  collection.evaluateType(CTCollection(CTAny), symbols)
 
   def symbolTableDependencies = symbolTableDependencies(collection, predicate, id)
 }

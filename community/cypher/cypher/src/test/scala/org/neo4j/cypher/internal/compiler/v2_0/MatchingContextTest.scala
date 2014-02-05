@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -426,8 +426,8 @@ class MatchingContextTest extends GraphDatabaseTestBase with Assertions with Pat
   }
 
   private def createMatchingContextWith(patterns: Seq[Pattern], nodes: Seq[String], rels: Seq[String], predicates: Seq[Predicate] = Seq[Predicate]()) {
-    val nodeIdentifiers2 = nodes.map(_ -> NodeType())
-    val relIdentifiers2 = rels.map(_ -> RelationshipType())
+    val nodeIdentifiers2 = nodes.map(_ -> CTNode)
+    val relIdentifiers2 = rels.map(_ -> CTRelationship)
 
     val identifiers2 = (nodeIdentifiers2 ++ relIdentifiers2).toMap
     val symbols2 = SymbolTable(identifiers2)

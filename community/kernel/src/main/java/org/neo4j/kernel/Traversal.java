@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -197,7 +197,7 @@ public class Traversal
 
     /**
      * Returns an empty {@link Expander} which, if not modified, will expand
-     * all relationships when asked to expand a {@link Node}. Criterias
+     * all relationships when asked to expand a {@link Node}. Criteria
      * can be added to narrow the {@link Expansion}.
      * @return an empty {@link Expander} which, if not modified, will expand
      * all relationship for {@link Node}s.
@@ -212,7 +212,7 @@ public class Traversal
 
     /**
      * Returns an empty {@link PathExpander} which, if not modified, will expand
-     * all relationships when asked to expand a {@link Node}. Criterias
+     * all relationships when asked to expand a {@link Node}. Criteria
      * can be added to narrow the {@link Expansion}.
      * @return an empty {@link PathExpander} which, if not modified, will expand
      * all relationship for {@link Path}s.

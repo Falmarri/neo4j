@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2002-2013 "Neo Technology,"
+ * Copyright (c) 2002-2014 "Neo Technology,"
  * Network Engine for Objects in Lund AB [http://neotechnology.com]
  *
  * This file is part of Neo4j.
@@ -35,17 +35,6 @@ class ShortestPathBuilderTest extends BuilderTest {
       patterns = Seq(Unsolved(RelatedTo(SingleNode("l"), SingleNode("r"), "rel", Seq(), Direction.OUTGOING, Map.empty))))
 
     val p = createPipe(nodes = Seq("l"))
-
-    assertRejects(p, q)
-  }
-
-  @Test
-  def should_not_accept_if_both_start_and_end_have_not_been_solved_yet() {
-    val q = PartiallySolvedQuery().
-      copy(start = Seq(Solved(NodeById("a", 0)), Unsolved(NodeById("b", 0))),
-      patterns = Seq(Unsolved(ShortestPath("p", SingleNode("a"), SingleNode("b"), Seq(), Direction.OUTGOING, None, single = true, None))))
-
-    val p = createPipe(nodes = Seq("a"))
 
     assertRejects(p, q)
   }
