@@ -35,6 +35,7 @@ import org.apache.lucene.queryParser.QueryParser;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.util.NumericUtils;
+import org.neo4j.index.impl.lucene.LuceneDataSource;
 
 import org.neo4j.kernel.api.index.ArrayEncoder;
 
@@ -157,7 +158,13 @@ public class LuceneDocumentStructure
             @Override
             Query encodeQuery( Object value )
             {
-                return new QueryParser(LuceneDataSource.LUCENE_VERSION, STRING_PROPERTY_FIELD_IDENTIFIER, LuceneDataSource.LOWER_CASE_KEYWORD_ANALYZER).parse(value.toString());
+                try{
+                	QueryParser q = new QueryParser(LuceneDataSource.LUCENE_VERSION, key(), LuceneDataSource.LOWER_CASE_KEYWORD_ANALYZER);
+                	q.setAllowLeadingWildcard(true);
+                	return q.parse(value.toString());
+                }catch (org.apache.lucene.queryParser.ParseException e){
+                    return new TermQuery( new Term( key(), value.toString() ) );
+                }
             }
         };
 
